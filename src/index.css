@@ -195,9 +195,10 @@
   }
 
   /* Room for the iOS status bar in home-screen apps. The workspace columns run
-     up behind it and start their content this far down. */
+     up behind it and start their content this far down, where both headers
+     keep their usual top padding, as on a computer. */
   body.pwa-mode {
-    --shell-top-inset: var(--header-total-padding);
+    --shell-top-inset: var(--header-safe-area-top);
   }
 
   body.pwa-mode .fixed.inset-0 {
@@ -805,12 +806,6 @@
   /* PWA specific header adjustments - uses CSS variables for consistency */
   .pwa-header-safe {
     padding-top: var(--header-base-padding);
-  }
-
-  /* When PWA mode is detected by JavaScript */
-  body.pwa-mode .pwa-header-safe {
-    /* Reset padding since #root already handles safe area */
-    padding-top: 0px !important;
   }
 
   /* For mobile PWA, add bottom padding for better spacing */
