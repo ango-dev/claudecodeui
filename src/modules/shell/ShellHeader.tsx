@@ -51,7 +51,7 @@ export default function ShellHeader({
   bypassTitle,
 }: ShellHeaderProps) {
   return (
-    <div className="flex-shrink-0 border-b border-border bg-card px-4 py-2">
+    <div className="flex-shrink-0 border-b border-border bg-background px-4 py-2">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-2">
           <div className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />

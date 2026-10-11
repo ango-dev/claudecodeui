@@ -118,7 +118,7 @@ function ProjectSidebarRegion({
   if (!isMobile) {
     return (
       <div
-        className="relative h-full flex-shrink-0 border-r border-border/50"
+        className="relative h-full flex-shrink-0 border-r border-border"
         style={isSidebarResizable ? { width: sidebarWidth } : undefined}
       >
         <Sidebar {...sidebarSharedProps} />

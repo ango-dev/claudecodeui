@@ -296,7 +296,7 @@ export default function Shell({
   const overlayDescription = overlayMode === 'connecting' ? connectingDescription : readyDescription;
 
   return (
-    <div className="flex h-full w-full flex-col bg-card">
+    <div className="flex h-full w-full flex-col bg-background">
       <ShellHeader
         isConnected={isConnected}
         isInitialized={isInitialized}
