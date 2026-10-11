@@ -198,7 +198,7 @@ test('a terminal opened in light mode is painted with the light palette', () => 
   renderShellTerminal();
 
   assert.equal(terminals.length, 1);
-  assert.equal(terminals[0].options.theme?.background, '#faf9f5');
+  assert.equal(terminals[0].options.theme?.background, '#fcfcfb');
   // Truecolor accents that CLIs pick for a dark background get darkened on the light background.
   assert.equal(terminals[0].options.minimumContrastRatio, 4.5);
 });
@@ -209,14 +209,14 @@ test('a terminal opened in dark mode is painted with the dark palette', () => {
   renderShellTerminal();
 
   assert.equal(terminals.length, 1);
-  assert.equal(terminals[0].options.theme?.background, '#262624');
+  assert.equal(terminals[0].options.theme?.background, '#151515');
   assert.equal(terminals[0].options.minimumContrastRatio, 1);
 });
 
 test('toggling the theme repaints the open terminal without rebuilding it or closing its socket', () => {
   writeUserPreference('theme', 'light');
   const { result, closeSocket } = renderShellTerminal();
-  assert.equal(terminals[0].options.theme?.background, '#faf9f5');
+  assert.equal(terminals[0].options.theme?.background, '#fcfcfb');
 
   act(() => {
     result.current.toggleDarkMode();
@@ -225,7 +225,7 @@ test('toggling the theme repaints the open terminal without rebuilding it or clo
   assert.equal(terminals.length, 1, 'a theme switch must not create a second terminal');
   assert.equal(terminals[0].disposed, false, 'the running terminal must not be disposed');
   assert.equal(closeSocket.mock.calls.length, 0, 'the pty socket must stay open');
-  assert.equal(terminals[0].options.theme?.background, '#262624');
+  assert.equal(terminals[0].options.theme?.background, '#151515');
   assert.equal(terminals[0].options.minimumContrastRatio, 1);
 
   act(() => {
@@ -233,7 +233,7 @@ test('toggling the theme repaints the open terminal without rebuilding it or clo
   });
 
   assert.equal(terminals.length, 1);
-  assert.equal(terminals[0].options.theme?.background, '#faf9f5');
+  assert.equal(terminals[0].options.theme?.background, '#fcfcfb');
   assert.equal(terminals[0].options.minimumContrastRatio, 4.5);
 });
 

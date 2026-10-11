@@ -12,8 +12,8 @@ import { warmPrismDark, warmPrismLight } from '@/shared/syntaxHighlighter';
  * code block (bg-muted/50 over the background in light, gray-900 in dark).
  */
 
-const LIGHT_CODE_BACKGROUND: [number, number, number] = [245, 244, 238];
-const DARK_CODE_BACKGROUND: [number, number, number] = [38, 38, 36];
+const LIGHT_CODE_BACKGROUND: [number, number, number] = [246, 246, 245];
+const DARK_CODE_BACKGROUND: [number, number, number] = [21, 21, 21];
 
 function hslToRgb(hue: number, saturation: number, lightness: number): [number, number, number] {
   const s = saturation / 100;

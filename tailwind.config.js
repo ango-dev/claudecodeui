@@ -15,20 +15,21 @@ const clay = {
   950: '#33160c',
 };
 
-// Warm gray: off-white (50) to warm charcoal (900/950). Step 500 keeps 4.5:1 on
-// white and on gray-100; step 400 keeps 4.5:1 on gray-800 and gray-900.
+// Near-neutral gray with a faint warm cast, sampled from the reference
+// screenshots: 50-200 are light surfaces/chips, 700-950 the dark surfaces.
+// Step 500 keeps 4.5:1 on white and gray-100; step 400 keeps 4.5:1 on gray-800/900.
 const warmNeutral = {
-  50: '#faf9f5',
-  100: '#f4f2ec',
-  200: '#e8e5dc',
-  300: '#d4d0c5',
-  400: '#a29d91',
-  500: '#716d66',
-  600: '#5b5852',
-  700: '#403e3a',
-  800: '#30302e',
-  900: '#262624',
-  950: '#1c1b19',
+  50: '#f7f7f5',
+  100: '#f0f0ef',
+  200: '#e3e3e2',
+  300: '#cfcecb',
+  400: '#a3a19c',
+  500: '#6b6a65',
+  600: '#55534e',
+  700: '#373635',
+  800: '#212121',
+  900: '#151515',
+  950: '#111111',
 };
 
 /** @type {import('tailwindcss').Config} */
@@ -48,12 +49,14 @@ export default {
     },
     extend: {
       fontFamily: {
-        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', '"Helvetica Neue"', 'Arial', 'sans-serif'],
+        sans: ['Geist', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', '"Helvetica Neue"', 'Arial', 'sans-serif'],
         serif: ['"Source Serif 4"', 'Georgia', 'Cambria', '"Times New Roman"', 'serif'],
-        mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', '"Liberation Mono"', 'monospace'],
+        mono: ['"Geist Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', '"Liberation Mono"', 'monospace'],
       },
       colors: {
         blue: clay,
+        // Named alias for places that mean the brand clay itself (e.g. the logo tile).
+        clay,
         gray: warmNeutral,
         slate: warmNeutral,
         zinc: warmNeutral,
