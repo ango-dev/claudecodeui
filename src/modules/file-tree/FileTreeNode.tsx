@@ -169,7 +169,7 @@ export default function FileTreeNode({
       className={cn(
         'absolute right-1 top-1/2 -translate-y-1/2 rounded p-1',
         'bg-background/80 text-muted-foreground opacity-0 transition-opacity',
-        'group-hover:opacity-100 focus-visible:opacity-100 hover:bg-accent hover:text-foreground',
+        'group-hover:opacity-100 touch:opacity-100 focus-visible:opacity-100 hover:bg-accent hover:text-foreground',
       )}
     >
       <Upload className="h-3.5 w-3.5" />

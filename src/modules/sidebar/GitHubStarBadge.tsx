@@ -40,7 +40,7 @@ export default function GitHubStarBadge() {
           e.stopPropagation();
           dismiss();
         }}
-        className="absolute -right-1.5 -top-1.5 hidden h-4 w-4 items-center justify-center rounded-full border border-border/50 bg-muted text-muted-foreground transition-colors hover:text-foreground group-hover/star:flex"
+        className="absolute -right-1.5 -top-1.5 hidden h-4 w-4 items-center justify-center rounded-full border border-border/50 bg-muted text-muted-foreground transition-colors hover:text-foreground group-hover/star:flex touch:flex"
         aria-label="Dismiss"
       >
         <X className="h-2.5 w-2.5" />

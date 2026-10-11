@@ -194,8 +194,8 @@
     overflow: hidden;
   }
 
-  /* Adjust fixed inset positioning in PWA mode. (The workspace shell positions
-     itself inline from --shell-top-inset; see useVisualViewportKeyboardOffset.) */
+  /* Room for the iOS status bar in home-screen apps. The workspace columns run
+     up behind it and start their content this far down. */
   body.pwa-mode {
     --shell-top-inset: var(--header-total-padding);
   }
@@ -356,9 +356,9 @@
     color-scheme: dark;
   }
 
-  /* Scrollbars are the browser's own thin scrollbar, as in Claude Code: a gray
-     thumb on a transparent track. Desktop only: touch screens keep their native
-     overlay indicator, which iPad Safari otherwise swaps for a styled bar. */
+  /* Scrollbars match Claude Code's: the browser's standard scrollbar (arrows and
+     all) with a gray thumb on a transparent track. Desktop only: touch screens
+     keep their native overlay indicator, which iPad Safari otherwise restyles. */
   @media (hover: hover) and (pointer: fine) {
     :root {
       scrollbar-color: #b5b3ad transparent;
@@ -366,10 +366,6 @@
 
     .dark {
       scrollbar-color: #5c5c5a transparent;
-    }
-
-    * {
-      scrollbar-width: thin;
     }
 
     .scrollbar-thin {
@@ -609,13 +605,27 @@
   }
 
   .chat-composer-dock {
+    --composer-bottom-gap: 0.5rem;
     right: var(--chat-scrollbar-width, 0px);
     padding-top: 1.5rem;
-    /* Clears the iPhone/iPad home indicator; 0 everywhere else. */
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    /* The usual gap under the prompt box, or, on an iPhone/iPad, just enough to
+       clear the home indicator rather than the indicator plus the gap. */
+    padding-bottom: max(var(--composer-bottom-gap), calc(env(safe-area-inset-bottom, 0px) + 4px));
     background: linear-gradient(to top, hsl(var(--background)) calc(100% - 1.5rem), hsl(var(--background) / 0));
     /* The faded strip must not block clicks on the messages behind it. */
     pointer-events: none;
+  }
+
+  @media (min-width: 640px) {
+    .chat-composer-dock {
+      --composer-bottom-gap: 1rem;
+    }
+  }
+
+  @media (min-width: 768px) {
+    .chat-composer-dock {
+      --composer-bottom-gap: 1.5rem;
+    }
   }
 
   .chat-composer-dock > * {

@@ -413,8 +413,9 @@ function SidebarProjectItem({
             // Centred by flex rather than top-1/2 plus a transform, which iPad
             // Safari sometimes misplaced inside this sticky header.
             className="absolute inset-y-0 right-1 z-20 items-center"
-            // Always shown, beside the session count, on every device.
-            triggerClassName="h-6 w-6 text-muted-foreground hover:bg-muted"
+            // Beside the session count, which stays put: revealed on hover, focus
+            // or while open, and always shown on touch screens, which cannot hover.
+            triggerClassName="h-6 w-6 text-muted-foreground opacity-0 hover:bg-muted hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100 aria-expanded:opacity-100 touch:opacity-100"
             menuClassName="w-[220px] rounded-xl p-1.5 shadow-xl"
             items={[
               {

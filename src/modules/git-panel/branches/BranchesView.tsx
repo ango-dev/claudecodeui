@@ -84,7 +84,7 @@ function BranchRow({ name, isCurrent, isRemote, aheadCount, behindCount, isMobil
       </div>
 
       {/* Actions */}
-      <div className={`flex shrink-0 items-center gap-1 ${isCurrent ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
+      <div className={`flex shrink-0 items-center gap-1 ${isCurrent ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 touch:opacity-100'} transition-opacity`}>
         {isCurrent ? (
           <Check className="h-4 w-4 text-primary" />
         ) : !isRemote ? (

@@ -468,7 +468,7 @@ function SidebarSessionItem({
                   <span
                     className={cn(
                       'ml-auto flex-shrink-0 transition-opacity duration-200',
-                      isEditing ? 'opacity-0' : !isSelecting && 'group-hover:opacity-0',
+                      isEditing && 'opacity-0',
                     )}
                   >
                     <Tooltip content={t('tooltips.processingSessionIndicator', 'Processing session')} position="top">
@@ -480,10 +480,10 @@ function SidebarSessionItem({
                 ) : compactSessionAge && (
                   <span
                     className={cn(
+                      // Stays visible on hover, like a project's session count; the
+                      // "⋯" button appears beside it.
                       'ml-auto flex-shrink-0 text-[11px] text-muted-foreground transition-opacity duration-200',
-                      isEditing ? 'opacity-0' : !isSelecting && 'group-hover:opacity-0',
-                      // On touch screens the open session shows its "⋯" here instead.
-                      isSelected && !isSelecting && 'touch:opacity-0',
+                      isEditing && 'opacity-0',
                     )}
                   >
                     {compactSessionAge}

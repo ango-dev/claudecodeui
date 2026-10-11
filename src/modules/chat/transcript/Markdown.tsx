@@ -129,7 +129,7 @@ const CodeBlock = ({ node: _node, className, children, forceBlock, ...props }: C
           }
           className={`rounded-md p-1 transition-opacity focus-visible:opacity-100 ${copied
             ? 'text-green-600 opacity-100 dark:text-green-500'
-            : 'text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100'
+            : 'text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100 touch:opacity-100'
             }`}
           title={copied ? t('codeBlock.copied') : t('codeBlock.copyCode')}
           aria-label={copied ? t('codeBlock.copied') : t('codeBlock.copyCode')}

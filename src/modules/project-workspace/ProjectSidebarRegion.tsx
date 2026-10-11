@@ -119,8 +119,9 @@ function ProjectSidebarRegion() {
   if (!isDrawer) {
     return (
       <div
-        className="relative h-full flex-shrink-0 border-r border-border"
-        style={isSidebarResizable ? { width: sidebarWidth } : undefined}
+        className="relative h-full flex-shrink-0 border-r border-border bg-sidebar"
+        // Behind the iOS status bar the sidebar's colour shows; its content starts below it.
+        style={{ paddingTop: 'var(--shell-top-inset, 0px)', ...(isSidebarResizable ? { width: sidebarWidth } : {}) }}
       >
         <Sidebar {...sidebarSharedProps} />
         {isSidebarResizable && (

@@ -24,15 +24,17 @@ function ProjectWorkspaceShell({
       // while ordinary page content still draws down to the screen's edge.
       style={{
         position: 'absolute',
-        top: 'calc(var(--app-offset-top, 0px) + var(--shell-top-inset, 0px))',
+        top: 'var(--app-offset-top, 0px)',
         bottom: 'auto',
-        height: 'calc(var(--app-height, 100%) - var(--shell-top-inset, 0px))',
+        height: 'var(--app-height, 100%)',
       }}
     >
       <ProjectEffects navigate={navigate} />
       <ProjectSidebarRegion />
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      {/* The columns run up behind the iOS status bar and start their content
+          below it (--shell-top-inset), so its band shows the app, not a gap. */}
+      <div className="flex min-w-0 flex-1 flex-col" style={{ paddingTop: 'var(--shell-top-inset, 0px)' }}>
         <ProjectMainRegion
           isMobile={isMobile}
           ws={ws}
