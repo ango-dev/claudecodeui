@@ -55,8 +55,13 @@ export default {
       },
       colors: {
         blue: clay,
-        // Named alias for places that mean the brand clay itself (e.g. the logo tile).
         clay,
+        // Logo tile colors: the orange and off-white of the Claude mark used
+        // elsewhere in the app (ClaudeLogo), for every CloudCLI logo surface.
+        brand: {
+          DEFAULT: '#d77655',
+          foreground: '#fcf2ee',
+        },
         gray: warmNeutral,
         slate: warmNeutral,
         zinc: warmNeutral,

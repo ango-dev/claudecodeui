@@ -15,7 +15,7 @@ export default function AuthLoadingScreen() {
 
       <div className="relative text-center" role="status" aria-live="polite">
         <div className="mb-5 flex justify-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-clay-500 shadow-lg shadow-clay-500/25 ring-1 ring-inset ring-white/20">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand shadow-lg shadow-brand/25 ring-1 ring-inset ring-white/20">
             <img src="/logo.svg" alt="CloudCLI" className="h-9 w-9" />
           </div>
         </div>
