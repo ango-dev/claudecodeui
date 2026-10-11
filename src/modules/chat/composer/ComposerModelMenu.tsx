@@ -230,6 +230,9 @@ function EffortPicker({
     : t('composer.effortDefault', { defaultValue: 'Default' });
   const currentLabel = isDefault ? defaultLabel : effortName(effort);
   const ariaLabel = t('composer.effortMenu', { defaultValue: 'Select effort' });
+  const activeIndex = Math.max(0, effortOptions.findIndex((option) => option.value === activeEffort));
+  const defaultIndex = effortOptions.findIndex((option) => option.value === defaultEffort);
+  const stopPercent = (index: number) => (effortOptions.length > 1 ? (index / (effortOptions.length - 1)) * 100 : 50);
 
   if (effortOptions.length === 0) {
     return null;
@@ -267,10 +270,28 @@ function EffortPicker({
             <div
               role="radiogroup"
               aria-label={ariaLabel}
-              className="mt-1.5 flex h-8 items-center rounded-full bg-muted px-1"
+              onKeyDown={(event) => {
+                // Arrow keys move along the levels, as on a native slider.
+                const step = event.key === 'ArrowRight' || event.key === 'ArrowUp' ? 1
+                  : event.key === 'ArrowLeft' || event.key === 'ArrowDown' ? -1 : 0;
+                if (step === 0) {
+                  return;
+                }
+                event.preventDefault();
+                const next = effortOptions[Math.min(effortOptions.length - 1, Math.max(0, activeIndex + step))];
+                if (next) {
+                  onSelectEffort(next.value);
+                }
+              }}
+              className="relative mx-2.5 mt-2 h-8"
             >
-              {effortOptions.map((option) => {
-                const isActive = option.value === activeEffort;
+              <div className="absolute inset-x-0 top-1/2 h-2 -translate-y-1/2 rounded-full bg-foreground/15" />
+              <div
+                className="absolute left-0 top-1/2 h-2 -translate-y-1/2 rounded-full bg-[#4176ce] transition-[width] duration-150"
+                style={{ width: `${stopPercent(activeIndex)}%` }}
+              />
+              {effortOptions.map((option, index) => {
+                const isActive = index === activeIndex;
                 return (
                   <button
                     key={option.value}
@@ -279,25 +300,35 @@ function EffortPicker({
                     aria-checked={!isDefault && option.value === effort}
                     aria-label={effortName(option.value)}
                     title={option.description || effortName(option.value)}
+                    tabIndex={isActive ? 0 : -1}
                     onClick={() => onSelectEffort(option.value)}
-                    className="group flex h-full flex-1 items-center justify-center focus-visible:outline-none"
+                    className="group absolute top-1/2 flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center focus-visible:outline-none"
+                    style={{ left: `${stopPercent(index)}%` }}
                   >
                     {isActive ? (
-                      <span className="h-6 w-4 rounded-full bg-background shadow ring-1 ring-border group-focus-visible:ring-2 group-focus-visible:ring-ring" />
+                      <span className="h-5 w-5 rounded-full border-2 border-[#4176ce] bg-white shadow-md group-focus-visible:ring-2 group-focus-visible:ring-ring" />
                     ) : (
-                      <span className="h-1 w-1 rounded-full bg-muted-foreground/50 transition-transform group-hover:scale-150" />
+                      <span
+                        className={cn(
+                          'h-1.5 w-1.5 rounded-full transition-transform group-hover:scale-150',
+                          index < activeIndex ? 'bg-white/80' : 'bg-foreground/40',
+                        )}
+                      />
                     )}
                   </button>
                 );
               })}
             </div>
             {/* "Recommended" sits under the model's default level. */}
-            <div className="mt-1 flex text-[11px] text-muted-foreground">
-              {effortOptions.map((option) => (
-                <span key={option.value} className="flex-1 whitespace-nowrap text-center">
-                  {option.value === defaultEffort ? t('composer.effortRecommended', { defaultValue: 'Recommended' }) : ''}
+            <div className="relative mx-2.5 mt-1 h-4 text-[11px] text-muted-foreground">
+              {defaultIndex >= 0 && (
+                <span
+                  className="absolute -translate-x-1/2 whitespace-nowrap"
+                  style={{ left: `${stopPercent(defaultIndex)}%` }}
+                >
+                  {t('composer.effortRecommended', { defaultValue: 'Recommended' })}
                 </span>
-              ))}
+              )}
             </div>
           </div>
           <ComposerMenuSeparator />

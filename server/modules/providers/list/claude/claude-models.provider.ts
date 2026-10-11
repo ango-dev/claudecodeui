@@ -206,11 +206,46 @@ const buildEffort = (levels: string[]): ProviderModelOption['effort'] => {
   };
 };
 
+/** "claude-opus-4-8" reads "Opus 4.8"; anything else is returned as is. */
+const readableClaudeModelName = (model: string): string => {
+  const match = /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:\b|$)/.exec(model);
+  if (!match) {
+    return model;
+  }
+  const [, family, major, minor] = match;
+  return `${family.charAt(0).toUpperCase()}${family.slice(1)} ${minor ? `${major}.${minor}` : major}`;
+};
+
+/** A model id without its `[1m]` context suffix, so variants of one model compare equal. */
+const baseModelId = (model: string): string => model.replace(/\[1m\]$/i, '');
+
+type ClaudeCodeModel = ModelInfo & { resolvedModel?: string };
+
 /**
- * Turns Claude Code's model list into this app's catalog. Claude Code
- * describes each alias as "Opus 5.5 · Best for everyday, complex tasks": the
- * part before the dot names the model the alias resolves to, so Default reads
- * "Default (Sonnet 5.5)" and the rest read as their model.
+ * Splits a Claude Code model entry into the name a person picks it by and a
+ * short summary. Claude Code versions differ: some describe an alias as
+ * "Opus 5.5 · Best for everyday, complex tasks", others give the name as
+ * `displayName` and only the summary as `description`.
+ */
+const describeClaudeCodeModel = (model: ClaudeCodeModel): { name: string; summary?: string } => {
+  const description = model.description?.trim() ?? '';
+  const separator = description.indexOf(' · ');
+  if (separator > 0) {
+    return { name: description.slice(0, separator).trim(), summary: description.slice(separator + 3).trim() };
+  }
+  // "Default (recommended)" and bare aliases ("Opus") say less than the model they run.
+  const resolved = model.resolvedModel ? readableClaudeModelName(baseModelId(model.resolvedModel)) : null;
+  const displayName = model.displayName?.trim() ?? '';
+  const isGenericName = !displayName || /^default\b/i.test(displayName) || !/\d/.test(displayName);
+  const name = isGenericName ? (resolved ?? (displayName || model.value)) : displayName;
+  return { name, summary: description || undefined };
+};
+
+/**
+ * Turns Claude Code's model list into this app's catalog, laid out like
+ * Claude Code's menu: Default and the current aliases (one entry per model
+ * they run), then every other model under "More models", earlier models this
+ * app knows of included. Default says what it runs ("Default (Opus 5.5)").
  * Exported for tests.
  */
 export function buildClaudeModelsDefinition(models: ModelInfo[]): ProviderModelsDefinition {
@@ -218,37 +253,71 @@ export function buildClaudeModelsDefinition(models: ModelInfo[]): ProviderModels
     const index = PRIMARY_MODEL_ORDER.indexOf(value);
     return index === -1 ? PRIMARY_MODEL_ORDER.length : index;
   };
-  const primary = [...models]
-    .sort((first, second) => rank(first.value) - rank(second.value))
-    .map((model): ProviderModelOption => {
-      const [modelName, ...summary] = (model.description ?? '').split(' · ');
-      const name = modelName?.trim() || model.displayName;
-      const resolvesTo = (model as ModelInfo & { resolvedModel?: string }).resolvedModel;
-      return {
-        value: model.value,
-        label: model.value === 'default' ? `Default (${name})` : name,
-        ...(resolvesTo ? { resolvesTo } : {}),
-        description: summary.join(' · ').trim() || model.description,
-        effort: model.supportsEffort ? buildEffort(model.supportedEffortLevels ?? []) : undefined,
-      };
-    });
+  const entries = (models as ClaudeCodeModel[]).map((model) => ({
+    model,
+    ...describeClaudeCodeModel(model),
+    // The model actually run: an alias's resolved id, or the id itself.
+    runs: baseModelId(model.resolvedModel ?? model.value),
+  }));
+  const toOption = (entry: (typeof entries)[number], group?: 'more'): ProviderModelOption => ({
+    value: entry.model.value,
+    label: entry.model.value === 'default' ? `Default (${entry.name})` : entry.name,
+    resolvesTo: entry.model.resolvedModel ?? entry.model.value,
+    ...(entry.summary ? { description: entry.summary } : {}),
+    ...(group ? { group } : {}),
+    effort: entry.model.supportsEffort ? buildEffort(entry.model.supportedEffortLevels ?? []) : undefined,
+  });
 
-  // An earlier model that an alias already resolves to would appear twice.
-  const resolvedIds = new Set(
-    models.map((model) => (model as ModelInfo & { resolvedModel?: string }).resolvedModel).filter(Boolean),
-  );
-  const previous = PREVIOUS_CLAUDE_MODELS
-    .filter((model) => !resolvedIds.has(model.value))
-    .map((model): ProviderModelOption => ({
-      value: model.value,
-      label: model.label,
-      group: 'more',
-      resolvesTo: model.value,
-      effort: buildEffort(model.effortLevels),
-    }));
+  // Aliases (`opus`, `sonnet[1m]`, ...) make the main list, one per model run;
+  // Default always stays, as it is what a new session uses.
+  const primary: ProviderModelOption[] = [];
+  const primaryRuns = new Set<string>();
+  const aliases = entries
+    .filter((entry) => !entry.model.value.startsWith('claude-'))
+    .sort((first, second) => rank(first.model.value) - rank(second.model.value));
+  for (const entry of aliases) {
+    if (entry.model.value !== 'default' && primaryRuns.has(entry.runs)) {
+      continue;
+    }
+    if (entry.model.value !== 'default') {
+      primaryRuns.add(entry.runs);
+    }
+    primary.push(toOption(entry));
+  }
+
+  // Everything else goes under "More models", once per model, skipping what
+  // the main list already offers: full ids Claude Code lists, then the
+  // earlier models it no longer lists but still accepts.
+  const more: ProviderModelOption[] = [];
+  const moreRuns = new Set<string>(primaryRuns);
+  const fullIds = entries.filter((entry) => entry.model.value.startsWith('claude-'));
+  for (const entry of fullIds) {
+    if (!moreRuns.has(entry.runs)) {
+      moreRuns.add(entry.runs);
+      more.push(toOption(entry, 'more'));
+    }
+  }
+  for (const model of PREVIOUS_CLAUDE_MODELS) {
+    if (!moreRuns.has(model.value)) {
+      moreRuns.add(model.value);
+      more.push({
+        value: model.value,
+        label: model.label,
+        group: 'more',
+        resolvesTo: model.value,
+        effort: buildEffort(model.effortLevels),
+      });
+    }
+  }
+
+  // Claude Code's order for the models this app knows; a newer one it does
+  // not know yet goes first.
+  const knownOrder = PREVIOUS_CLAUDE_MODELS.map((model) => model.value);
+  const orderOf = (option: ProviderModelOption) => knownOrder.indexOf(baseModelId(option.resolvesTo ?? option.value));
+  more.sort((first, second) => orderOf(first) - orderOf(second));
 
   return {
-    OPTIONS: [...primary, ...previous],
+    OPTIONS: [...primary, ...more],
     DEFAULT: primary.some((option) => option.value === 'default') ? 'default' : primary[0]?.value ?? 'default',
   };
 }
