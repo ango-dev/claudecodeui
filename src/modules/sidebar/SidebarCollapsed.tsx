@@ -31,7 +31,7 @@ export default function SidebarCollapsed({
   t,
 }: SidebarCollapsedProps) {
   return (
-    <div className="flex h-full w-12 flex-col items-center gap-1 bg-background/80 py-3 backdrop-blur-sm">
+    <div className="flex h-full w-12 flex-col items-center gap-1 bg-sidebar py-3">
       {/* Expand button with brand logo */}
       <button
         onClick={onExpand}
@@ -42,66 +42,70 @@ export default function SidebarCollapsed({
         <PanelLeftOpen className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-foreground" />
       </button>
 
-      <div className="nav-divider my-1 w-6" />
+      {/* Footer actions sit at the bottom in the same order as the expanded
+          sidebar's footer: status indicators, then Report Issue, Discord, Settings. */}
+      <div className="mt-auto flex flex-col items-center gap-1">
+        {/* Restart-required indicator */}
+        {restartRequired && (
+          <div
+            className="relative flex h-8 w-8 items-center justify-center rounded-lg"
+            aria-label={t('version.restartRequired')}
+            title={t('version.restartRequired')}
+          >
+            <AlertTriangle className="h-4 w-4 text-amber-500" />
+            <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
+          </div>
+        )}
 
-      {/* Settings */}
-      <button
-        onClick={onShowSettings}
-        className="group flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-accent/80"
-        aria-label={t('actions.settings')}
-        title={t('actions.settings')}
-      >
-        <Settings className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-foreground" />
-      </button>
+        {/* Update indicator */}
+        {updateAvailable && (
+          <button
+            onClick={onShowVersionModal}
+            className="relative flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-accent/80"
+            aria-label={t('common:versionUpdate.ariaLabels.updateAvailable')}
+            title={t('common:versionUpdate.ariaLabels.updateAvailable')}
+          >
+            <Sparkles className="h-4 w-4 text-blue-500" />
+            <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" />
+          </button>
+        )}
 
-      {/* Report Issue */}
-      <a
-        href={GITHUB_ISSUES_URL}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="group flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-accent/80"
-        aria-label={t('actions.reportIssue')}
-        title={t('actions.reportIssue')}
-      >
-        <Bug className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-foreground" />
-      </a>
+        <div className="nav-divider my-1 w-6" />
 
-      {/* Discord */}
-      <a
-        href={DISCORD_INVITE_URL}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="group flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-accent/80"
-        aria-label={t('actions.joinCommunity')}
-        title={t('actions.joinCommunity')}
-      >
-        <DiscordIcon className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-foreground" />
-      </a>
-
-      {/* Restart-required indicator */}
-      {restartRequired && (
-        <div
-          className="relative flex h-8 w-8 items-center justify-center rounded-lg"
-          aria-label={t('version.restartRequired')}
-          title={t('version.restartRequired')}
+        {/* Report Issue */}
+        <a
+          href={GITHUB_ISSUES_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="group flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-accent/80"
+          aria-label={t('actions.reportIssue')}
+          title={t('actions.reportIssue')}
         >
-          <AlertTriangle className="h-4 w-4 text-amber-500" />
-          <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
-        </div>
-      )}
+          <Bug className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-foreground" />
+        </a>
 
-      {/* Update indicator */}
-      {updateAvailable && (
+        {/* Discord */}
+        <a
+          href={DISCORD_INVITE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="group flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-accent/80"
+          aria-label={t('actions.joinCommunity')}
+          title={t('actions.joinCommunity')}
+        >
+          <DiscordIcon className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-foreground" />
+        </a>
+
+        {/* Settings */}
         <button
-          onClick={onShowVersionModal}
-          className="relative flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-accent/80"
-          aria-label={t('common:versionUpdate.ariaLabels.updateAvailable')}
-          title={t('common:versionUpdate.ariaLabels.updateAvailable')}
+          onClick={onShowSettings}
+          className="group flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-accent/80"
+          aria-label={t('actions.settings')}
+          title={t('actions.settings')}
         >
-          <Sparkles className="h-4 w-4 text-blue-500" />
-          <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" />
+          <Settings className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-foreground" />
         </button>
-      )}
+      </div>
     </div>
   );
 }
