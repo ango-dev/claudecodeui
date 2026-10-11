@@ -303,7 +303,8 @@
   /* Subtle sidebar divider — uses theme tokens */
   .nav-divider {
     height: 1px;
-    background: linear-gradient(90deg, transparent, hsl(var(--nav-divider-color)) 20%, hsl(var(--nav-divider-color)) 80%, transparent);
+    /* Solid, edge to edge: the faded ends read as a cut-off line. */
+    background: hsl(var(--border));
   }
 
   /* Nav search input surface — uses theme tokens */
@@ -376,29 +377,41 @@
     background-color: hsl(var(--muted-foreground) / 0.7);
   }
   
-  /* Global scrollbar styles for main content areas */
-  .dark::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+  /* Scrollbars: one thin, rounded, trackless style everywhere, without arrow
+     buttons. Chrome ignores the ::-webkit-scrollbar rules on any element that
+     has scrollbar-color/scrollbar-width (and scrollbar-color is inherited), so
+     the standard properties are only set where those pseudo-elements are
+     unsupported (Firefox). */
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
   }
-  
-  .dark::-webkit-scrollbar-track {
-    background: hsl(var(--muted) / 0.5);
+
+  *::-webkit-scrollbar-track,
+  *::-webkit-scrollbar-corner {
+    background: transparent;
   }
-  
-  .dark::-webkit-scrollbar-thumb {
-    background-color: hsl(var(--muted-foreground) / 0.4);
-    border-radius: 4px;
+
+  *::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground) / 0.35);
+    background-clip: padding-box;
+    border: 3px solid transparent;
+    border-radius: 9999px;
   }
-  
-  .dark::-webkit-scrollbar-thumb:hover {
-    background-color: hsl(var(--muted-foreground) / 0.6);
+
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground) / 0.55);
   }
-  
-  /* Firefox scrollbar styles */
-  .dark {
-    scrollbar-width: thin;
-    scrollbar-color: hsl(var(--muted-foreground) / 0.4) hsl(var(--muted) / 0.5);
+
+  *::-webkit-scrollbar-button {
+    display: none;
+  }
+
+  @supports not selector(::-webkit-scrollbar) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent;
+    }
   }
   
   /* Ensure checkbox styling is preserved */
