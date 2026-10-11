@@ -42,6 +42,8 @@ type ActionMenuProps = {
    * Pass a new object per request; requires `portal`.
    */
   openAt?: { x: number; y: number } | null;
+  /** No visible button: the menu only opens through `openAt` (a pure context menu). */
+  hideTrigger?: boolean;
 };
 
 /** Used by the mcp and sidebar modules for the "…" overflow menu on a server or session row. */
@@ -62,6 +64,7 @@ export function ActionMenu({
   header,
   onOpenChange,
   openAt,
+  hideTrigger = false,
 }: ActionMenuProps) {
   const [isOpen, setIsOpen] = React.useState(false);
   const [portalPosition, setPortalPosition] = React.useState<{ top: number; left: number } | null>(null);
@@ -259,13 +262,14 @@ export function ActionMenu({
   );
 
   return (
-    <div ref={rootRef} className={cn('relative inline-flex', className)}>
+    // A pure context menu takes no room: its menu is portalled out anyway.
+    <div ref={rootRef} className={cn('relative inline-flex', className, hideTrigger && portal && 'hidden')}>
       <Button
         ref={triggerRef}
         type="button"
         variant={variant}
         size={size}
-        className={triggerClassName}
+        className={cn(triggerClassName, hideTrigger && 'hidden')}
         disabled={disabled}
         aria-label={ariaLabel || label}
         aria-haspopup="menu"

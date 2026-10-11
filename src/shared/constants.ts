@@ -151,28 +151,6 @@ export const MCP_SUPPORTS_WORKING_DIRECTORY: Record<McpProvider, boolean> = {
 
 // ---------------------------
 
-//----------------- QUICK SETTINGS PANEL ROWS ------------
-
-/**
- * Class list for one row in the quick settings panel. Shared so plain rows and the clickable
- * toggle row (which appends `cursor-pointer`) stay visually identical.
- */
-export const SETTING_ROW_CLASS =
-  'flex items-center justify-between p-3 rounded-lg bg-muted/60 hover:bg-accent transition-colors border border-transparent hover:border-border';
-
-// ---------------------------
-
-//----------------- QUICK SETTINGS PANEL EVENTS ------------
-
-/**
- * Window event that opens or closes the quick settings panel. Dispatched by the
- * chat composer's quick settings button and handled by the quick-settings-panel
- * module, so neither module has to import the other.
- */
-export const QUICK_SETTINGS_TOGGLE_EVENT = 'cloudcli:toggle-quick-settings';
-
-// ---------------------------
-
 //----------------- TERMINAL TIMING ------------
 
 /**

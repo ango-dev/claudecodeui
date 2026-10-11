@@ -28,6 +28,7 @@ import {
 } from '@/shared/context/SessionProtectionContext';
 import ChatMessagesPane from '@/modules/chat/transcript/ChatMessagesPane';
 import ChatComposer from '@/modules/chat/composer/ChatComposer';
+import ChatExportMenu from '@/modules/chat/transcript/ChatExportMenu';
 import CommandResultModal from '@/modules/chat/modals/CommandResultModal';
 
 type ChatInterfaceProps = {
@@ -200,7 +201,6 @@ function ChatInterface({
     selectedCommandIndex,
     resetCommandMenuState,
     handleCommandSelect,
-    handleToggleCommandMenu,
     showFileDropdown,
     filteredFiles,
     selectedFileIndex,
@@ -301,7 +301,7 @@ function ChatInterface({
     sessionStore,
   });
 
-  // Lets other modules (the quick settings Commands tab) hand text to the
+  // Lets other modules (through the command palette ops) hand text to the
   // composer: append it after a separating space, then focus the textarea with
   // the caret at the end once React has rendered the new value.
   const insertComposerText = useCallback((text: string) => {
@@ -537,7 +537,6 @@ function ChatInterface({
               // a live stream writing into it is not recoverable.
               onEditMessage={supportsMessageEditing && !isProcessing ? beginEditMessage : undefined}
               onForkFromMessage={supportsSessionForking ? handleForkFromMessage : undefined}
-              onLoadFullTranscript={loadFullTranscript}
             />
           </TranscriptSessionContext.Provider>
         </MarkdownWorkspaceContext.Provider>
@@ -586,7 +585,6 @@ function ChatInterface({
           onScheduleMessage={handleScheduleMessage}
           onCancelScheduledMessage={cancelScheduledMessage}
           slashCommandsCount={slashCommandsCount}
-          onToggleCommandMenu={handleToggleCommandMenu}
           hasInput={Boolean(input.trim())}
           onClearInput={handleClearInput}
           onSubmit={handleSubmit}
@@ -630,6 +628,16 @@ function ChatInterface({
           placeholder={t('input.placeholder', { provider: selectedProviderLabel })}
           isTextareaExpanded={isTextareaExpanded}
           sendByCtrlEnter={sendByCtrlEnter}
+          exportControl={(
+            <ChatExportMenu
+              messages={chatMessages}
+              sessionTitle={selectedSession?.summary || selectedSession?.title}
+              provider={provider}
+              selectedProject={selectedProject}
+              createDiff={createDiff}
+              onLoadFullTranscript={loadFullTranscript}
+            />
+          )}
         />
         </div>
       </div>

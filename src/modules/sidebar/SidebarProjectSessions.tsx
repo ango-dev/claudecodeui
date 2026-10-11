@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CheckSquare, Plus, Trash2, X } from 'lucide-react';
 import type { TFunction } from 'i18next';
 
-import { Button } from '@/shared/ui';
+import { ActionMenu, Button } from '@/shared/ui';
 import { cn } from '@/shared/utils';
 import type { LLMProvider, Project, ProjectSession, SessionWithProvider, SidebarSessionSelection } from '@/shared/types';
 import SidebarSessionItem from '@/modules/sidebar/SidebarSessionItem';
@@ -39,6 +39,8 @@ type SidebarProjectSessionsProps = {
   onToggleSessionSelected: (projectId: string, sessionId: string) => void;
   onCancelSessionSelection: () => void;
   onDeleteSelectedSessions: (sessionIds: string[]) => void;
+  /** Archives sessions at once (the menus' Archive); stable identity. */
+  onArchiveSessions?: (sessionIds: string[]) => void;
   t: TFunction;
 };
 
@@ -90,6 +92,7 @@ export default function SidebarProjectSessions({
   onToggleSessionSelected,
   onCancelSessionSelection,
   onDeleteSelectedSessions,
+  onArchiveSessions,
   t,
 }: SidebarProjectSessionsProps) {
   const isCompact = useCompactSidebar();
@@ -154,6 +157,22 @@ export default function SidebarProjectSessions({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isSelecting, onCancelSessionSelection]);
 
+  // Where a selected row was last right-clicked: opens the bulk menu (Archive N,
+  // Delete N) there, as in Claude Code. Null until the first right-click.
+  const [bulkMenuAt, setBulkMenuAt] = useState<{ x: number; y: number } | null>(null);
+  // Right-click on a row while selecting: an unticked row joins the selection
+  // first, then the menu acts on everything ticked. Stable for the memoized rows.
+  const handleBulkContextMenu = useCallback(
+    (projectId: string, sessionId: string, point: { x: number; y: number }) => {
+      const { selectedSessionIds: current } = selectionStateRef.current;
+      if (current && !current.has(sessionId)) {
+        onToggleSessionSelected(projectId, sessionId);
+      }
+      setBulkMenuAt(point);
+    },
+    [onToggleSessionSelected],
+  );
+
   if (!isExpanded) {
     return null;
   }
@@ -204,9 +223,10 @@ export default function SidebarProjectSessions({
         </Button>
       )}
 
-      {/* Desktop starts a selection with Ctrl/Cmd/Shift-click or the row menu;
-          touch layouts have no modifier keys, so they keep the Select button. */}
-      {(isSelecting || (isCompact && initialSessionsLoaded && selectableSessionIds.length > 0)) && (
+      {/* Desktop starts a selection with Ctrl/Cmd/Shift-click or the row menu and
+          acts on it through the right-click menu below; touch layouts have no
+          modifier keys or right-click, so they keep this toolbar. */}
+      {isCompact && (isSelecting || (initialSessionsLoaded && selectableSessionIds.length > 0)) && (
         <div className={cn('space-y-1', isCompact && 'px-3')}>
           {isSelecting ? (
             <>
@@ -267,6 +287,40 @@ export default function SidebarProjectSessions({
         </div>
       )}
 
+      {isSelecting && !isCompact && (
+        <ActionMenu
+          label={t('sessions.selectedActions', { defaultValue: 'Selected sessions' })}
+          hideTrigger
+          portal
+          openAt={bulkMenuAt}
+          menuClassName="w-[220px] rounded-xl p-1.5 shadow-xl"
+          items={[
+            ...(onArchiveSessions ? [{
+              key: 'archive',
+              label: `Archive ${effectiveSelectedIds.length}`,
+              disabled: effectiveSelectedIds.length === 0,
+              onSelect: () => {
+                onArchiveSessions(effectiveSelectedIds);
+                onCancelSessionSelection();
+              },
+            }] : []),
+            {
+              key: 'delete',
+              label: `Delete ${effectiveSelectedIds.length}`,
+              isDanger: true,
+              disabled: effectiveSelectedIds.length === 0,
+              onSelect: () => onDeleteSelectedSessions(effectiveSelectedIds),
+            },
+            {
+              key: 'clear',
+              label: t('sessions.clearSelectionMenu'),
+              showDividerBefore: true,
+              onSelect: onCancelSessionSelection,
+            },
+          ]}
+        />
+      )}
+
       {/* A page emptied by deleting every loaded row still has sessions behind
           it on the server, so it keeps its "Load more" instead of "No sessions". */}
       {!initialSessionsLoaded ? (
@@ -301,6 +355,8 @@ export default function SidebarProjectSessions({
               isChecked={checkedSessionIds.has(session.id)}
               onToggleSessionSelected={onToggleSessionSelected}
               onModifierSelect={handleModifierSelect}
+              onArchiveSessions={onArchiveSessions}
+              onBulkContextMenu={handleBulkContextMenu}
               t={t}
             />
           ))}

@@ -932,13 +932,10 @@ export function useSidebarController({
     setPendingDeletion({ kind: 'sessions', sessionIds });
   }, []);
 
-  const confirmDeleteSessions = useCallback(async (hardDelete = false) => {
-    if (pendingDeletion?.kind !== 'sessions') {
-      return;
-    }
-
+  // Archives (or, with hardDelete, permanently deletes) the given sessions:
+  // shared by the bulk confirmation dialog and the menus' direct Archive.
+  const removeSessions = useCallback(async (requestedSessionIds: string[], hardDelete = false) => {
     const selectionProjectId = sessionSelection?.projectId ?? null;
-    setPendingDeletion(null);
     // Leaving selection mode as soon as the dialog is accepted takes the
     // "Delete N sessions" button away while the requests are out, so the same
     // rows cannot be confirmed twice.
@@ -949,7 +946,7 @@ export function useSidebarController({
     // the rows apply), and one an earlier confirmation is still deleting is not
     // sent twice. Neither is a failure — nothing was attempted for them.
     const deletingIds = sessionIdsBeingDeletedRef.current;
-    const sessionIds = pendingDeletion.sessionIds.filter(
+    const sessionIds = requestedSessionIds.filter(
       (sessionId) =>
         !deletingIds.has(sessionId) &&
         !(activeSessions.has(sessionId) && !backgroundSessionIds.has(sessionId)),
@@ -1019,7 +1016,29 @@ export function useSidebarController({
         }),
       );
     }
-  }, [activeSessions, backgroundSessionIds, fetchArchivedSessions, onSessionDelete, pendingDeletion, recentConversations, sessionSelection, t]);
+  }, [activeSessions, backgroundSessionIds, fetchArchivedSessions, onSessionDelete, recentConversations, sessionSelection, t]);
+
+  const confirmDeleteSessions = useCallback(async (hardDelete = false) => {
+    if (pendingDeletion?.kind !== 'sessions') {
+      return;
+    }
+    const { sessionIds } = pendingDeletion;
+    setPendingDeletion(null);
+    await removeSessions(sessionIds, hardDelete);
+  }, [pendingDeletion, removeSessions]);
+
+  // Archive is reversible, so the menus' Archive acts at once instead of
+  // opening the confirmation. Read through a ref so the callback handed to the
+  // memoized rows keeps its identity while the selection changes.
+  const removeSessionsRef = useRef(removeSessions);
+  useEffect(() => {
+    removeSessionsRef.current = removeSessions;
+  }, [removeSessions]);
+  const archiveSessions = useCallback((sessionIds: string[]) => {
+    if (sessionIds.length > 0) {
+      void removeSessionsRef.current(sessionIds, false);
+    }
+  }, []);
 
   const requestProjectDelete = useCallback(
     (project: Project) => {
@@ -1290,6 +1309,7 @@ export function useSidebarController({
     cancelSessionSelection,
     showDeleteSelectedSessionsConfirmation,
     confirmDeleteSessions,
+    archiveSessions,
     requestProjectDelete,
     confirmDeleteProject,
     handleProjectSelect,

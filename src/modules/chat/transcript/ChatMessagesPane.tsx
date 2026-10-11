@@ -17,7 +17,6 @@ import MessageComponent from '@/modules/chat/transcript/MessageComponent';
 import ProviderSelectionEmptyState from '@/modules/chat/transcript/ProviderSelectionEmptyState';
 import ToolGroupContainer from '@/modules/chat/transcript/ToolGroupContainer';
 import LoadAllMessagesOverlay from '@/modules/chat/transcript/LoadAllMessagesOverlay';
-import ChatExportMenu from '@/modules/chat/transcript/ChatExportMenu';
 import { BackgroundTasksStrip } from '@/modules/chat/transcript/BackgroundTasksStrip';
 
 /**
@@ -79,8 +78,6 @@ type ChatMessagesPaneProps = {
   onEditMessage?: (message: ChatMessage) => void;
   /** Branches the conversation into a new session ending at a message. */
   onForkFromMessage?: (message: ChatMessage) => void;
-  /** Fetches the whole transcript for an export, which otherwise only sees the loaded page. */
-  onLoadFullTranscript?: () => Promise<ChatMessage[]>;
 };
 
 /**
@@ -138,7 +135,6 @@ function ChatMessagesPane({
   createDiff,
   onEditMessage,
   onForkFromMessage,
-  onLoadFullTranscript,
   onFileOpen,
   onShowSettings,
   onGrantToolPermission,
@@ -205,16 +201,6 @@ function ChatMessagesPane({
               sendMessage={sendMessage}
               onReveal={revealMessage}
               onLoadAll={loadAllMessages}
-            />
-          </div>
-          <div className="pointer-events-auto">
-            <ChatExportMenu
-              messages={chatMessages}
-              sessionTitle={selectedSession?.summary || selectedSession?.title}
-              provider={provider}
-              selectedProject={selectedProject}
-              createDiff={createDiff}
-              onLoadFullTranscript={onLoadFullTranscript}
             />
           </div>
         </div>

@@ -1,13 +1,8 @@
 
 
 import { useTranslation } from 'react-i18next';
-import { Languages } from 'lucide-react';
 
 import { languages } from '@/modules/i18n/languages';
-
-type LanguageSelectorProps = {
-  compact?: boolean;
-};
 
 /**
  * Language Selector Component
@@ -15,13 +10,9 @@ type LanguageSelectorProps = {
  * A dropdown component for selecting the application language.
  * Automatically updates the i18n language and persists it as a user preference.
  *
- * Used by the settings module (appearance tab) and the quick-settings-panel module
- * so the user can switch language from either surface.
- *
- * Props:
- * @param {boolean} compact - If true, uses compact style (default: false)
+ * Used by the settings module (appearance tab).
  */
-export default function LanguageSelector({ compact = false }: LanguageSelectorProps) {
+export default function LanguageSelector() {
   const { i18n, t } = useTranslation('settings');
 
   const handleLanguageChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
@@ -29,30 +20,6 @@ export default function LanguageSelector({ compact = false }: LanguageSelectorPr
     i18n.changeLanguage(newLanguage);
   };
 
-  // Compact style for QuickSettingsPanel
-  if (compact) {
-    return (
-      <div className="flex items-center justify-between gap-3 rounded-lg border border-transparent bg-muted/50 p-3 transition-colors hover:border-border hover:bg-accent">
-        <span className="flex min-w-0 items-center gap-2 text-sm text-foreground">
-          <Languages className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <span className="truncate">{t('account.language')}</span>
-        </span>
-        <select
-          value={i18n.language}
-          onChange={handleLanguageChange}
-          className="h-8 w-32 min-w-0 shrink rounded-md border border-input bg-card py-1 pl-2.5 pr-8 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
-        >
-          {languages.map((lang) => (
-            <option key={lang.value} value={lang.value}>
-              {lang.nativeName}
-            </option>
-          ))}
-        </select>
-      </div>
-    );
-  }
-
-  // Full style for Settings page
   return (
     <div className="flex items-center justify-between px-4 py-3.5">
       <div>

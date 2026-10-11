@@ -54,6 +54,8 @@ type SidebarProjectItemProps = {
   onToggleSessionSelected: (projectId: string, sessionId: string) => void;
   onCancelSessionSelection: () => void;
   onDeleteSelectedSessions: (sessionIds: string[]) => void;
+  /** Archives sessions at once; see SidebarProjectListProps. */
+  onArchiveSessions?: (sessionIds: string[]) => void;
   t: TFunction;
 };
 
@@ -104,6 +106,7 @@ function SidebarProjectItem({
   onToggleSessionSelected,
   onCancelSessionSelection,
   onDeleteSelectedSessions,
+  onArchiveSessions,
   t,
 }: SidebarProjectItemProps) {
   // Project identity is tracked by the DB-assigned `projectId` everywhere
@@ -414,19 +417,16 @@ function SidebarProjectItem({
               {
                 key: 'star',
                 label: isStarred ? t('tooltips.removeFromFavorites') : t('tooltips.addToFavorites'),
-                icon: Star,
                 onSelect: toggleStarProject,
               },
               {
                 key: 'rename',
-                label: t('tooltips.renameProject'),
-                icon: Edit3,
+                label: t('actions.rename', { defaultValue: 'Rename' }),
                 onSelect: () => onStartEditingProject(project),
               },
               {
                 key: 'delete',
-                label: t('tooltips.deleteProject'),
-                icon: Trash2,
+                label: t('actions.removeFromSidebar', { defaultValue: 'Remove from sidebar' }),
                 isDanger: true,
                 showDividerBefore: true,
                 onSelect: () => onDeleteProject(project),
@@ -467,6 +467,7 @@ function SidebarProjectItem({
         onToggleSessionSelected={onToggleSessionSelected}
         onCancelSessionSelection={onCancelSessionSelection}
         onDeleteSelectedSessions={onDeleteSelectedSessions}
+        onArchiveSessions={onArchiveSessions}
         t={t}
       />
     </div>

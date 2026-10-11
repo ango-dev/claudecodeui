@@ -8,7 +8,7 @@ import { readUserPreference } from '@/shared/userSettings';
  * made on one device is in effect on the next.
  */
 
-/** Toggles the user controls from Quick Settings and the Settings dialog. */
+/** Toggles the user controls from the Settings dialog. */
 export type UiPreferences = {
   showRawParameters: boolean;
   showThinking: boolean;

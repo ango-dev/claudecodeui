@@ -37,6 +37,7 @@
     "selectAll": "Select all",
     "selectAllLoaded": "Select all loaded",
     "clearSelection": "Clear",
+    "clearSelectionMenu": "Clear selection",
     "deleteSelected_one": "Delete {{count}} session",
     "deleteSelected_other": "Delete {{count}} sessions"
   },

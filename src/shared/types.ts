@@ -1,5 +1,4 @@
 import type { TFunction } from 'i18next';
-import type { CSSProperties } from 'react';
 import type { NavigateFunction } from 'react-router-dom';
 
 //----------------- LLM PROVIDER MODEL CATALOG ------------
@@ -1335,24 +1334,15 @@ export type ProviderAuthStatusMap = Record<LLMProvider, ProviderAuthStatus>;
 
 // ---------------------------
 
-//----------------- QUICK SETTINGS PANEL ------------
+//----------------- UI PREFERENCE TOGGLES ------------
 
-/** Identifier of a boolean user preference exposed in the quick settings panel; use it as the key when reading or writing one preference. */
+/** Identifier of a boolean user preference shown as a toggle in Settings; use it as the key when reading or writing one preference. */
 export type PreferenceToggleKey =
   | 'showRawParameters'
   | 'showThinking'
   | 'sendByCtrlEnter'
   | 'sidebarAsDrawer'
   | 'voiceEnabled';
-
-/** The full set of quick settings booleans keyed by PreferenceToggleKey, held together so the panel can read every toggle from one object. */
-export type QuickSettingsPreferences = Record<PreferenceToggleKey, boolean>;
-
-/** Which content area the quick settings panel is showing: 'settings' (preference toggles) or 'commands' (slash-command list); persisted with the pin state and used by the tab bar and the panel view. */
-export type QuickSettingsTab = 'settings' | 'commands';
-
-/** Inline style for the quick settings drag handle, produced by the drag hook from the stored handle position and applied by the handle component. */
-export type QuickSettingsHandleStyle = CSSProperties;
 
 // ---------------------------
 
@@ -1502,6 +1492,8 @@ export type SessionRowActions = {
   onCancelEditingSession: () => void;
   onSaveEditingSession: (projectId: string, sessionId: string, summary: string, provider: LLMProvider) => void;
   onDeleteSession: (sessionId: string, sessionTitle: string) => void;
+  /** Archives the given sessions at once (reversible, so no confirmation). Stable identity. */
+  onArchiveSessions?: (sessionIds: string[]) => void;
   /** Branches a session into an independent one. Rows hide it for providers that cannot. */
   onForkSession?: (session: SessionWithProvider) => void;
 };

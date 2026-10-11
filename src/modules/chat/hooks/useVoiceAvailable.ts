@@ -4,8 +4,8 @@ import { api } from '@/shared/api';
 import { useUiPreferences } from '@/shared/context/UiPreferencesContext';
 import { readVoiceConfig, VOICE_CONFIG_SYNC_EVENT } from '@/shared/voiceConfig';
 
-// Voice UI is gated on the `voiceEnabled` UI preference (toggled in Quick Settings /
-// the Settings modal) and a configured voice backend.
+// Voice UI is gated on the `voiceEnabled` UI preference (toggled in
+// the Settings dialog's Voice tab) and a configured voice backend.
 let healthRequest: Promise<boolean> | null = null;
 
 function checkVoiceHealth(): Promise<boolean> {

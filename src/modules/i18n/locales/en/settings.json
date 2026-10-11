@@ -208,6 +208,12 @@
         "label": "Font Size",
         "description": "Editor font size in pixels"
       }
+    },
+    "layout": {
+      "title": "Layout"
+    },
+    "chat": {
+      "title": "Chat"
     }
   },
   "mcpForm": {

@@ -1,4 +1,5 @@
 import { Loader2, MessageSquare } from 'lucide-react';
+import { useState } from 'react';
 import type { MouseEvent } from 'react';
 import type { TFunction } from 'i18next';
 
@@ -64,6 +65,8 @@ export default function SidebarRecentConversations({
   onRetry,
   t,
 }: SidebarRecentConversationsProps) {
+  // The row last right-clicked and where: its options menu opens at that point.
+  const [contextMenu, setContextMenu] = useState<{ sessionId: string; point: { x: number; y: number } } | null>(null);
   if (isLoading && conversations.length === 0) {
     return <RecentConversationSkeleton />;
   }
@@ -155,20 +158,20 @@ export default function SidebarRecentConversations({
               <a
                 href={`/session/${conversation.sessionId}`}
                 onClick={handleClick}
+                onContextMenu={(event) => {
+                  if (sessionRename !== null) return;
+                  event.preventDefault();
+                  setContextMenu({ sessionId: conversation.sessionId, point: { x: event.clientX, y: event.clientY } });
+                }}
                 data-testid="recent-conversation-row"
                 className={cn(
                   'flex min-w-0 items-center gap-2 rounded-lg px-2 py-2 pr-11 text-left transition-colors',
                   isSelected
-                    ? 'bg-primary/10 text-foreground'
+                    ? 'bg-accent text-foreground'
                     : 'text-foreground hover:bg-accent/60',
                 )}
               >
-                <span className={cn(
-                  'flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md',
-                  isSelected ? 'bg-primary/10' : 'bg-muted/60',
-                )}>
-                  <LLMProviderLogo provider={conversation.provider} className="h-3.5 w-3.5" />
-                </span>
+                <LLMProviderLogo provider={conversation.provider} className="h-3.5 w-3.5 flex-shrink-0" />
 
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13px] font-normal leading-4">
@@ -222,6 +225,10 @@ export default function SidebarRecentConversations({
                 onCancelEditingSession={sessionActions.onCancelEditingSession}
                 onSaveEditingSession={sessionActions.onSaveEditingSession}
                 onDeleteSession={sessionActions.onDeleteSession}
+                onArchive={sessionActions.onArchiveSessions
+                  ? () => sessionActions.onArchiveSessions?.([conversation.sessionId])
+                  : undefined}
+                openAt={contextMenu?.sessionId === conversation.sessionId ? contextMenu.point : null}
                 // The fork path reads only the id, provider and owning project,
                 // which is all a recents row knows about the session.
                 onFork={sessionActions.onForkSession

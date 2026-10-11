@@ -1,7 +1,7 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
-import type { Project, ProjectSession, QuickSettingsTab, SlashCommand } from '@/shared/types';
+import type { Project, ProjectSession, SlashCommand } from '@/shared/types';
 
 //----------------- DEPLOYMENT MODE ------------
 
@@ -85,6 +85,34 @@ export async function copyTextToClipboard(text: string): Promise<boolean> {
 
   return copied;
 }
+
+/**
+ * Turns a markdown message into readable plain text (code kept, markup removed).
+ * Used by chat's copy button and the message right-click menu for "Copy message".
+ */
+export const convertMarkdownToPlainText = (markdown: string): string => {
+  let plainText = markdown.replace(/\r\n/g, '\n');
+  const codeBlocks: string[] = [];
+  plainText = plainText.replace(/```[\w-]*\n([\s\S]*?)```/g, (_match, code: string) => {
+    const placeholder = `@@CODEBLOCK${codeBlocks.length}@@`;
+    codeBlocks.push(code.replace(/\n$/, ''));
+    return placeholder;
+  });
+  plainText = plainText.replace(/`([^`]+)`/g, '$1');
+  plainText = plainText.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '$1');
+  plainText = plainText.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1');
+  plainText = plainText.replace(/^>\s?/gm, '');
+  plainText = plainText.replace(/^#{1,6}\s+/gm, '');
+  plainText = plainText.replace(/^[-*+]\s+/gm, '');
+  plainText = plainText.replace(/^\d+\.\s+/gm, '');
+  plainText = plainText.replace(/(\*\*|__)(.*?)\1/g, '$2');
+  plainText = plainText.replace(/(\*|_)(.*?)\1/g, '$2');
+  plainText = plainText.replace(/~~(.*?)~~/g, '$1');
+  plainText = plainText.replace(/<\/?[^>]+(>|$)/g, '');
+  plainText = plainText.replace(/\n{3,}/g, '\n\n');
+  plainText = plainText.replace(/@@CODEBLOCK(\d+)@@/g, (_match, index: string) => codeBlocks[Number(index)] ?? '');
+  return plainText.trim();
+};
 
 // ---------------------------
 
@@ -243,10 +271,3 @@ export const isSkillCommand = (command: SlashCommand): boolean =>
 
 // ---------------------------
 
-//----------------- QUICK SETTINGS PANEL ------------
-
-/** DOM id of a quick settings tab button; pairs with `getQuickSettingsTabPanelId` for aria-controls / aria-labelledby. */
-export const getQuickSettingsTabId = (tab: QuickSettingsTab): string => `quick-settings-tab-${tab}`;
-
-/** DOM id of the tabpanel a quick settings tab controls; pairs with `getQuickSettingsTabId`. */
-export const getQuickSettingsTabPanelId = (tab: QuickSettingsTab): string => `quick-settings-tabpanel-${tab}`;

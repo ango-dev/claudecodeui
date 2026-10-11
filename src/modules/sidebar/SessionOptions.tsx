@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Check, CheckSquare, Edit2, GitBranch, MoreHorizontal, Trash2, X } from 'lucide-react';
+import { Check, MoreHorizontal, X } from 'lucide-react';
 import type { TFunction } from 'i18next';
 
 import { ActionMenu } from '@/shared/ui';
@@ -33,6 +33,8 @@ type SessionOptionsProps = {
   canDelete?: boolean;
   /** Starts a bulk selection with this session; absent where the row has no bulk actions. */
   onSelectForBulk?: () => void;
+  /** Archives the session at once (reversible); absent where the row cannot archive. */
+  onArchive?: () => void;
   /** Opens the options menu at a pointer position (the row's right-click). */
   openAt?: { x: number; y: number } | null;
   className?: string;
@@ -64,13 +66,14 @@ export default function SessionOptions({
   onFork,
   canDelete = true,
   onSelectForBulk,
+  onArchive,
   openAt,
   className,
   t,
 }: SessionOptionsProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const providerLabel = PROVIDER_LABELS[provider];
-  const { copyState, copyLabel, setOptionsOpen, handleCopyAction, isCopyPending, CopyStateIcon } =
+  const { copyState, copyLabel, setOptionsOpen, handleCopyAction, isCopyPending } =
     useProviderSessionIdCopy(sessionId, providerLabel);
 
   // Read from the backend capability matrix rather than branching on the
@@ -158,50 +161,43 @@ export default function SessionOptions({
           openAt={openAt}
           // Shown on row hover, keyboard focus or while open, like Claude Code's rows.
           triggerClassName="h-7 w-7 text-muted-foreground opacity-0 hover:bg-muted hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100 aria-expanded:opacity-100"
-          menuClassName="w-[260px] rounded-xl p-1.5 shadow-xl"
-          header={(
-            <div className="mb-1 border-b border-border px-3 py-2">
-              <p className="truncate text-xs font-medium text-foreground" title={sessionName}>
-                {sessionName}
-              </p>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">{providerLabel} session</p>
-            </div>
-          )}
+          // Plain, compact items as in Claude Code's menus.
+          menuClassName="w-[220px] rounded-xl p-1.5 shadow-xl"
           items={[
             ...(projectId !== null ? [{
               key: 'rename',
-              label: 'Rename session',
-              icon: Edit2,
+              label: 'Rename',
               onSelect: () => onStartEditingSession(projectId, sessionId, sessionName),
+            }] : []),
+            ...(onSelectForBulk && !isProcessing ? [{
+              key: 'select',
+              label: 'Select',
+              onSelect: onSelectForBulk,
+            }] : []),
+            ...(canFork && onFork ? [{
+              key: 'fork',
+              label: 'Fork',
+              onSelect: onFork,
             }] : []),
             {
               key: 'copy',
               label: copyLabel,
               description: copyState === 'error' ? 'Click to try again.' : undefined,
-              icon: CopyStateIcon,
               loading: isCopyPending,
               closeOnSelect: false,
               onSelect: handleCopyAction,
             },
-            ...(onSelectForBulk && !isProcessing ? [{
-              key: 'select',
-              label: 'Select',
-              icon: CheckSquare,
-              onSelect: onSelectForBulk,
-            }] : []),
-            ...(canFork && onFork ? [{
-              key: 'fork',
-              label: 'Fork session',
-              description: 'Continue from a copy, leaving this one untouched.',
-              icon: GitBranch,
-              onSelect: onFork,
+            ...(onArchive && canDelete && !isProcessing ? [{
+              key: 'archive',
+              label: 'Archive',
+              showDividerBefore: true,
+              onSelect: onArchive,
             }] : []),
             ...(canDelete && !isProcessing ? [{
               key: 'delete',
-              label: 'Archive or delete session',
-              icon: Trash2,
+              label: 'Delete',
               isDanger: true,
-              showDividerBefore: true,
+              showDividerBefore: !onArchive,
               onSelect: () => onDeleteSession(sessionId, sessionName),
             }] : []),
           ]}

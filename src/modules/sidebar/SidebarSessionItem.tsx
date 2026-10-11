@@ -43,6 +43,10 @@ type SidebarSessionItemProps = {
    * menu's Select item: starts or extends the bulk selection. Stable identity.
    */
   onModifierSelect: (projectId: string, sessionId: string, mode: 'toggle' | 'range') => void;
+  /** Archives sessions at once (the menu's Archive); stable identity. */
+  onArchiveSessions?: (sessionIds: string[]) => void;
+  /** Right-click while selecting: opens the list's bulk menu at the pointer. Stable identity. */
+  onBulkContextMenu?: (projectId: string, sessionId: string, point: { x: number; y: number }) => void;
   t: TFunction;
 };
 
@@ -69,6 +73,8 @@ function SidebarSessionItem({
   isChecked,
   onToggleSessionSelected,
   onModifierSelect,
+  onArchiveSessions,
+  onBulkContextMenu,
   t,
 }: SidebarSessionItemProps) {
   const isCompact = useCompactSidebar();
@@ -119,8 +125,16 @@ function SidebarSessionItem({
   // to open there. Null until the first right-click.
   const [contextMenuAt, setContextMenuAt] = useState<{ x: number; y: number } | null>(null);
   const openContextMenu = (event: ReactMouseEvent) => {
-    // Selection and rename have no row menu, so the browser's own menu stays.
-    if (isSelecting || isEditing) {
+    // While renaming, the browser's own menu (paste etc.) stays.
+    if (isEditing) {
+      return;
+    }
+    if (isSelecting) {
+      // A running row cannot join a bulk action; the browser menu stays.
+      if (!isProcessing && onBulkContextMenu) {
+        event.preventDefault();
+        onBulkContextMenu(project.projectId, session.id, { x: event.clientX, y: event.clientY });
+      }
       return;
     }
     event.preventDefault();
@@ -494,6 +508,7 @@ function SidebarSessionItem({
             onDeleteSession={onDeleteSession}
             onFork={onForkSession ? () => onForkSession(session) : undefined}
             onSelectForBulk={() => onModifierSelect(project.projectId, session.id, 'toggle')}
+            onArchive={onArchiveSessions ? () => onArchiveSessions([session.id]) : undefined}
             openAt={contextMenuAt}
             t={t}
           />

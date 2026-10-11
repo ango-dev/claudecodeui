@@ -10,12 +10,11 @@ import type {
   RefObject,
   TouchEvent,
 } from 'react';
-import { PlusIcon, MessageSquareIcon, XIcon, Loader2, ArrowUpIcon, PencilIcon, Settings2 } from 'lucide-react';
+import { PlusIcon, XIcon, Loader2, ArrowUpIcon, PencilIcon } from 'lucide-react';
 
 import { useVoiceInput } from '@/modules/chat/hooks/useVoiceInput';
 import { useVoiceAvailable } from '@/modules/chat/hooks/useVoiceAvailable';
 import type { QueuedDraft, ScheduledMessage, SlashCommand,SessionActivity,PendingPermissionRequest,PermissionMode,ProviderModelOption } from '@/shared/types';
-import { QUICK_SETTINGS_TOGGLE_EVENT } from '@/shared/constants';
 import {
   PromptInput,
   PromptInputHeader,
@@ -67,7 +66,6 @@ type ChatComposerProps = {
   tokenBudget: Record<string, unknown> | null;
   onShowTokenUsage: () => void;
   slashCommandsCount: number;
-  onToggleCommandMenu: () => void;
   hasInput: boolean;
   onClearInput: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement> | MouseEvent<HTMLButtonElement> | TouchEvent<HTMLButtonElement>) => void;
@@ -114,6 +112,8 @@ type ChatComposerProps = {
   placeholder: string;
   isTextareaExpanded: boolean;
   sendByCtrlEnter?: boolean;
+  /** The transcript download menu, shown in the toolbar under the input box. */
+  exportControl?: ReactNode;
 };
 
 /**
@@ -141,7 +141,6 @@ export default function ChatComposer({
   modelsLoading,
   tokenBudget,
   onShowTokenUsage,
-  onToggleCommandMenu,
   hasInput,
   onClearInput,
   onSubmit,
@@ -186,6 +185,7 @@ export default function ChatComposer({
   placeholder,
   isTextareaExpanded,
   sendByCtrlEnter,
+  exportControl,
 }: ChatComposerProps) {
   const { t } = useTranslation('chat');
   const fileDropdownRef = useRef<HTMLDivElement | null>(null);
@@ -499,21 +499,6 @@ export default function ChatComposer({
 
             <TokenUsageSummary usage={tokenBudget} onClick={onShowTokenUsage} />
 
-            <PromptInputButton
-              tooltip={{ content: t('input.showAllCommands') }}
-              onClick={onToggleCommandMenu}
-            >
-              <MessageSquareIcon />
-            </PromptInputButton>
-
-            <PromptInputButton
-              tooltip={{ content: t('quickSettings.title', { ns: 'settings', defaultValue: 'Quick Settings' }) }}
-              aria-label={t('quickSettings.title', { ns: 'settings', defaultValue: 'Quick Settings' })}
-              onClick={() => window.dispatchEvent(new Event(QUICK_SETTINGS_TOGGLE_EVENT))}
-            >
-              <Settings2 />
-            </PromptInputButton>
-
             {hasInput && (
               <PromptInputButton
                 tooltip={{ content: t('input.clearInput', { defaultValue: 'Clear input' }) }}
@@ -527,6 +512,8 @@ export default function ChatComposer({
           </PromptInputTools>
 
           <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
+            {exportControl}
+
             <ScheduleMessagePopover
               disabled={!input.trim()}
               onSchedule={onScheduleMessage}

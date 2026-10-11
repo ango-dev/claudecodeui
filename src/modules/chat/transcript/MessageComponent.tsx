@@ -1,11 +1,13 @@
-import { memo, useMemo, useRef } from 'react';
+import { memo, useMemo, useRef, useState } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { GitBranchIcon, PencilIcon } from 'lucide-react';
 
 import type { ChatMessage, ClaudePermissionSuggestion, PermissionGrantResult, LLMProvider,DiffLine,Project } from '@/shared/types';
 import { formatUsageLimitText, stripProposedPlanEnvelope } from '@/modules/chat/utils/chatFormatting';
 import { ToolRenderer, ToolErrorDisplay, SubagentPanel, WorkflowPanel, shouldHideToolResult } from '@/modules/chat/tools';
-import { LLMProviderLogo } from '@/shared/ui';
+import { ActionMenu, LLMProviderLogo } from '@/shared/ui';
+import { convertMarkdownToPlainText, copyTextToClipboard } from '@/shared/utils';
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '@/modules/chat/transcript/Reasoning';
 import ChatMessageImages from '@/modules/chat/transcript/ChatMessageImages';
 import ChatMessageFiles from '@/modules/chat/transcript/ChatMessageFiles';
@@ -87,6 +89,24 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
   const formattedTime = useMemo(() => new Date(message.timestamp).toLocaleTimeString(), [message.timestamp]);
   const shouldHideThinkingMessage = Boolean(message.isThinking && !showThinking);
 
+  // Right-click menu, as in Claude Code: where the message was last
+  // right-clicked; a new point opens the menu there.
+  const [contextMenuAt, setContextMenuAt] = useState<{ x: number; y: number } | null>(null);
+  const contextMenuContent = message.type === 'user'
+    ? userCopyContent
+    : message.type === 'assistant' && !message.isToolUse && !message.isThinking
+      ? assistantCopyContent
+      : '';
+  const handleContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
+    // A text selection keeps the browser's own menu, so a fragment can be copied.
+    const hasSelection = Boolean(window.getSelection()?.toString().trim());
+    if (isExporting || hasSelection || !contextMenuContent.trim()) {
+      return;
+    }
+    event.preventDefault();
+    setContextMenuAt({ x: event.clientX, y: event.clientY });
+  };
+
   if (shouldHideThinkingMessage) {
     return null;
   }
@@ -94,9 +114,43 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
   return (
     <div
       ref={messageRef}
+      onContextMenu={handleContextMenu}
       data-message-timestamp={message.timestamp || undefined}
       className={`chat-message ${message.type} ${isGrouped ? 'grouped' : ''} ${message.type === 'user' ? 'flex justify-end px-3 sm:px-0' : 'px-3 sm:px-0'}`}
     >
+      {contextMenuAt && (
+        <ActionMenu
+          label={t('message.actions', { defaultValue: 'Message actions' })}
+          hideTrigger
+          portal
+          openAt={contextMenuAt}
+          menuClassName="w-[240px] rounded-xl p-1.5 shadow-xl"
+          items={[
+            {
+              key: 'copy',
+              label: t('message.copyMessage', { defaultValue: 'Copy message' }),
+              onSelect: () => { void copyTextToClipboard(convertMarkdownToPlainText(contextMenuContent)); },
+            },
+            {
+              key: 'copy-markdown',
+              label: t('message.copyMessageAsMarkdown', { defaultValue: 'Copy message as Markdown' }),
+              onSelect: () => { void copyTextToClipboard(contextMenuContent); },
+            },
+            ...(message.type === 'user' && onEditMessage && message.transcriptAnchorId ? [{
+              key: 'edit',
+              label: t('message.editAndResend'),
+              showDividerBefore: true,
+              onSelect: () => onEditMessage(message),
+            }] : []),
+            ...(message.type === 'user' && onForkFromMessage && message.transcriptAnchorId ? [{
+              key: 'fork',
+              label: t('message.forkFromHere'),
+              showDividerBefore: !(onEditMessage && message.transcriptAnchorId),
+              onSelect: () => onForkFromMessage(message),
+            }] : []),
+          ]}
+        />
+      )}
       {message.type === 'user' ? (
         /* User turn on the right: claude.ai-style attachment cards above the bubble */
         <div className="flex w-full items-end space-x-0 sm:w-auto sm:max-w-[85%] sm:space-x-3 md:max-w-md lg:max-w-lg xl:max-w-xl">

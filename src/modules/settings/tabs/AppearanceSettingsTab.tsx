@@ -1,12 +1,24 @@
 import { useTranslation } from 'react-i18next';
 
 import { useTheme } from '@/shared/context/ThemeContext';
-import type { CodeEditorSettingsState, ProjectSortOrder, ThemeMode } from '@/shared/types';
+import { useSetUiPreference, useUiPreferences } from '@/shared/context/UiPreferencesContext';
+import type { CodeEditorSettingsState, PreferenceToggleKey, ProjectSortOrder, ThemeMode } from '@/shared/types';
 import { LanguageSelector } from '@/modules/i18n';
 import SettingsCard from '@/modules/settings/SettingsCard';
 import SettingsRow from '@/modules/settings/SettingsRow';
 import SettingsSection from '@/modules/settings/SettingsSection';
 import SettingsToggle from '@/modules/settings/SettingsToggle';
+
+/** The display and input toggles that used to live in the Quick Settings drawer. */
+const CHAT_TOGGLES: { key: PreferenceToggleKey; labelKey: string; descriptionKey?: string }[] = [
+  { key: 'showRawParameters', labelKey: 'quickSettings.showRawParameters' },
+  { key: 'showThinking', labelKey: 'quickSettings.showThinking' },
+  {
+    key: 'sendByCtrlEnter',
+    labelKey: 'quickSettings.sendByCtrlEnter',
+    descriptionKey: 'quickSettings.sendByCtrlEnterDescription',
+  },
+];
 
 type AppearanceSettingsTabProps = {
   projectSortOrder: ProjectSortOrder;
@@ -18,7 +30,7 @@ type AppearanceSettingsTabProps = {
   onCodeEditorFontSizeChange: (value: string) => void;
 };
 
-/** Rendered by Settings for the "appearance" tab, covering theme, project sorting and code editor preferences. */
+/** Rendered by Settings for the "appearance" tab, covering theme, layout, chat display, project sorting and code editor preferences. */
 export default function AppearanceSettingsTab({
   projectSortOrder,
   onProjectSortOrderChange,
@@ -30,6 +42,8 @@ export default function AppearanceSettingsTab({
 }: AppearanceSettingsTabProps) {
   const { t } = useTranslation('settings');
   const { themeMode, setThemeMode } = useTheme();
+  const preferences = useUiPreferences();
+  const setPreference = useSetUiPreference();
 
   return (
     <div className="space-y-8">
@@ -56,6 +70,36 @@ export default function AppearanceSettingsTab({
       <SettingsSection title={t('mainTabs.appearance')}>
         <SettingsCard>
           <LanguageSelector />
+        </SettingsCard>
+      </SettingsSection>
+
+      <SettingsSection title={t('appearanceSettings.layout.title')}>
+        <SettingsCard>
+          <SettingsRow label={t('quickSettings.sidebarAsDrawer')}>
+            <SettingsToggle
+              checked={preferences.sidebarAsDrawer}
+              onChange={(value) => setPreference('sidebarAsDrawer', value)}
+              ariaLabel={t('quickSettings.sidebarAsDrawer')}
+            />
+          </SettingsRow>
+        </SettingsCard>
+      </SettingsSection>
+
+      <SettingsSection title={t('appearanceSettings.chat.title')}>
+        <SettingsCard divided>
+          {CHAT_TOGGLES.map(({ key, labelKey, descriptionKey }) => (
+            <SettingsRow
+              key={key}
+              label={t(labelKey)}
+              description={descriptionKey ? t(descriptionKey) : undefined}
+            >
+              <SettingsToggle
+                checked={preferences[key]}
+                onChange={(value) => setPreference(key, value)}
+                ariaLabel={t(labelKey)}
+              />
+            </SettingsRow>
+          ))}
         </SettingsCard>
       </SettingsSection>
 

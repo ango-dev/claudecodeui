@@ -90,6 +90,7 @@ type ListOverrides = {
   onDeleteSelectedSessions?: (sessionIds: string[]) => void;
   onSessionSelect?: (session: SessionWithProvider, projectName: string) => void;
   selectedSession?: SessionWithProvider | null;
+  onArchiveSessions?: (sessionIds: string[]) => void;
 };
 
 const baseProps = (overrides: ListOverrides = {}) => ({
@@ -249,7 +250,7 @@ test('the row menu offers Select, which starts a selection with that row', () =>
 
   const s3Options = recordedOptionsProps.filter((props) => props.sessionId === 's3').at(-1);
   assert.equal(typeof s3Options?.onSelectForBulk, 'function');
-  act(() => (s3Options?.onSelectForBulk as () => void)());
+  act(() => (s3Options!.onSelectForBulk as () => void)());
   assert.deepEqual([...(onSetSessionSelection.mock.calls[0][0] as SidebarSessionSelection).sessionIds], ['s3']);
 });
 
@@ -267,7 +268,9 @@ test('a list whose every session is running has nothing to offer Select for', ()
   assert.equal(buttonWithText(container, 'sessions.select'), null);
 });
 
-test('selection mode replaces the row options with a checkbox on every row', () => {
+test('the compact toolbar: selection mode replaces the row options with a checkbox on every row', () => {
+  // Touch layouts keep the selection toolbar; desktop uses the right-click menu.
+  isCompactLayout = true;
   const { container } = renderSessions({ selectedSessionIds: NO_IDS });
 
   assert.equal(checkboxes(container).length, SESSIONS.length);
@@ -296,7 +299,9 @@ test('clicking or pressing space on a row ticks it', () => {
   assert.deepEqual(onToggleSessionSelected.mock.calls[1], ['project-1', 's2']);
 });
 
-test('a running row cannot be ticked and is left out of Select all', () => {
+test('the compact toolbar: a running row cannot be ticked and is left out of Select all', () => {
+  // Touch layouts keep the selection toolbar; desktop uses the right-click menu.
+  isCompactLayout = true;
   const onToggleSessionSelected = vi.fn();
   const onSetSessionSelection = vi.fn();
   const { container } = renderSessions({
@@ -319,7 +324,9 @@ test('a running row cannot be ticked and is left out of Select all', () => {
   );
 });
 
-test('a ticked row that starts running drops out of the count and the ids to delete', () => {
+test('the compact toolbar: a ticked row that starts running drops out of the count and the ids to delete', () => {
+  // Touch layouts keep the selection toolbar; desktop uses the right-click menu.
+  isCompactLayout = true;
   const onDeleteSelectedSessions = vi.fn();
   const { container } = renderSessions({
     selectedSessionIds: new Set(['s1', 's2']),
@@ -339,7 +346,9 @@ test('a ticked row that starts running drops out of the count and the ids to del
   assert.deepEqual(onDeleteSelectedSessions.mock.calls[0][0], ['s1']);
 });
 
-test('Select all flips to Clear once every loaded row is ticked', () => {
+test('the compact toolbar: Select all flips to Clear once every loaded row is ticked', () => {
+  // Touch layouts keep the selection toolbar; desktop uses the right-click menu.
+  isCompactLayout = true;
   const onSetSessionSelection = vi.fn();
   const everything = new Set(['s1', 's2', 's3']);
 
@@ -679,4 +688,51 @@ test('an empty selection opens no confirmation', () => {
   });
 
   assert.equal(result.current.pendingDeletion, null);
+});
+
+const menuItem = (text: string): HTMLButtonElement | null =>
+  [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent?.trim() === text) ?? null;
+
+test('the desktop list shows no selection toolbar; right-clicking a ticked row opens the bulk menu', () => {
+  const onDeleteSelectedSessions = vi.fn();
+  const onArchiveSessions = vi.fn();
+  const onCancelSessionSelection = vi.fn();
+  const { container } = renderSessions({
+    selectedSessionIds: new Set(['s1', 's2']),
+    onDeleteSelectedSessions,
+    onArchiveSessions,
+    onCancelSessionSelection,
+  });
+
+  assert.equal(buttonWithText(container, 'sessions.selectAll'), null, 'no inline toolbar on desktop');
+  assert.equal(buttonWithText(container, 'sessions.deleteSelected:count=2'), null);
+
+  fireEvent.contextMenu(desktopRow(container, 's1'), { clientX: 50, clientY: 60 });
+  const archive = menuItem('Archive 2');
+  const remove = menuItem('Delete 2');
+  assert.ok(archive && remove, 'the menu acts on the whole selection');
+
+  fireEvent.click(remove);
+  assert.deepEqual(onDeleteSelectedSessions.mock.calls[0][0], ['s1', 's2']);
+
+  fireEvent.contextMenu(desktopRow(container, 's2'), { clientX: 50, clientY: 90 });
+  fireEvent.click(menuItem('Archive 2') as HTMLButtonElement);
+  assert.deepEqual(onArchiveSessions.mock.calls[0][0], ['s1', 's2']);
+});
+
+test('right-clicking an unticked row while selecting adds it before the bulk menu opens', () => {
+  const onToggleSessionSelected = vi.fn();
+  const { container } = renderSessions({ selectedSessionIds: new Set(['s1']), onToggleSessionSelected });
+
+  fireEvent.contextMenu(desktopRow(container, 's3'), { clientX: 10, clientY: 10 });
+  assert.deepEqual(onToggleSessionSelected.mock.calls[0], ['project-1', 's3']);
+});
+
+test('a row menu archives just that session', () => {
+  const onArchiveSessions = vi.fn();
+  renderSessions({ onArchiveSessions });
+
+  const s2Options = recordedOptionsProps.filter((props) => props.sessionId === 's2').at(-1);
+  act(() => (s2Options!.onArchive as () => void)());
+  assert.deepEqual(onArchiveSessions.mock.calls[0][0], ['s2']);
 });
