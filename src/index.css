@@ -194,16 +194,13 @@
     overflow: hidden;
   }
 
-  /* Adjust fixed inset positioning in PWA mode. iOS home-screen apps with the
-     black-translucent status bar report a viewport one status bar too short
-     while drawing under the status bar, so `bottom: 0` stops that far above
-     the screen edge; extending by the top inset reaches the edge. The inset is
-     0 wherever the status bar is not overlaid, so elsewhere this is bottom: 0. */
+  /* Adjust fixed inset positioning in PWA mode. (The workspace shell sets its
+     own bottom inline; see useVisualViewportKeyboardOffset.) */
   body.pwa-mode .fixed.inset-0 {
     top: var(--header-total-padding);
     left: var(--safe-area-inset-left);
     right: var(--safe-area-inset-right);
-    bottom: calc(-1 * env(safe-area-inset-top, 0px));
+    bottom: 0;
   }
   
   /* Global transition defaults */

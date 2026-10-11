@@ -17,7 +17,9 @@ function ProjectWorkspaceShell({
   return (
     <div
       className="fixed inset-0 flex bg-background"
-      style={{ bottom: 'var(--keyboard-height, 0px)' }}
+      // Above the keyboard when it is up; in iOS home-screen apps, down to the
+      // real screen bottom (see useVisualViewportKeyboardOffset).
+      style={{ bottom: 'calc(var(--keyboard-height, 0px) - var(--standalone-bottom-gap, 0px))' }}
     >
       <ProjectEffects navigate={navigate} />
       <ProjectSidebarRegion isMobile={isMobile} />
