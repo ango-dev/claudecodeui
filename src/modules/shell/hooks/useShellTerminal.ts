@@ -41,31 +41,31 @@ type TerminalColorOptions = Pick<ITerminalOptions, 'theme' | 'minimumContrastRat
 const DARK_TERMINAL_COLORS: TerminalColorOptions = {
   // xterm's default: leave the colours programs ask for untouched.
   minimumContrastRatio: 1,
-  // Warm charcoal to match the app's dark surfaces; ANSI hues are softened warm
+  // Near-black to match the app's dark surfaces; ANSI hues are softened warm
   // variants of the classic set.
   theme: {
-    background: '#262624',
-    foreground: '#e8e5dc',
+    background: '#151515',
+    foreground: '#f0efec',
     cursor: '#de8364',
-    cursorAccent: '#262624',
-    selectionBackground: '#4f4a43',
-    selectionForeground: '#faf9f5',
-    black: '#1c1b19',
+    cursorAccent: '#151515',
+    selectionBackground: '#45423d',
+    selectionForeground: '#f0efec',
+    black: '#111111',
     red: '#e5806d',
     green: '#a7b86f',
     yellow: '#e3b660',
     blue: '#86abcc',
     magenta: '#cc92b5',
     cyan: '#86bcb1',
-    white: '#d4d0c5',
-    brightBlack: '#8a857b',
+    white: '#cfcecb',
+    brightBlack: '#93918b',
     brightRed: '#f09a87',
     brightGreen: '#bfcd8a',
     brightYellow: '#efca80',
     brightBlue: '#a3c0db',
     brightMagenta: '#dcaccb',
     brightCyan: '#a2cec5',
-    brightWhite: '#faf9f5',
+    brightWhite: '#f0efec',
     extendedAnsi: [
       '#000000',
       '#800000',
@@ -92,25 +92,25 @@ const LIGHT_TERMINAL_COLORS: TerminalColorOptions = {
   // yellow, white, cyan). WCAG AA contrast (VS Code's terminal default) makes
   // xterm darken just those cells on white instead of leaving them unreadable.
   minimumContrastRatio: 4.5,
-  // Warm off-white to match the app's light surfaces. The bright variants are
+  // Off-white to match the app's light surfaces. The bright variants are
   // darker than the normal ones, because xterm draws bold text in them: every
   // colour except the two whites keeps at least 4.5:1 against the background.
   theme: {
-    background: '#faf9f5',
-    foreground: '#2b2a27',
+    background: '#fcfcfb',
+    foreground: '#141413',
     cursor: '#ae4f2e',
-    cursorAccent: '#faf9f5',
+    cursorAccent: '#fcfcfb',
     selectionBackground: '#edcab9',
-    selectionForeground: '#1f1e1c',
-    black: '#2b2a27',
+    selectionForeground: '#141413',
+    black: '#141413',
     red: '#b3372e',
     green: '#4a6a1e',
     yellow: '#875800',
     blue: '#2f5f8a',
     magenta: '#8e3f6e',
     cyan: '#1d6b66',
-    white: '#716d66',
-    brightBlack: '#5b5852',
+    white: '#6b6a65',
+    brightBlack: '#55534e',
     brightRed: '#952a22',
     brightGreen: '#3d5817',
     brightYellow: '#714a00',

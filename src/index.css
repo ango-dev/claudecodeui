@@ -22,42 +22,43 @@
 }
 
 @layer base {
-  /* Personal theme: warm off-white surfaces, warm gray text and a clay accent.
-     Every text/surface pair below keeps WCAG AA (4.5:1) contrast. */
+  /* Personal theme: near-neutral surfaces with a faint warm cast, sampled from
+     the reference screenshots, plus a clay accent. Every text/surface pair
+     below keeps WCAG AA (4.5:1) contrast. */
   :root {
-    --background: 48 33% 97%;
-    --foreground: 40 5% 12%;
+    --background: 60 14% 99%;
+    --foreground: 60 3% 8%;
     --card: 0 0% 100%;
-    --card-foreground: 40 5% 12%;
+    --card-foreground: 60 3% 8%;
     --popover: 0 0% 100%;
-    --popover-foreground: 40 5% 12%;
+    --popover-foreground: 60 3% 8%;
     --primary: 15 58% 43%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 48 25% 92%;
-    --secondary-foreground: 43 6% 23%;
-    --muted: 48 25% 92%;
-    --muted-foreground: 40 6% 40%;
-    --accent: 45 23% 90%;
-    --accent-foreground: 40 5% 12%;
+    --secondary: 60 3% 94%;
+    --secondary-foreground: 60 3% 8%;
+    --muted: 60 3% 94%;
+    --muted-foreground: 50 3% 41%;
+    --accent: 48 12% 92%;
+    --accent-foreground: 60 3% 8%;
     --destructive: 4 59% 44%;
     --destructive-foreground: 0 0% 100%;
-    --border: 43 21% 87%;
-    --input: 44 15% 81%;
+    --border: 60 2% 88%;
+    --input: 60 2% 87%;
     --ring: 15 56% 52%;
     --radius: 0.625rem;
-    --sidebar: 47 27% 94%;
-    --shadow-color: 30 18% 18%;
+    --sidebar: 30 20% 98%;
+    --shadow-color: 30 6% 15%;
 
     /* Nav design tokens */
-    --nav-glass-bg: 48 33% 97% / 0.75;
+    --nav-glass-bg: 60 14% 99% / 0.8;
     --nav-glass-blur: 20px;
-    --nav-glass-saturate: 1.4;
-    --nav-tab-glow: 15 56% 52% / 0.16;
+    --nav-glass-saturate: 1.2;
+    --nav-tab-glow: 15 56% 52% / 0.14;
     --nav-tab-ring: 15 56% 52% / 0.12;
-    --nav-float-shadow: 30 18% 18% / 0.08;
-    --nav-float-ring: 43 21% 87% / 0.7;
-    --nav-divider-color: 43 21% 87% / 0.7;
-    --nav-input-bg: 48 25% 92% / 0.7;
+    --nav-float-shadow: 30 6% 15% / 0.08;
+    --nav-float-ring: 60 2% 88% / 0.8;
+    --nav-divider-color: 60 2% 88% / 0.8;
+    --nav-input-bg: 60 3% 94% / 0.7;
     --nav-input-focus-ring: 15 56% 52% / 0.22;
 
     /* Safe area CSS variables */
@@ -89,39 +90,39 @@
   }
 
   .dark {
-    --background: 60 3% 15%;
-    --foreground: 44 22% 90%;
-    --card: 60 2% 18%;
-    --card-foreground: 44 22% 90%;
-    --popover: 60 2% 18%;
-    --popover-foreground: 44 22% 90%;
+    --background: 0 0% 8%;
+    --foreground: 45 12% 93%;
+    --card: 60 2% 12%;
+    --card-foreground: 45 12% 93%;
+    --popover: 60 2% 12%;
+    --popover-foreground: 45 12% 93%;
     --primary: 15 65% 63%;
     --primary-foreground: 40 6% 10%;
-    --secondary: 45 4% 20%;
-    --secondary-foreground: 44 22% 90%;
-    --muted: 45 4% 20%;
-    --muted-foreground: 42 9% 63%;
-    --accent: 48 5% 22%;
-    --accent-foreground: 44 22% 90%;
+    --secondary: 0 0% 13%;
+    --secondary-foreground: 45 12% 93%;
+    --muted: 0 0% 13%;
+    --muted-foreground: 45 4% 56%;
+    --accent: 0 1% 17%;
+    --accent-foreground: 45 12% 93%;
     /* Light enough to read as text on dark surfaces, so buttons on it use dark text. */
     --destructive: 10 72% 67%;
     --destructive-foreground: 40 6% 10%;
-    --border: 48 4% 23%;
-    --input: 40 4% 28%;
+    --border: 30 2% 18%;
+    --input: 30 2% 21%;
     --ring: 15 65% 63%;
-    --sidebar: 30 3% 12%;
+    --sidebar: 0 0% 7%;
     --shadow-color: 0 0% 0%;
 
     /* Nav design tokens — dark overrides */
-    --nav-glass-bg: 60 3% 15% / 0.7;
+    --nav-glass-bg: 0 0% 8% / 0.75;
     --nav-glass-blur: 24px;
-    --nav-glass-saturate: 1.2;
-    --nav-tab-glow: 15 65% 63% / 0.2;
-    --nav-tab-ring: 15 65% 63% / 0.16;
-    --nav-float-shadow: 0 0% 0% / 0.4;
-    --nav-float-ring: 48 4% 23% / 0.6;
-    --nav-divider-color: 48 4% 23% / 0.7;
-    --nav-input-bg: 45 4% 20% / 0.6;
+    --nav-glass-saturate: 1.1;
+    --nav-tab-glow: 15 65% 63% / 0.18;
+    --nav-tab-ring: 15 65% 63% / 0.14;
+    --nav-float-shadow: 0 0% 0% / 0.45;
+    --nav-float-ring: 30 2% 18% / 0.7;
+    --nav-divider-color: 30 2% 18% / 0.8;
+    --nav-input-bg: 0 0% 13% / 0.7;
     --nav-input-focus-ring: 15 65% 63% / 0.25;
   }
 }
@@ -136,8 +137,7 @@
   body {
     @apply bg-background text-foreground;
 
-    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    font-feature-settings: "cv11", "ss01";
+    font-family: Geist, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     margin: 0;
@@ -916,7 +916,7 @@
   
   /* Improve select appearance in dark mode */
   .dark select {
-    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23A8A397' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23A3A19C' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
     background-repeat: no-repeat;
     background-position: right 0.5rem center;
     background-size: 1.5em 1.5em;
@@ -927,7 +927,7 @@
   }
   
   select {
-    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23716D66' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236B6A65' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
     background-repeat: no-repeat;
     background-position: right 0.5rem center;
     background-size: 1.5em 1.5em;
@@ -1032,24 +1032,48 @@
     background-color: hsl(var(--primary) / 0.22);
   }
 
-  /* Composer: a soft, rounded card that lifts slightly on focus. */
+  /* Composer: a flat card with a hairline border, as in the reference. */
   [data-slot="prompt-input"] {
-    border-radius: calc(var(--radius) + 0.625rem);
-    border-color: hsl(var(--border));
+    border-radius: var(--radius);
+    border-color: hsl(var(--input));
     background-color: hsl(var(--card));
-    box-shadow: 0 0.25rem 1.25rem hsl(var(--shadow-color) / 0.05),
-                0 0 0 0.5px hsl(var(--border));
+    box-shadow: 0 1px 2px hsl(var(--shadow-color) / 0.04);
+    backdrop-filter: none;
   }
 
   [data-slot="prompt-input"]:focus-within {
-    border-color: hsl(var(--input));
-    box-shadow: 0 0.25rem 1.5rem hsl(var(--shadow-color) / 0.08),
-                0 0 0 0.5px hsl(var(--input));
+    border-color: hsl(var(--muted-foreground) / 0.45);
+    box-shadow: 0 1px 2px hsl(var(--shadow-color) / 0.04);
   }
 
-  /* Reading text: relaxed leading and clay links in rendered markdown. */
+  /* Slightly denser UI on desktop: every rem-based size (type, padding,
+     heights) scales to 15/16. Phones keep the 16px root because iOS zooms
+     into inputs whose text is smaller than 16px. */
+  @media (min-width: 768px) {
+    html {
+      font-size: 93.75%;
+    }
+  }
+
+  /* Conversation text: sans at a fixed 15px on a 20px line, as in the
+     reference. Message components opt into font-serif; inside the transcript
+     that is overridden so headings elsewhere keep the serif. */
+  .chat-message .font-serif {
+    font-family: Geist, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+
   .chat-message .prose {
-    line-height: 1.7;
+    font-size: 15px;
+    line-height: 20px;
+  }
+
+  /* User message: a flat, softly rounded box without border or shadow. The
+     bubble is the transcript's only element with this corner override. */
+  .chat-message.user .rounded-br-md {
+    border-radius: 0.5rem;
+    border-color: transparent;
+    background-color: hsl(var(--secondary));
+    box-shadow: none;
   }
 
   .prose a {
@@ -1069,7 +1093,7 @@
   pre[class*="language-"] code,
   code[class*="language-"],
   kbd {
-    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace !important;
+    font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace !important;
     font-variant-ligatures: none;
   }
 }

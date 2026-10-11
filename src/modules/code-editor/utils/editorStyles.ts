@@ -1,11 +1,11 @@
 export const getEditorLoadingStyles = (isDarkMode: boolean) => {
   return `
     .code-editor-loading {
-      background-color: ${isDarkMode ? '#262624' : '#ffffff'} !important;
+      background-color: ${isDarkMode ? '#151515' : '#ffffff'} !important;
     }
 
     .code-editor-loading:hover {
-      background-color: ${isDarkMode ? '#262624' : '#ffffff'} !important;
+      background-color: ${isDarkMode ? '#151515' : '#ffffff'} !important;
     }
   `;
 };
@@ -41,14 +41,14 @@ export const getEditorStyles = (isDarkMode: boolean) => {
     }
 
     .cm-gutter.cm-gutter-minimap {
-      background-color: ${isDarkMode ? '#1f1e1d' : '#f4f2ec'};
+      background-color: ${isDarkMode ? '#111111' : '#f0f0ef'};
     }
 
     .cm-editor-toolbar-panel {
       padding: 4px 10px;
-      background-color: ${isDarkMode ? '#30302e' : '#ffffff'};
-      border-bottom: 1px solid ${isDarkMode ? '#403e3a' : '#e8e5dc'};
-      color: ${isDarkMode ? '#d4d0c5' : '#403e3a'};
+      background-color: ${isDarkMode ? '#212121' : '#ffffff'};
+      border-bottom: 1px solid ${isDarkMode ? '#373635' : '#e3e3e2'};
+      color: ${isDarkMode ? '#cfcecb' : '#373635'};
       font-size: 12px;
     }
 
@@ -68,7 +68,7 @@ export const getEditorStyles = (isDarkMode: boolean) => {
 
     .cm-diff-nav-btn:hover,
     .cm-toolbar-btn:hover {
-      background-color: ${isDarkMode ? '#403e3a' : '#f4f2ec'};
+      background-color: ${isDarkMode ? '#373635' : '#f0f0ef'};
     }
 
     .cm-diff-nav-btn:disabled {

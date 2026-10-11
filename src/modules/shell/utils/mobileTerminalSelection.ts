@@ -194,7 +194,7 @@ class ShellMobileSelectionCore implements MobileTerminalSelectionManager {
     menu.style.alignItems = 'stretch';
     menu.style.padding = '4px';
     menu.style.gap = '2px';
-    menu.style.background = '#30302e';
+    menu.style.background = '#212121';
     menu.style.border = '1px solid rgba(255,255,255,0.12)';
     menu.style.borderRadius = '10px';
     menu.style.boxShadow = '0 6px 20px rgba(0,0,0,0.4)';
@@ -225,7 +225,7 @@ class ShellMobileSelectionCore implements MobileTerminalSelectionManager {
     button.style.margin = '0';
     button.style.padding = '8px 14px';
     button.style.background = 'transparent';
-    button.style.color = '#faf9f5';
+    button.style.color = '#f0efec';
     button.style.fontSize = '14px';
     button.style.fontFamily = 'inherit';
     button.style.lineHeight = '1';
