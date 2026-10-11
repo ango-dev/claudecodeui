@@ -15,6 +15,7 @@ function ProjectWorkspaceShell({
 }: ProjectWorkspaceShellProps) {
   return (
     <div
+      data-workspace-shell
       className="fixed inset-0 flex bg-background"
       // Sized to what is on screen: the area above the keyboard when it is up,
       // the whole screen in iOS home-screen apps (see useVisualViewportKeyboardOffset).

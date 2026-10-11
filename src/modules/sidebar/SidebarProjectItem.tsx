@@ -394,7 +394,9 @@ function SidebarProjectItem({
                 </div>
               </>
             ) : (
-              <span className="text-xs text-muted-foreground transition-opacity group-hover:opacity-0">
+              // The "⋯" button takes the count's place: on hover with a pointer,
+              // and always on touch screens, which show that button permanently.
+              <span className="text-xs text-muted-foreground transition-opacity group-hover:opacity-0 touch:opacity-0">
                 {sessionCountDisplay}
               </span>
             )}
