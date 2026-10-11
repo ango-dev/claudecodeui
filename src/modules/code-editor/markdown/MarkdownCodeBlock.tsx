@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import type { ComponentProps } from 'react';
-import { oneDark as prismOneDark, oneLight as prismOneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 import { copyTextToClipboard } from '@/shared/utils';
-import { SyntaxHighlighter } from '@/shared/syntaxHighlighter';
+import { SyntaxHighlighter, warmPrismDark, warmPrismLight } from '@/shared/syntaxHighlighter';
 import { useTheme } from '@/shared/context/ThemeContext';
 import MermaidDiagram from '@/modules/code-editor/markdown/MermaidDiagram';
 
@@ -66,7 +65,7 @@ export default function MarkdownCodeBlock({
 
       <SyntaxHighlighter
         language={language}
-        style={isDarkMode ? prismOneDark : prismOneLight}
+        style={isDarkMode ? warmPrismDark : warmPrismLight}
         customStyle={{
           margin: 0,
           borderRadius: '0.75rem',

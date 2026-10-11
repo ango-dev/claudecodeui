@@ -4,7 +4,6 @@ import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { useTranslation } from 'react-i18next';
 
 import { MermaidDiagram } from '@/modules/code-editor';
@@ -12,7 +11,7 @@ import { MarkdownImage } from '@/modules/chat/transcript/MarkdownImage';
 import { normalizeInlineCodeFences } from '@/modules/chat/utils/chatFormatting';
 import { normalizeLatexDelimiters } from '@/modules/chat/utils/latexDelimiters';
 import { copyTextToClipboard } from '@/shared/utils';
-import { SyntaxHighlighter } from '@/shared/syntaxHighlighter';
+import { SyntaxHighlighter, warmPrismDark, warmPrismLight } from '@/shared/syntaxHighlighter';
 import { usePaletteOps } from '@/modules/command-palette';
 import { buildSyntaxTheme } from '@/modules/chat/utils/syntaxHighlightTheme';
 import type { PrismStyleSheet } from '@/modules/chat/utils/syntaxHighlightTheme';
@@ -191,7 +190,7 @@ const CodeBlock = ({ node: _node, className, children, forceBlock, ...props }: C
  * re-tokenized every mounted code block, so the theme-dependent values are CSS
  * variables and the toggle is a style recalculation instead.
  */
-const syntaxTheme = buildSyntaxTheme(oneLight as PrismStyleSheet, oneDark as PrismStyleSheet);
+const syntaxTheme = buildSyntaxTheme(warmPrismLight as PrismStyleSheet, warmPrismDark as PrismStyleSheet);
 
 // The `:root`/`.dark` declarations backing syntaxTheme.style. Injected once
 // because the values are derived from the Prism theme objects at runtime and so

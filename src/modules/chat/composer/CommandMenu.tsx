@@ -43,7 +43,7 @@ const menuBaseStyle: CSSProperties = {
   maxHeight: '360px',
   overflowY: 'auto',
   borderRadius: '8px',
-  boxShadow: '0 24px 60px rgba(2, 6, 23, 0.38), 0 0 0 1px rgba(148, 163, 184, 0.12)',
+  boxShadow: '0 24px 60px rgba(28, 27, 25, 0.38), 0 0 0 1px rgba(162, 157, 145, 0.12)',
   zIndex: 1000,
   padding: '6px',
   transition: 'opacity 150ms ease-in-out, transform 150ms ease-in-out',

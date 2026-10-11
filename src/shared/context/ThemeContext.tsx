@@ -80,7 +80,7 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
 
       const themeColorMeta = document.querySelector('meta[name="theme-color"]');
       if (themeColorMeta) {
-        themeColorMeta.setAttribute('content', '#141414'); // Dark background color (hsl(0 0% 8%))
+        themeColorMeta.setAttribute('content', '#262624'); // Dark background color (warm charcoal, --background)
       }
     } else {
       document.documentElement.classList.remove('dark');
@@ -93,7 +93,7 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
 
       const themeColorMeta = document.querySelector('meta[name="theme-color"]');
       if (themeColorMeta) {
-        themeColorMeta.setAttribute('content', '#f6f4ef'); // Light background color (warm cream)
+        themeColorMeta.setAttribute('content', '#faf9f5'); // Light background color (warm off-white, --background)
       }
     }
   }, [isDarkMode]);
