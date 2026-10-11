@@ -493,8 +493,6 @@ export default function ChatComposer({
               providerLabel={providerLabel}
             />
 
-            <TokenUsageSummary usage={tokenBudget} onClick={onShowTokenUsage} />
-
 
           </PromptInputTools>
 
@@ -515,6 +513,9 @@ export default function ChatComposer({
               onSelectModel={onSelectModel}
               modelsLoading={modelsLoading}
             />
+
+            {/* Context use, after the model as in Claude Code. */}
+            <TokenUsageSummary usage={tokenBudget} onClick={onShowTokenUsage} />
 
 
           </div>

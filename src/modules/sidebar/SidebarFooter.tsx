@@ -1,11 +1,9 @@
 import { Settings, ArrowUpCircle, Bug, AlertTriangle } from 'lucide-react';
 import type { TFunction } from 'i18next';
 
-import { IS_PLATFORM } from '@/shared/utils';
 import type { ReleaseInfo } from '@/shared/types';
 
 const GITHUB_ISSUES_URL = 'https://github.com/siteboon/claudecodeui/issues/new';
-const GITHUB_REPO_URL = 'https://github.com/siteboon/claudecodeui';
 
 const DISCORD_INVITE_URL = 'https://discord.gg/buxwujPNRE';
 
@@ -22,11 +20,13 @@ type SidebarFooterProps = {
   restartRequired: boolean;
   releaseInfo: ReleaseInfo | null;
   latestVersion: string | null;
-  currentVersion: string;
   onShowVersionModal: () => void;
   onShowSettings: () => void;
   t: TFunction;
 };
+
+const FOOTER_ROW_CLASS =
+  'flex h-8 w-full items-center gap-2.5 rounded-lg px-2 text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground';
 
 /** Rendered by SidebarContent at the bottom of the panel for settings, update status and community links. */
 export default function SidebarFooter({
@@ -34,7 +34,6 @@ export default function SidebarFooter({
   restartRequired,
   releaseInfo,
   latestVersion,
-  currentVersion,
   onShowVersionModal,
   onShowSettings,
   t,
@@ -87,48 +86,32 @@ export default function SidebarFooter({
       {/* Community + Settings */}
       <div className="nav-divider" />
 
-      {/* One evenly spaced group, like the collapsed rail's icons. */}
-      <div className="px-2 py-1.5">
+      {/* Spaced like the collapsed rail (32px rows, 4px apart, 12px below), so
+          the icons stay put when the sidebar collapses or expands. */}
+      <div className="flex flex-col gap-1 px-2 pb-3 pt-2">
         <a
           href={GITHUB_ISSUES_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+          className={FOOTER_ROW_CLASS}
         >
-          <Bug className="h-3.5 w-3.5" />
+          <Bug className="h-4 w-4" />
           <span className="text-sm">{t('actions.reportIssue')}</span>
         </a>
         <a
           href={DISCORD_INVITE_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+          className={FOOTER_ROW_CLASS}
         >
-          <DiscordIcon className="h-3.5 w-3.5" />
+          <DiscordIcon className="h-4 w-4" />
           <span className="text-sm">{t('actions.joinCommunity')}</span>
         </a>
-        <button
-          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
-          onClick={onShowSettings}
-        >
-          <Settings className="h-3.5 w-3.5" />
+        <button className={FOOTER_ROW_CLASS} onClick={onShowSettings}>
+          <Settings className="h-4 w-4" />
           <span className="text-sm">{t('actions.settings')}</span>
         </button>
       </div>
-
-      {/* Version brand line (OSS mode only) */}
-      {!IS_PLATFORM && (
-        <div className="px-3 py-2 text-center">
-          <a
-            href={GITHUB_REPO_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[10px] text-muted-foreground/40 transition-colors hover:text-muted-foreground"
-          >
-            CloudCLI v{currentVersion} – {t('branding.openSource')}
-          </a>
-        </div>
-      )}
     </div>
   );
 }

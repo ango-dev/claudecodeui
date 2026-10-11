@@ -181,6 +181,68 @@ function emptyCodexTokenUsage(): TokenUsageResult {
   };
 }
 
+/** Claude Code's standard context window. */
+const CLAUDE_STANDARD_CONTEXT_WINDOW = 200_000;
+/** The window of `[1m]` models, and the default of the Opus and Fable 5 family. */
+const CLAUDE_EXTENDED_CONTEXT_WINDOW = 1_000_000;
+const EXTENDED_CONTEXT_MODEL_PATTERN = /^claude-(opus|fable)-5/;
+const ONE_MILLION_SUFFIX_PATTERN = /\[1m\]$/i;
+
+/**
+ * Context windows the Agent SDK has reported, by model id. The SDK states each
+ * model's real window in a turn's `result.modelUsage`, which beats any guess;
+ * transcripts never record it, so this is the only place it is known.
+ */
+const reportedClaudeContextWindows = new Map<string, number>();
+
+/**
+ * Used by the Claude runtime: records the window of every model a turn used,
+ * from that turn's `result.modelUsage`, so later budgets carry the real size.
+ */
+export function rememberClaudeContextWindows(modelUsage: unknown): void {
+  if (!modelUsage || typeof modelUsage !== 'object') {
+    return;
+  }
+  for (const [model, usage] of Object.entries(modelUsage as AnyRecord)) {
+    const contextWindow = readUsageNumber((usage as AnyRecord | null)?.contextWindow);
+    if (contextWindow > 0) {
+      reportedClaudeContextWindows.set(model, contextWindow);
+      // Assistant rows name the model without the `[1m]` suffix the key may carry.
+      reportedClaudeContextWindows.set(model.replace(ONE_MILLION_SUFFIX_PATTERN, ''), contextWindow);
+    }
+  }
+}
+
+/**
+ * Used by the Claude runtime and the transcript summary below: the context
+ * window a Claude session's counter is measured against.
+ *
+ * In order: the window the SDK reported for the model; the `CONTEXT_WINDOW`
+ * setting; 1M for a `[1m]` model or the Opus and Fable 5 family; 1M once the
+ * session has held a prompt larger than the standard window (it could not have
+ * otherwise); else Claude Code's standard 200k.
+ */
+export function resolveClaudeContextWindow(
+  model: string | null | undefined,
+  largestPromptTokens: number,
+  configuredContextWindow: string | undefined = process.env.CONTEXT_WINDOW,
+): number {
+  const reported = model ? reportedClaudeContextWindows.get(model) : undefined;
+  if (reported) {
+    return reported;
+  }
+  const configured = Number.parseInt(configuredContextWindow ?? '', 10);
+  if (Number.isFinite(configured) && configured > 0) {
+    return configured;
+  }
+  if (model && (ONE_MILLION_SUFFIX_PATTERN.test(model) || EXTENDED_CONTEXT_MODEL_PATTERN.test(model))) {
+    return CLAUDE_EXTENDED_CONTEXT_WINDOW;
+  }
+  return largestPromptTokens > CLAUDE_STANDARD_CONTEXT_WINDOW
+    ? CLAUDE_EXTENDED_CONTEXT_WINDOW
+    : CLAUDE_STANDARD_CONTEXT_WINDOW;
+}
+
 /**
  * Latest context-window usage from a Claude transcript's already-parsed rows.
  *
@@ -192,7 +254,8 @@ function emptyCodexTokenUsage(): TokenUsageResult {
  * Reads the newest assistant turn only: `input_tokens + cache_read +
  * cache_creation` is that one request's whole prompt, i.e. what the context
  * window currently holds. Summing turns would count the same cached prefix
- * once per turn.
+ * once per turn. A compaction newer than that turn replaces it: the context
+ * then holds the compacted size its boundary row records, until the next turn.
  */
 export function summarizeClaudeTokenUsage(
   entries: AnyRecord[],
@@ -202,6 +265,8 @@ export function summarizeClaudeTokenUsage(
   let outputTokens = 0;
   let cacheReadTokens = 0;
   let cacheCreationTokens = 0;
+  let model: string | null = null;
+  let largestPromptTokens = 0;
 
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];
@@ -209,6 +274,17 @@ export function summarizeClaudeTokenUsage(
     // conversation's; reading one makes the counter drop to the subagent's
     // number and bounce back on the next main-thread turn.
     if (entry?.isSidechain === true) {
+      continue;
+    }
+
+    if (entry?.type === 'system' && entry.subtype === 'compact_boundary') {
+      // Older CLI builds record only the size before compacting; with no size
+      // after it, the turn before the boundary is still the best reading.
+      const postTokens = readUsageNumber(entry.compactMetadata?.postTokens);
+      if (postTokens > 0) {
+        inputTokens = postTokens;
+        break;
+      }
       continue;
     }
 
@@ -244,8 +320,30 @@ export function summarizeClaudeTokenUsage(
     break;
   }
 
-  const parsedContextWindow = Number.parseInt(configuredContextWindow ?? '', 10);
-  const contextWindow = Number.isFinite(parsedContextWindow) ? parsedContextWindow : 160_000;
+  // The window depends on the model and on how large the session has grown,
+  // so both are read from the whole parsed range, not just the newest turn.
+  for (const entry of entries) {
+    if (entry?.isSidechain === true) {
+      continue;
+    }
+    if (entry?.type === 'system' && entry.subtype === 'compact_boundary') {
+      largestPromptTokens = Math.max(largestPromptTokens, readUsageNumber(entry.compactMetadata?.preTokens));
+      continue;
+    }
+    const usage = entry?.type === 'assistant' ? entry.message?.usage : null;
+    if (!usage || entry.message?.model === '<synthetic>') {
+      continue;
+    }
+    model = typeof entry.message?.model === 'string' ? entry.message.model : model;
+    largestPromptTokens = Math.max(
+      largestPromptTokens,
+      readUsageNumber(usage.input_tokens ?? usage.inputTokens)
+        + readUsageNumber(usage.cache_read_input_tokens ?? usage.cacheReadInputTokens ?? usage.cacheReadTokens)
+        + readUsageNumber(usage.cache_creation_input_tokens ?? usage.cacheCreationInputTokens ?? usage.cacheCreationTokens),
+    );
+  }
+
+  const contextWindow = resolveClaudeContextWindow(model, largestPromptTokens, configuredContextWindow);
   const cacheTokens = cacheReadTokens + cacheCreationTokens;
 
   return {

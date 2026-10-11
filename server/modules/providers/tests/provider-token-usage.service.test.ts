@@ -8,6 +8,8 @@ import Database from 'better-sqlite3';
 
 import {
   createProviderTokenUsageService,
+  rememberClaudeContextWindows,
+  resolveClaudeContextWindow,
   summarizeClaudeTokenUsage,
 } from '@/modules/providers/services/provider-token-usage.service.js';
 import { AppError } from '@/shared/utils.js';
@@ -370,4 +372,58 @@ test('Codex token usage falls back to the whole file when the tail has no token_
   } finally {
     await rm(tempDirectory, { recursive: true, force: true });
   }
+});
+
+test('the Claude summarizer reads the compacted size when a compaction is the newest event', () => {
+  const entries = [
+    { type: 'assistant', message: { model: 'claude-opus-5-5', usage: { input_tokens: 3, cache_read_input_tokens: 33_000, output_tokens: 80 } } },
+    { type: 'system', subtype: 'compact_boundary', compactMetadata: { trigger: 'manual', preTokens: 33_083, postTokens: 2_100 } },
+    { type: 'user', message: { role: 'user', content: 'summary of the conversation so far' } },
+  ];
+
+  const usage = summarizeClaudeTokenUsage(entries, undefined);
+  assert.equal(usage.used, 2_100);
+  assert.equal(usage.inputTokens, 2_100);
+  assert.equal(usage.outputTokens, 0);
+});
+
+test('the Claude summarizer keeps the last turn when the boundary records no compacted size', () => {
+  const entries = [
+    { type: 'assistant', message: { usage: { input_tokens: 3, cache_read_input_tokens: 4000, output_tokens: 80 } } },
+    { type: 'system', subtype: 'compact_boundary', compactMetadata: { trigger: 'auto', preTokens: 4083 } },
+  ];
+
+  assert.equal(summarizeClaudeTokenUsage(entries, '200000').used, 4083);
+});
+
+test('a reply after a compaction is read as usual', () => {
+  const entries = [
+    { type: 'system', subtype: 'compact_boundary', compactMetadata: { trigger: 'manual', preTokens: 33_083, postTokens: 2_100 } },
+    { type: 'assistant', message: { usage: { input_tokens: 10, cache_read_input_tokens: 2_500, output_tokens: 40 } } },
+  ];
+
+  assert.equal(summarizeClaudeTokenUsage(entries, '200000').used, 2_550);
+});
+
+test('the Claude context window follows the model, the setting and the session size', () => {
+  assert.equal(resolveClaudeContextWindow('claude-opus-5-5', 0, undefined), 1_000_000, 'the Opus 5 family has a 1M window');
+  assert.equal(resolveClaudeContextWindow('claude-sonnet-5-5[1m]', 0, undefined), 1_000_000, 'a [1m] model has a 1M window');
+  assert.equal(resolveClaudeContextWindow('claude-haiku-5-5', 0, undefined), 200_000, 'otherwise the standard 200k');
+  assert.equal(resolveClaudeContextWindow('claude-haiku-5-5', 250_000, undefined), 1_000_000, 'a prompt past 200k proves a larger window');
+  assert.equal(resolveClaudeContextWindow('claude-opus-5-5', 0, '300000'), 300_000, 'CONTEXT_WINDOW overrides a guess');
+});
+
+test('a window the SDK reports beats the setting and every guess', () => {
+  rememberClaudeContextWindows({ 'claude-test-model-1[1m]': { contextWindow: 640_000 } });
+
+  assert.equal(resolveClaudeContextWindow('claude-test-model-1', 0, '300000'), 640_000);
+  assert.equal(resolveClaudeContextWindow('claude-test-model-1[1m]', 0, undefined), 640_000);
+});
+
+test('the Claude summarizer measures against the transcript model\'s window', () => {
+  const entries = [
+    { type: 'assistant', message: { model: 'claude-opus-5-5', usage: { input_tokens: 3, cache_read_input_tokens: 4000, output_tokens: 80 } } },
+  ];
+
+  assert.equal(summarizeClaudeTokenUsage(entries, undefined).total, 1_000_000);
 });

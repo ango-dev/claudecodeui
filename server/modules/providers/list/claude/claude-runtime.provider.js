@@ -37,6 +37,10 @@ import {
   notifyUserIfEnabled
 } from '@/modules/notifications/index.js';
 import { sessionHistoryCache } from '@/modules/providers/services/session-history-cache.service.js';
+import {
+  rememberClaudeContextWindows,
+  resolveClaudeContextWindow,
+} from '@/modules/providers/services/provider-token-usage.service.js';
 import { createCompleteMessage, createNormalizedMessage } from '@/shared/utils.js';
 
 const activeSessions = new Map();
@@ -473,16 +477,17 @@ function readNumber(value) {
  * `input_tokens + cache_read + cache_creation` is one request's whole prompt,
  * which is exactly what the context window holds at that moment.
  * @param {Object} messageUsage - Anthropic usage payload
+ * @param {string|null} [model] - Model that served the request, for its context window
  * @returns {TokenBudget} Token budget object
  */
-function buildTokenBudget(messageUsage) {
+function buildTokenBudget(messageUsage, model = null) {
   const directInputTokens = readNumber(messageUsage.input_tokens ?? messageUsage.inputTokens);
   const cacheCreationTokens = readNumber(messageUsage.cache_creation_input_tokens ?? messageUsage.cacheCreationInputTokens ?? messageUsage.cacheCreationTokens);
   const cacheReadTokens = readNumber(messageUsage.cache_read_input_tokens ?? messageUsage.cacheReadInputTokens ?? messageUsage.cacheReadTokens);
   const cacheTokens = cacheCreationTokens + cacheReadTokens;
   const inputTokens = directInputTokens + cacheTokens;
   const outputTokens = readNumber(messageUsage.output_tokens ?? messageUsage.outputTokens);
-  const contextWindow = parseInt(process.env.CONTEXT_WINDOW, 10) || 160000;
+  const contextWindow = resolveClaudeContextWindow(model, inputTokens);
 
   return {
     used: inputTokens + outputTokens,
@@ -533,7 +538,7 @@ function extractTokenBudget(sdkMessage) {
     return null;
   }
 
-  return buildTokenBudget(messageUsage);
+  return buildTokenBudget(messageUsage, sdkMessage.message?.model ?? null);
 }
 
 /**
@@ -558,7 +563,10 @@ function extractCumulativeTokenBudget(sdkMessage) {
   }
 
   if (sdkMessage.usage && typeof sdkMessage.usage === 'object') {
-    return buildTokenBudget(sdkMessage.usage);
+    const models = sdkMessage.modelUsage && typeof sdkMessage.modelUsage === 'object'
+      ? Object.keys(sdkMessage.modelUsage)
+      : [];
+    return buildTokenBudget(sdkMessage.usage, models[0] ?? null);
   }
 
   if (!sdkMessage.modelUsage || typeof sdkMessage.modelUsage !== 'object') {
@@ -576,7 +584,7 @@ function extractCumulativeTokenBudget(sdkMessage) {
   const inputTokens = readNumber(modelData.cumulativeInputTokens ?? modelData.inputTokens);
   const outputTokens = readNumber(modelData.cumulativeOutputTokens ?? modelData.outputTokens);
   const totalUsed = inputTokens + outputTokens;
-  const contextWindow = parseInt(process.env.CONTEXT_WINDOW, 10) || 160000;
+  const contextWindow = readNumber(modelData.contextWindow) || resolveClaudeContextWindow(modelKey, inputTokens);
 
   return {
     used: totalUsed,
@@ -946,6 +954,9 @@ async function queryClaudeSDK(command, options = {}, ws, context) {
   // Set once a turn publishes a budget read from an assistant message, so the
   // turn-ending `result` is only mined for usage when nothing better arrived.
   let assistantBudgetSent = false;
+  // The newest main-thread reading and its model, kept to correct its window
+  // once the turn's result reports the real one.
+  let lastAssistantBudget = null;
 
   // A new turn supersedes any earlier one still holding this session's process
   // open, so held runs cannot stack up across a conversation.
@@ -1180,11 +1191,48 @@ async function queryClaudeSDK(command, options = {}, ws, context) {
       // report no per-assistant usage at all.
       const tokenBudgetData = extractTokenBudget(message)
         || (assistantBudgetSent ? null : extractCumulativeTokenBudget(message));
+      const sendTokenBudget = (budget) => {
+        ws.send(createNormalizedMessage({ kind: 'status', text: 'token_budget', tokenBudget: budget, sessionId: capturedSessionId || sessionId || null, provider: 'claude' }));
+      };
       if (tokenBudgetData) {
         if (message.type === 'assistant') {
           assistantBudgetSent = true;
+          lastAssistantBudget = { budget: tokenBudgetData, model: message.message?.model ?? null };
         }
-        ws.send(createNormalizedMessage({ kind: 'status', text: 'token_budget', tokenBudget: tokenBudgetData, sessionId: capturedSessionId || sessionId || null, provider: 'claude' }));
+        sendTokenBudget(tokenBudgetData);
+      }
+
+      // A turn's result names each model's real context window. Learn it, and
+      // re-send the turn's last reading if it was measured against a guess.
+      if (message.type === 'result') {
+        rememberClaudeContextWindows(message.modelUsage);
+        if (lastAssistantBudget) {
+          const { budget, model } = lastAssistantBudget;
+          const total = resolveClaudeContextWindow(model, budget.inputTokens);
+          if (total !== budget.total) {
+            lastAssistantBudget = { budget: { ...budget, total }, model };
+            sendTokenBudget(lastAssistantBudget.budget);
+          }
+        }
+      }
+
+      // After a compaction the context holds only the compacted size; without
+      // this the counter kept the pre-compaction number until the next reply.
+      if (message.type === 'system' && message.subtype === 'compact_boundary' && !message.parent_tool_use_id) {
+        const postTokens = readNumber(message.compact_metadata?.post_tokens);
+        if (postTokens > 0) {
+          const model = lastAssistantBudget?.model ?? null;
+          sendTokenBudget({
+            used: postTokens,
+            total: resolveClaudeContextWindow(model, postTokens),
+            inputTokens: postTokens,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            cacheTokens: 0,
+            breakdown: { input: postTokens, output: 0 },
+          });
+        }
       }
 
       if (startsBackgroundWork(message)) {
