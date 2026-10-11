@@ -48,6 +48,9 @@
     --radius: 0.625rem;
     --sidebar: 30 20% 98%;
     --shadow-color: 30 6% 15%;
+    /* Transcript links and inline code (blue / red, as in the reference). */
+    --link: 218 61% 44%;
+    --code-inline: 355 57% 46%;
 
     /* Nav design tokens */
     --nav-glass-bg: 60 14% 99% / 0.8;
@@ -112,6 +115,8 @@
     --ring: 15 65% 63%;
     --sidebar: 0 0% 7%;
     --shadow-color: 0 0% 0%;
+    --link: 217 89% 76%;
+    --code-inline: 8 79% 71%;
 
     /* Nav design tokens — dark overrides */
     --nav-glass-bg: 0 0% 8% / 0.75;
@@ -1055,35 +1060,54 @@
     }
   }
 
-  /* Conversation text: sans at a fixed 15px on a 20px line, as in the
-     reference. Message components opt into font-serif; inside the transcript
-     that is overridden so headings elsewhere keep the serif. */
-  .chat-message .font-serif {
+  /* Conversation text, as in the reference: assistant replies in the serif at
+     a fixed 16px on a 22px line; the user's own messages in the sans. */
+  .chat-message .prose {
+    font-size: 16px;
+    line-height: 22px;
+  }
+
+  .chat-message.user .font-serif {
     font-family: Geist, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   }
 
-  .chat-message .prose {
+  .chat-message.user .prose {
     font-size: 15px;
-    line-height: 20px;
+    line-height: 21px;
   }
 
-  /* User message: a flat, softly rounded box without border or shadow. The
-     bubble is the transcript's only element with this corner override. */
+  /* Inline code in messages: monospace on a bordered chip, tinted red. */
+  .chat-message .prose :not(pre) > code {
+    color: hsl(var(--code-inline));
+    font-size: 0.85em;
+    font-weight: 400;
+    padding: 0.0625rem 0.3125rem;
+    border-radius: 0.3125rem;
+  }
+
+  /* User message: a flat, rounded box without border or shadow. The bubble is
+     the transcript's only element with this corner override. */
   .chat-message.user .rounded-br-md {
-    border-radius: 0.5rem;
+    border-radius: 0.75rem;
     border-color: transparent;
     background-color: hsl(var(--secondary));
     box-shadow: none;
   }
 
   .prose a {
-    color: hsl(var(--primary));
-    text-decoration-color: hsl(var(--primary) / 0.4);
+    color: hsl(var(--link));
+    text-decoration-line: underline;
+    text-decoration-color: hsl(var(--link) / 0.5);
     text-underline-offset: 2px;
   }
 
   .prose a:hover {
-    text-decoration-color: hsl(var(--primary));
+    text-decoration-color: hsl(var(--link));
+  }
+
+  /* Outranks the links' own dark:text-* utility. */
+  .dark .prose a {
+    color: hsl(var(--link));
   }
 
   /* Code uses the theme's monospace face. Prism and the chat code block set
