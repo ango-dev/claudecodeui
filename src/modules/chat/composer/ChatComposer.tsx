@@ -10,7 +10,7 @@ import type {
   RefObject,
   TouchEvent,
 } from 'react';
-import { PaperclipIcon, MessageSquareIcon, XIcon, Loader2, ArrowUpIcon, PencilIcon, Settings2 } from 'lucide-react';
+import { PlusIcon, MessageSquareIcon, XIcon, Loader2, ArrowUpIcon, PencilIcon, Settings2 } from 'lucide-react';
 
 import { useVoiceInput } from '@/modules/chat/hooks/useVoiceInput';
 import { useVoiceAvailable } from '@/modules/chat/hooks/useVoiceAvailable';
@@ -141,7 +141,6 @@ export default function ChatComposer({
   modelsLoading,
   tokenBudget,
   onShowTokenUsage,
-  slashCommandsCount,
   onToggleCommandMenu,
   hasInput,
   onClearInput,
@@ -363,15 +362,22 @@ export default function ChatComposer({
           frequentCommands={frequentCommands}
         />
 
+        {/* Layout after Claude Code: the bordered box holds only the input and the
+            send button; the toolbar sits underneath it, still inside the form. */}
         <PromptInput
           onSubmit={onSubmit as (event: FormEvent<HTMLFormElement>) => void}
           status={isLoading ? 'streaming' : 'ready'}
-          className={[
-            isTextareaExpanded ? 'chat-input-expanded' : '',
-            hasActivityIndicator ? 'rounded-t-none' : '',
-          ].filter(Boolean).join(' ')}
+          className="overflow-visible rounded-none border-0 bg-transparent shadow-none backdrop-blur-none focus-within:border-transparent focus-within:shadow-none focus-within:ring-0"
           {...getRootProps()}
         >
+          <div
+            data-slot="prompt-input-box"
+            className={[
+              'relative rounded-[var(--radius)] border',
+              isTextareaExpanded ? 'chat-input-expanded' : '',
+              hasActivityIndicator ? 'rounded-t-none' : '',
+            ].filter(Boolean).join(' ')}
+          >
           {isDragActive && (
             <div className="absolute inset-0 z-50 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary/50 bg-primary/15">
               <div className="rounded-xl border border-border/30 bg-card p-4 shadow-lg">
@@ -409,7 +415,7 @@ export default function ChatComposer({
 
           <PromptInputBody>
             <div ref={inputHighlightRef} aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl">
-              <div className="chat-input-placeholder block w-full whitespace-pre-wrap break-words px-4 py-2 text-sm leading-6 text-transparent">
+              <div className="chat-input-placeholder block w-full whitespace-pre-wrap break-words py-2 pl-4 pr-12 text-sm leading-6 text-transparent">
                 {renderInputWithMentions(input)}
               </div>
             </div>
@@ -427,38 +433,77 @@ export default function ChatComposer({
               onBlur={() => onInputFocusChange?.(false)}
               onInput={onTextareaInput}
               placeholder={placeholder}
+              // One line when empty, like Claude Code; it still grows as you type.
+              rows={1}
+              className="pr-12"
             />
         </PromptInputBody>
 
-        <PromptInputFooter className="flex-wrap gap-y-1 border-t-0 pt-0">
+            <PromptInputSubmit
+              onClick={
+                canQueueDraft
+                  ? (e: MouseEvent<HTMLButtonElement>) => {
+                      e.preventDefault();
+                      onSubmit(e);
+                    }
+                  : isLoading
+                    ? onAbortSession
+                    : isRecording
+                      ? (e: MouseEvent<HTMLButtonElement>) => {
+                          e.preventDefault();
+                          voiceStop({ send: true });
+                        }
+                      : undefined
+              }
+              disabled={
+                isLoading
+                  ? false
+                  : isRecording
+                    ? false
+                    : isTranscribing
+                      ? true
+                      : !input.trim() && attachedFiles.length === 0
+              }
+              aria-label={submitAriaLabel}
+              title={submitAriaLabel}
+              className="absolute bottom-1 right-1.5 h-8 w-8 rounded-full bg-transparent text-foreground shadow-none hover:bg-accent disabled:text-muted-foreground"
+            >
+              {isTranscribing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : canQueueDraft ? (
+                <ArrowUpIcon className="h-4 w-4" />
+              ) : undefined}
+            </PromptInputSubmit>
+          </div>
+
+        <PromptInputFooter className="flex-wrap gap-y-1 border-t-0 px-1 pb-0 pt-1.5">
           <PromptInputTools className="min-w-0">
             <PromptInputButton
               tooltip={{ content: t('input.attachFiles') }}
               onClick={openAttachmentPicker}
               aria-label={t('input.attachFiles')}
             >
-              <PaperclipIcon />
+              <PlusIcon />
             </PromptInputButton>
 
             {onVoiceTranscript && voiceAvailable && (
               <VoiceInputButton state={voiceState} onToggle={voiceToggle} errorMsg={voiceError} />
             )}
 
+            <ComposerPermissionMenu
+              permissionMode={permissionMode}
+              permissionModes={availablePermissionModes}
+              onSelectPermissionMode={onSelectPermissionMode}
+              providerLabel={providerLabel}
+            />
+
             <TokenUsageSummary usage={tokenBudget} onClick={onShowTokenUsage} />
 
             <PromptInputButton
               tooltip={{ content: t('input.showAllCommands') }}
               onClick={onToggleCommandMenu}
-              className="relative"
             >
               <MessageSquareIcon />
-              {slashCommandsCount > 0 && (
-                <span
-                  className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground"
-                >
-                  {slashCommandsCount}
-                </span>
-              )}
             </PromptInputButton>
 
             <PromptInputButton
@@ -497,48 +542,7 @@ export default function ChatComposer({
               modelsLoading={modelsLoading}
             />
 
-            <ComposerPermissionMenu
-              permissionMode={permissionMode}
-              permissionModes={availablePermissionModes}
-              onSelectPermissionMode={onSelectPermissionMode}
-              providerLabel={providerLabel}
-            />
 
-            <PromptInputSubmit
-              onClick={
-                canQueueDraft
-                  ? (e: MouseEvent<HTMLButtonElement>) => {
-                      e.preventDefault();
-                      onSubmit(e);
-                    }
-                  : isLoading
-                    ? onAbortSession
-                    : isRecording
-                      ? (e: MouseEvent<HTMLButtonElement>) => {
-                          e.preventDefault();
-                          voiceStop({ send: true });
-                        }
-                      : undefined
-              }
-              disabled={
-                isLoading
-                  ? false
-                  : isRecording
-                    ? false
-                    : isTranscribing
-                      ? true
-                      : !input.trim() && attachedFiles.length === 0
-              }
-              aria-label={submitAriaLabel}
-              title={submitAriaLabel}
-              className="h-8 w-8 sm:h-8 sm:w-8"
-            >
-              {isTranscribing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : canQueueDraft ? (
-                <ArrowUpIcon className="h-4 w-4" />
-              ) : undefined}
-            </PromptInputSubmit>
           </div>
 
           {/* The keyboard-help line is hidden in this fork; only the queue

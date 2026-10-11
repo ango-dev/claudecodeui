@@ -1054,8 +1054,9 @@
     background-color: hsl(var(--primary) / 0.22);
   }
 
-  /* Composer: a flat card with a hairline border, as in the reference. */
-  [data-slot="prompt-input"] {
+  /* Composer: a flat card with a hairline border, as in the reference. The
+     form itself is an invisible shell; the visible box is its inner wrapper. */
+  [data-slot="prompt-input-box"] {
     border-radius: var(--radius);
     border-color: hsl(var(--input));
     background-color: hsl(var(--card));
@@ -1063,7 +1064,7 @@
     backdrop-filter: none;
   }
 
-  [data-slot="prompt-input"]:focus-within {
+  [data-slot="prompt-input-box"]:focus-within {
     border-color: hsl(var(--muted-foreground) / 0.45);
     box-shadow: 0 1px 2px hsl(var(--shadow-color) / 0.04);
   }
