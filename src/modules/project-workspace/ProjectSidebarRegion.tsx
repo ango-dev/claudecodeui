@@ -151,17 +151,22 @@ function ProjectSidebarRegion() {
       className={`fixed inset-0 z-50 flex transition-all duration-150 ease-out ${
         sidebarOpen ? 'visible opacity-100' : 'invisible opacity-0'
       }`}
+      // Up to the top edge, past the PWA inset the stylesheet gives fixed overlays:
+      // the panel runs behind the iOS status bar and starts its content below it.
+      style={{ top: 0 }}
     >
       <button
         className="fixed inset-0 bg-background/60 backdrop-blur-sm transition-opacity duration-150 ease-out"
+        style={{ top: 0 }}
         onClick={handleBackdropClick}
         onTouchStart={handleBackdropTouch}
         aria-label={t('versionUpdate.ariaLabels.closeSidebar')}
       />
       <div
-        className={`relative h-full w-[85vw] max-w-sm transform border-r border-border/40 bg-card transition-transform duration-150 ease-out sm:w-80 ${
+        className={`relative h-full w-[85vw] max-w-sm transform border-r border-border/40 bg-sidebar transition-transform duration-150 ease-out sm:w-80 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
+        style={{ paddingTop: 'var(--shell-top-inset, 0px)' }}
         onClick={(event) => event.stopPropagation()}
         onTouchStart={(event) => event.stopPropagation()}
       >

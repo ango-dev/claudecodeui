@@ -82,7 +82,6 @@ function groupArchivedSessionsByProject(sessions: ArchivedSessionListItem[]): Ar
 }
 
 type SidebarContentProps = {
-  isPWA: boolean;
   isMobile: boolean;
   isLoading: boolean;
   projects: Project[];
@@ -131,7 +130,6 @@ type SidebarContentProps = {
 
 /** Rendered by Sidebar as the expanded panel body: header, project list, conversation/archive search results, recent conversations and footer. */
 export default function SidebarContent({
-  isPWA,
   isMobile,
   isLoading,
   projects,
@@ -186,11 +184,10 @@ export default function SidebarContent({
 
   return (
     <div
-      className="flex h-full flex-col bg-sidebar md:w-full md:select-none"
+      className="flex h-full flex-col bg-sidebar w-full select-none"
       style={{}}
     >
       <SidebarHeader
-        isPWA={isPWA}
         isMobile={isMobile}
         isLoading={isLoading}
         projectsCount={projects.length}
@@ -209,11 +206,11 @@ export default function SidebarContent({
         t={t}
       />
 
-      <ScrollArea className="flex-1 overflow-y-auto overscroll-contain md:px-1.5 md:py-2">
+      <ScrollArea className="flex-1 overflow-y-auto overscroll-contain px-1.5 py-2">
         {showConversationSearch ? (
           isSearching && !conversationResults ? (
-            <div className="px-4 py-12 text-center md:py-8">
-              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-muted md:mb-3">
+            <div className="px-4 text-center py-8">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-muted mb-3">
                 <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
               </div>
               <p className="text-sm text-muted-foreground">{t('search.searching')}</p>
@@ -224,11 +221,11 @@ export default function SidebarContent({
               )}
             </div>
           ) : !isSearching && conversationResults && !hasSearchResults ? (
-            <div className="px-4 py-12 text-center md:py-8">
-              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-muted md:mb-3">
+            <div className="px-4 text-center py-8">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-muted mb-3">
                 <Search className="h-6 w-6 text-muted-foreground" />
               </div>
-              <h3 className="mb-2 text-base font-medium text-foreground md:mb-1">{t('search.noResults')}</h3>
+              <h3 className="text-base font-medium text-foreground mb-1">{t('search.noResults')}</h3>
               <p className="text-sm text-muted-foreground">{t('search.tryDifferentQuery')}</p>
             </div>
           ) : conversationResults && (hasSearchResults || isSearching) ? (
@@ -393,11 +390,11 @@ export default function SidebarContent({
           />
         ) : searchMode === 'running' ? (
           projectListProps.filteredProjects.length === 0 ? (
-            <div className="px-4 py-12 text-center md:py-8">
-              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg border border-border/70 bg-muted/50 md:mb-3">
+            <div className="px-4 text-center py-8">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg border border-border/70 bg-muted/50 mb-3">
                 <Activity className="h-6 w-6 text-muted-foreground" />
               </div>
-              <h3 className="mb-2 text-base font-medium text-foreground md:mb-1">
+              <h3 className="text-base font-medium text-foreground mb-1">
                 {t('running.emptyTitle', 'No sessions running')}
               </h3>
               <p className="text-sm text-muted-foreground">

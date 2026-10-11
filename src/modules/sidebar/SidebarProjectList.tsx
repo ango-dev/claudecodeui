@@ -20,8 +20,6 @@ export default function SidebarProjectList({
   currentTime,
 
   deletingProjects,
-  tasksEnabled,
-  mcpServerStatus,
   getProjectSessions,
   onLoadMoreSessions,
   loadingMoreProjects,
@@ -70,7 +68,7 @@ export default function SidebarProjectList({
   const showProjects = !isLoading && projects.length > 0 && filteredProjects.length > 0;
 
   return (
-      <div className="pb-safe-area-inset-bottom md:space-y-1">
+      <div className="pb-safe-area-inset-bottom space-y-1">
         {!showProjects
           ? state
           : filteredProjects.map((project) => {
@@ -110,8 +108,6 @@ export default function SidebarProjectList({
                 currentTime={currentTime}
                 sessionRenameId={renamingSession?.id ?? null}
                 sessionRenameDraft={renamingSession?.draft ?? ''}
-                tasksEnabled={tasksEnabled}
-                mcpServerStatus={mcpServerStatus}
                 onRenameDraftChange={onRenameDraftChange}
                 onToggleProject={onToggleProject}
                 onProjectSelect={onProjectSelect}

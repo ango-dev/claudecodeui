@@ -47,7 +47,6 @@ const renderRow = (state: { isProcessing: boolean; hasBackgroundWork: boolean })
     onStartEditingSession: noop,
     onCancelEditingSession: noop,
     onSaveEditingSession: noop,
-    onProjectSelect: noop,
     onSessionSelect: noop,
     onDeleteSession: noop,
     isSelecting: false,

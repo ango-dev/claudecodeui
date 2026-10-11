@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { CheckSquare, Plus, Trash2, X } from 'lucide-react';
+import { Archive, Plus, Trash2, X } from 'lucide-react';
 import type { TFunction } from 'i18next';
 
 import { ActionMenu, Button } from '@/shared/ui';
-import { cn } from '@/shared/utils';
 import type { LLMProvider, Project, ProjectSession, SessionWithProvider, SidebarSessionSelection } from '@/shared/types';
 import SidebarSessionItem from '@/modules/sidebar/SidebarSessionItem';
-import { useCompactSidebar } from '@/modules/sidebar/hooks/useCompactSidebar';
+import { useTouchScreen } from '@/modules/sidebar/hooks/useTouchScreen';
 
 type SidebarProjectSessionsProps = {
   project: Project;
@@ -27,7 +26,6 @@ type SidebarProjectSessionsProps = {
   onStartEditingSession: (projectId: string, sessionId: string, initialName: string) => void;
   onCancelEditingSession: () => void;
   onSaveEditingSession: (projectName: string, sessionId: string, summary: string, provider: LLMProvider) => void;
-  onProjectSelect: (project: Project) => void;
   onSessionSelect: (session: SessionWithProvider, projectName: string) => void;
   onDeleteSession: (sessionId: string, sessionTitle: string) => void;
   onForkSession?: (session: SessionWithProvider) => void;
@@ -81,7 +79,6 @@ export default function SidebarProjectSessions({
   onStartEditingSession,
   onCancelEditingSession,
   onSaveEditingSession,
-  onProjectSelect,
   onSessionSelect,
   onDeleteSession,
   onForkSession,
@@ -95,7 +92,7 @@ export default function SidebarProjectSessions({
   onArchiveSessions,
   t,
 }: SidebarProjectSessionsProps) {
-  const isCompact = useCompactSidebar();
+  const isTouchScreen = useTouchScreen();
 
   const isSelecting = selectedSessionIds !== null;
   // A session with a response in flight cannot be deleted — the same rule the
@@ -198,96 +195,79 @@ export default function SidebarProjectSessions({
 
   return (
     <div className="ml-2 space-y-0.5 pl-1">
-      {isCompact ? (
-        <div className="px-3 pb-1 pt-1">
-          <button
-            className="flex h-8 w-full items-center justify-center gap-2 rounded-md bg-primary text-xs font-medium text-primary-foreground transition-all duration-150 hover:bg-primary/90 active:scale-[0.98]"
-            onClick={() => {
-              onProjectSelect(project);
-              onNewSession(project);
-            }}
-          >
-            <Plus className="h-3 w-3" />
-            {t('sessions.newSession')}
-          </button>
-        </div>
-      ) : (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="flex h-8 w-full justify-start gap-2 px-2 text-sm font-normal text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-          onClick={() => onNewSession(project)}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          {t('sessions.newSession')}
-        </Button>
-      )}
+      <Button
+        variant="ghost"
+        size="sm"
+        className="flex h-8 w-full justify-start gap-2 px-2 text-sm font-normal text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+        onClick={() => onNewSession(project)}
+      >
+        <Plus className="h-3.5 w-3.5" />
+        {t('sessions.newSession')}
+      </Button>
 
-      {/* Desktop starts a selection with Ctrl/Cmd/Shift-click or the row menu and
-          acts on it through the right-click menu below; touch layouts have no
-          modifier keys or right-click, so they keep this toolbar. */}
-      {isCompact && (isSelecting || (initialSessionsLoaded && selectableSessionIds.length > 0)) && (
-        <div className={cn('space-y-1', isCompact && 'px-3')}>
-          {isSelecting ? (
-            <>
-              {/* Wraps rather than clips: at the narrowest sidebar width a long
-                  translated "Select all loaded" leaves no room for Cancel. */}
-              <div className="flex flex-wrap items-center justify-between gap-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-                  onClick={() =>
-                    onSetSessionSelection({
-                      projectId: project.projectId,
-                      sessionIds: new Set(allLoadedSelected ? [] : selectableSessionIds),
-                    })
-                  }
-                  disabled={selectableSessionIds.length === 0}
-                >
-                  {selectAllLabel}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-                  onClick={onCancelSessionSelection}
-                  title="Esc"
-                >
-                  <X className="h-3 w-3" />
-                  {t('actions.cancel')}
-                </Button>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 w-full justify-start gap-2 px-2 text-xs font-medium text-destructive hover:bg-destructive/10 hover:text-destructive"
-                onClick={() => onDeleteSelectedSessions(effectiveSelectedIds)}
-                disabled={effectiveSelectedIds.length === 0}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                {t('sessions.deleteSelected', { count: effectiveSelectedIds.length })}
-              </Button>
-            </>
-          ) : (
-            <div className="flex justify-end">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
-                onClick={() =>
-                  onSetSessionSelection({ projectId: project.projectId, sessionIds: new Set() })
-                }
-              >
-                <CheckSquare className="h-3 w-3" />
-                {t('sessions.select')}
-              </Button>
-            </div>
+      {/* With a pointer, a selection (Ctrl/Cmd/Shift-click or the row menu's
+          Select) is acted on through the right-click menu below. Touch screens
+          have neither modifier keys nor right-click, so a selection started
+          from the row menu gets this toolbar instead. */}
+      {isTouchScreen && isSelecting && (
+        <div className="space-y-1 px-1">
+          {/* Wraps rather than clips: at the narrowest sidebar width a long
+              translated "Select all loaded" leaves no room for Cancel. */}
+          <div className="flex flex-wrap items-center justify-between gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+              onClick={() =>
+                onSetSessionSelection({
+                  projectId: project.projectId,
+                  sessionIds: new Set(allLoadedSelected ? [] : selectableSessionIds),
+                })
+              }
+              disabled={selectableSessionIds.length === 0}
+            >
+              {selectAllLabel}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+              onClick={onCancelSessionSelection}
+              title="Esc"
+            >
+              <X className="h-3 w-3" />
+              {t('actions.cancel')}
+            </Button>
+          </div>
+          {onArchiveSessions && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-full justify-start gap-2 px-2 text-xs font-medium text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                onArchiveSessions(effectiveSelectedIds);
+                onCancelSessionSelection();
+              }}
+              disabled={effectiveSelectedIds.length === 0}
+            >
+              <Archive className="h-3.5 w-3.5" />
+              {t('sessions.archiveSelected', { count: effectiveSelectedIds.length, defaultValue: 'Archive {{count}}' })}
+            </Button>
           )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-full justify-start gap-2 px-2 text-xs font-medium text-destructive hover:bg-destructive/10 hover:text-destructive"
+            onClick={() => onDeleteSelectedSessions(effectiveSelectedIds)}
+            disabled={effectiveSelectedIds.length === 0}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {t('sessions.deleteSelected', { count: effectiveSelectedIds.length })}
+          </Button>
         </div>
       )}
 
-      {isSelecting && !isCompact && (
+      {isSelecting && !isTouchScreen && (
         <ActionMenu
           label={t('sessions.selectedActions', { defaultValue: 'Selected sessions' })}
           hideTrigger
@@ -347,7 +327,6 @@ export default function SidebarProjectSessions({
               onStartEditingSession={onStartEditingSession}
               onCancelEditingSession={onCancelEditingSession}
               onSaveEditingSession={onSaveEditingSession}
-              onProjectSelect={onProjectSelect}
               onSessionSelect={onSessionSelect}
               onDeleteSession={onDeleteSession}
               onForkSession={onForkSession}

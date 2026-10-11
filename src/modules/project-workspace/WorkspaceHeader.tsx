@@ -99,7 +99,7 @@ export default function WorkspaceHeader({
   };
 
   return (
-    <header className="pwa-header-safe flex-shrink-0 bg-background px-3 py-1.5 sm:px-4 sm:py-2">
+    <header className="pwa-header-safe flex-shrink-0 bg-background px-3 pb-1.5 pt-1 sm:px-4 sm:pb-2 sm:pt-1">
       <div className="flex min-w-0 flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
         <div className="flex min-w-0 items-center gap-2 sm:max-w-[min(34%,24rem)] sm:flex-[1_1_18rem]">
           {(showMenuButton ?? isMobile) && <MobileMenuButton onMenuClick={onMenuClick} />}

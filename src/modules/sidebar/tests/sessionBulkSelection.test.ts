@@ -39,11 +39,11 @@ vi.mock('@/modules/sidebar/SessionOptions', () => ({
 }));
 
 // The breakpoint hook caches one MediaQueryList for the whole module, so the
-// compact layout is selected through the mock rather than by resizing jsdom.
-let isCompactLayout = false;
+// touch layout is selected through the mock rather than by emulating a touch screen.
+let isTouchLayout = false;
 
-vi.mock('@/modules/sidebar/hooks/useCompactSidebar', () => ({
-  useCompactSidebar: () => isCompactLayout,
+vi.mock('@/modules/sidebar/hooks/useTouchScreen', () => ({
+  useTouchScreen: () => isTouchLayout,
 }));
 
 const { default: SidebarProjectSessions } = await import('@/modules/sidebar/SidebarProjectSessions');
@@ -137,7 +137,7 @@ const checkboxes = (container: HTMLElement): HTMLElement[] =>
 const jsonResponse = (data: unknown) => Promise.resolve({ ok: true, json: async () => ({ data }) });
 
 beforeEach(() => {
-  isCompactLayout = false;
+  isTouchLayout = false;
   recordedOptionsProps.length = 0;
   deleteSession.mockReset();
   deleteSession.mockResolvedValue({ ok: true, text: async () => '' });
@@ -153,20 +153,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-test('the compact list offers Select and opens an empty selection with it', () => {
-  isCompactLayout = true;
-  const onSetSessionSelection = vi.fn();
-  const { container } = renderSessions({ onSetSessionSelection });
+test('a touch screen shows no toolbar until a selection starts from a row menu', () => {
+  isTouchLayout = true;
+  const { container } = renderSessions();
 
   assert.equal(checkboxes(container).length, 0, 'no row acts as a checkbox before selecting');
-
-  const selectButton = buttonWithText(container, 'sessions.select');
-  assert.ok(selectButton, 'touch layouts have no modifier keys, so they keep the Select button');
-
-  fireEvent.click(selectButton);
-  const selection = onSetSessionSelection.mock.calls[0][0] as SidebarSessionSelection;
-  assert.equal(selection.projectId, PROJECT.projectId);
-  assert.deepEqual([...selection.sessionIds], [], 'selection mode opens with nothing ticked');
+  assert.equal(buttonWithText(container, 'sessions.select'), null, 'Select lives in the row menu');
+  assert.equal(buttonWithText(container, 'sessions.selectAll'), null);
+  assert.equal(recordedOptionsProps.length, SESSIONS.length, 'every row keeps its options menu');
 });
 
 test('the idle desktop list has no Select button; every row keeps its options menu', () => {
@@ -268,9 +262,9 @@ test('a list whose every session is running has nothing to offer Select for', ()
   assert.equal(buttonWithText(container, 'sessions.select'), null);
 });
 
-test('the compact toolbar: selection mode replaces the row options with a checkbox on every row', () => {
+test('the touch toolbar: selection mode replaces the row options with a checkbox on every row', () => {
   // Touch layouts keep the selection toolbar; desktop uses the right-click menu.
-  isCompactLayout = true;
+  isTouchLayout = true;
   const { container } = renderSessions({ selectedSessionIds: NO_IDS });
 
   assert.equal(checkboxes(container).length, SESSIONS.length);
@@ -299,9 +293,9 @@ test('clicking or pressing space on a row ticks it', () => {
   assert.deepEqual(onToggleSessionSelected.mock.calls[1], ['project-1', 's2']);
 });
 
-test('the compact toolbar: a running row cannot be ticked and is left out of Select all', () => {
+test('the touch toolbar: a running row cannot be ticked and is left out of Select all', () => {
   // Touch layouts keep the selection toolbar; desktop uses the right-click menu.
-  isCompactLayout = true;
+  isTouchLayout = true;
   const onToggleSessionSelected = vi.fn();
   const onSetSessionSelection = vi.fn();
   const { container } = renderSessions({
@@ -324,9 +318,9 @@ test('the compact toolbar: a running row cannot be ticked and is left out of Sel
   );
 });
 
-test('the compact toolbar: a ticked row that starts running drops out of the count and the ids to delete', () => {
+test('the touch toolbar: a ticked row that starts running drops out of the count and the ids to delete', () => {
   // Touch layouts keep the selection toolbar; desktop uses the right-click menu.
-  isCompactLayout = true;
+  isTouchLayout = true;
   const onDeleteSelectedSessions = vi.fn();
   const { container } = renderSessions({
     selectedSessionIds: new Set(['s1', 's2']),
@@ -346,9 +340,9 @@ test('the compact toolbar: a ticked row that starts running drops out of the cou
   assert.deepEqual(onDeleteSelectedSessions.mock.calls[0][0], ['s1']);
 });
 
-test('the compact toolbar: Select all flips to Clear once every loaded row is ticked', () => {
+test('the touch toolbar: Select all flips to Clear once every loaded row is ticked', () => {
   // Touch layouts keep the selection toolbar; desktop uses the right-click menu.
-  isCompactLayout = true;
+  isTouchLayout = true;
   const onSetSessionSelection = vi.fn();
   const everything = new Set(['s1', 's2', 's3']);
 
@@ -407,8 +401,8 @@ test('a page emptied by deleting every loaded row keeps Load more', () => {
   assert.equal(buttonWithText(reallyEmpty.container, 'Load more sessions'), null);
 });
 
-test('the compact layout selects with the same rules and hides its options button', () => {
-  isCompactLayout = true;
+test('a touch screen selects with the same rules and hides the options button', () => {
+  isTouchLayout = true;
   const onToggleSessionSelected = vi.fn();
   const { container } = renderSessions({
     selectedSessionIds: new Set(['s1']),
@@ -422,7 +416,7 @@ test('the compact layout selects with the same rules and hides its options butto
   assert.equal(
     container.querySelector('[aria-label^="Session options for"]'),
     null,
-    'the mobile row hides its "..." button while selecting',
+    'the row hides its "..." button while selecting',
   );
 
   fireEvent.click(rows[1]);
