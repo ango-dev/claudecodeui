@@ -14,6 +14,8 @@ export type UiPreferences = {
   showThinking: boolean;
   sendByCtrlEnter: boolean;
   sidebarVisible: boolean;
+  /** Show the sidebar as a slide-over drawer (the phone layout) on any screen size. */
+  sidebarAsDrawer: boolean;
   voiceEnabled: boolean;
 };
 
@@ -28,6 +30,7 @@ const DEFAULTS: UiPreferences = {
   showThinking: true,
   sendByCtrlEnter: false,
   sidebarVisible: true,
+  sidebarAsDrawer: false,
   voiceEnabled: false,
 };
 

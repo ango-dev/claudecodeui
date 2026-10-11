@@ -27,8 +27,10 @@ function ProjectSidebarRegion({
   const { width: sidebarWidth, setWidth: setSidebarWidth, resetWidth: resetSidebarWidth } = useSidebarWidth();
   // Hide sidebar leaves a 48px icon rail behind, which sizes itself — the stored
   // width and the drag handle only apply while the full sidebar is on screen.
-  const { sidebarVisible } = useUiPreferences();
-  const isSidebarResizable = !isMobile && sidebarVisible;
+  const { sidebarVisible, sidebarAsDrawer } = useUiPreferences();
+  // Drawer on phones, or anywhere when the user prefers the slide-over sidebar.
+  const isDrawer = isMobile || sidebarAsDrawer;
+  const isSidebarResizable = !isDrawer && sidebarVisible;
   // Drag origin; null while no resize is in progress.
   const resizeOriginRef = useRef<{ pointerX: number; width: number } | null>(null);
   const resizeFrameRef = useRef<number | null>(null);
@@ -115,7 +117,7 @@ function ProjectSidebarRegion({
     document.body.style.userSelect = '';
   }, []);
 
-  if (!isMobile) {
+  if (!isDrawer) {
     return (
       <div
         className="relative h-full flex-shrink-0 border-r border-border"

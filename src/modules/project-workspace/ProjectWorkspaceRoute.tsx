@@ -9,6 +9,7 @@ import {
 } from '@/shared/context/SessionProtectionContext';
 import { useWebSocket } from '@/shared/context/WebSocketContext';
 import { useDeviceSettings } from '@/shared/hooks/useDeviceSettings';
+import { useUiPreferences } from '@/shared/context/UiPreferencesContext';
 import { useVisualViewportKeyboardOffset } from '@/modules/project-workspace/hooks/useVisualViewportKeyboardOffset';
 import ProjectWorkspaceShell from '@/modules/project-workspace/ProjectWorkspaceShell';
 
@@ -29,6 +30,7 @@ function ProjectWorkspaceRouteContent() {
   const navigate = useNavigate();
   const { sessionId } = useParams<{ sessionId?: string }>();
   const { isMobile } = useDeviceSettings({ trackPWA: false });
+  const { sidebarAsDrawer } = useUiPreferences();
   const { ws, sendMessage, subscribe } = useWebSocket();
   const { isSessionProcessing } = useSessionProtectionActions();
 
@@ -39,7 +41,9 @@ function ProjectWorkspaceRouteContent() {
       sessionId={sessionId}
       navigate={navigate}
       subscribe={subscribe}
-      isMobile={isMobile}
+      // The projects state only uses this for the sidebar (close it after a
+      // pick, drawer behaviour), so the drawer preference counts as mobile here.
+      isMobile={isMobile || sidebarAsDrawer}
       isSessionProcessing={isSessionProcessing}
     >
       <ProjectWorkspaceShell

@@ -6,18 +6,20 @@ import MobileMenuButton from '@/modules/project-workspace/MobileMenuButton';
 type WorkspaceStateViewProps = {
   mode: 'loading' | 'empty';
   isMobile: boolean;
+  /** Show the sidebar menu button; defaults to isMobile. */
+  showMenuButton?: boolean;
   onMenuClick: () => void;
 };
 
 /** Rendered by WorkspaceMain instead of the workspace while projects load or when none is selected. */
-export default function WorkspaceStateView({ mode, isMobile, onMenuClick }: WorkspaceStateViewProps) {
+export default function WorkspaceStateView({ mode, isMobile, showMenuButton, onMenuClick }: WorkspaceStateViewProps) {
   const { t } = useTranslation();
 
   const isLoading = mode === 'loading';
 
   return (
     <div className="flex h-full flex-col">
-      {isMobile && (
+      {(showMenuButton ?? isMobile) && (
         <div className="pwa-header-safe flex-shrink-0 border-b border-border/50 bg-background/80 p-2 backdrop-blur-sm sm:p-3">
           <MobileMenuButton onMenuClick={onMenuClick} compact />
         </div>

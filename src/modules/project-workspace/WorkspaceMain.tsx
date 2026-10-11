@@ -60,6 +60,8 @@ function WorkspaceMain({
   onRenameSession,
 }: WorkspaceMainProps) {
   const preferences = useUiPreferences();
+  // The sidebar is a drawer on phones, or anywhere with the slide-over preference.
+  const showMenuButton = isMobile || preferences.sidebarAsDrawer;
   const { showRawParameters, showThinking, sendByCtrlEnter } = preferences;
 
   const { tasksEnabled, isTaskMasterInstalled } = useTasksSettings();
@@ -134,11 +136,11 @@ function WorkspaceMain({
   usePaletteOpsRegister({ openFile, openFileInEditor, openDirectory });
 
   if (isLoading) {
-    return <WorkspaceStateView mode="loading" isMobile={isMobile} onMenuClick={onMenuClick} />;
+    return <WorkspaceStateView mode="loading" isMobile={isMobile} showMenuButton={showMenuButton} onMenuClick={onMenuClick} />;
   }
 
   if (!selectedProject) {
-    return <WorkspaceStateView mode="empty" isMobile={isMobile} onMenuClick={onMenuClick} />;
+    return <WorkspaceStateView mode="empty" isMobile={isMobile} showMenuButton={showMenuButton} onMenuClick={onMenuClick} />;
   }
 
   return (
@@ -151,6 +153,7 @@ function WorkspaceMain({
         shouldShowTasksTab={shouldShowTasksTab}
         shouldShowBrowserTab={shouldShowBrowserTab}
         isMobile={isMobile}
+        showMenuButton={showMenuButton}
         onMenuClick={onMenuClick}
         onRenameSession={onRenameSession}
       />

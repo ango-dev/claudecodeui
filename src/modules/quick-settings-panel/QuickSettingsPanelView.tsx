@@ -56,9 +56,11 @@ function QuickSettingsPanelView({ selectedProject, onInsertCommand }: QuickSetti
     showRawParameters: preferences.showRawParameters,
     showThinking: preferences.showThinking,
     sendByCtrlEnter: preferences.sendByCtrlEnter,
+    sidebarAsDrawer: preferences.sidebarAsDrawer,
     voiceEnabled: preferences.voiceEnabled,
   }), [
     preferences.sendByCtrlEnter,
+    preferences.sidebarAsDrawer,
     preferences.showRawParameters,
     preferences.showThinking,
     preferences.voiceEnabled,

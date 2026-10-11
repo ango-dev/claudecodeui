@@ -73,6 +73,7 @@
       "inputSettings": "Input Settings"
     },
     "darkMode": "Dark Mode",
+    "sidebarAsDrawer": "Slide-over sidebar",
     "showRawParameters": "Show raw parameters",
     "showThinking": "Show thinking",
     "sendByCtrlEnter": "Send by Ctrl+Enter",

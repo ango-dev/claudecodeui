@@ -17,6 +17,8 @@ type WorkspaceHeaderProps = {
   shouldShowTasksTab: boolean;
   shouldShowBrowserTab: boolean;
   isMobile: boolean;
+  /** Show the sidebar menu button; defaults to isMobile. Set when the sidebar is a drawer on any screen. */
+  showMenuButton?: boolean;
   onMenuClick: () => void;
   /** Persists a new title for a session; resolves false when the backend refuses it. */
   onRenameSession: (sessionId: string, summary: string) => Promise<boolean>;
@@ -31,6 +33,7 @@ export default function WorkspaceHeader({
   shouldShowTasksTab,
   shouldShowBrowserTab,
   isMobile,
+  showMenuButton,
   onMenuClick,
   onRenameSession,
 }: WorkspaceHeaderProps) {
@@ -99,7 +102,7 @@ export default function WorkspaceHeader({
     <header className="pwa-header-safe flex-shrink-0 bg-background px-3 py-1.5 sm:px-4 sm:py-2">
       <div className="flex min-w-0 flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
         <div className="flex min-w-0 items-center gap-2 sm:max-w-[min(34%,24rem)] sm:flex-[1_1_18rem]">
-          {isMobile && <MobileMenuButton onMenuClick={onMenuClick} />}
+          {(showMenuButton ?? isMobile) && <MobileMenuButton onMenuClick={onMenuClick} />}
           <WorkspaceTitle
             activeTab={activeTab}
             selectedProject={selectedProject}

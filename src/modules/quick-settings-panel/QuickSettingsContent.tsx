@@ -4,6 +4,7 @@ import {
   Languages,
   Mic,
   Moon,
+  PanelLeft,
   Sun,
   type LucideIcon,
 } from 'lucide-react';
@@ -22,6 +23,14 @@ type PreferenceToggleItem = {
   labelKey: string;
   icon: LucideIcon;
 };
+
+const APPEARANCE_TOGGLES: PreferenceToggleItem[] = [
+  {
+    key: 'sidebarAsDrawer',
+    labelKey: 'quickSettings.sidebarAsDrawer',
+    icon: PanelLeft,
+  },
+];
 
 const TOOL_DISPLAY_TOGGLES: PreferenceToggleItem[] = [
   {
@@ -93,6 +102,7 @@ export default function QuickSettingsContent({
           <DarkModeToggle />
         </div>
         <LanguageSelector compact />
+        {renderToggleRows(APPEARANCE_TOGGLES)}
       </QuickSettingsSection>
 
       <QuickSettingsSection title={t('quickSettings.sections.toolDisplay')}>
