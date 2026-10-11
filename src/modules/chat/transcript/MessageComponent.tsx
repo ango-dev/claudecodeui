@@ -175,31 +175,35 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
                   </Markdown>
                 </div>
                 <div className="mt-1 flex items-center justify-end gap-1 text-xs text-muted-foreground">
-                  {onEditMessage && message.transcriptAnchorId && (
-                    <button
-                      type="button"
-                      onClick={() => onEditMessage(message)}
-                      title={t('message.editAndResend')}
-                      aria-label={t('message.editAndResend')}
-                      className="rounded p-1 opacity-0 transition-opacity hover:bg-muted focus-visible:opacity-100 group-hover:opacity-100 touch:opacity-100"
-                    >
-                      <PencilIcon className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                  {onForkFromMessage && message.transcriptAnchorId && (
-                    <button
-                      type="button"
-                      onClick={() => onForkFromMessage(message)}
-                      title={t('message.forkFromHere')}
-                      aria-label={t('message.forkFromHere')}
-                      className="rounded p-1 opacity-0 transition-opacity hover:bg-muted focus-visible:opacity-100 group-hover:opacity-100 touch:opacity-100"
-                    >
-                      <GitBranchIcon className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                  {shouldShowUserCopyControl && (
-                    <MessageCopyControl content={userCopyContent} messageType="user" />
-                  )}
+                  {/* With a mouse the right-click menu offers these; touch
+                      screens have no right click, so they keep the buttons. */}
+                  <span className="hidden items-center gap-1 touch:flex">
+                    {onEditMessage && message.transcriptAnchorId && (
+                      <button
+                        type="button"
+                        onClick={() => onEditMessage(message)}
+                        title={t('message.editAndResend')}
+                        aria-label={t('message.editAndResend')}
+                        className="rounded p-1 hover:bg-muted"
+                      >
+                        <PencilIcon className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    {onForkFromMessage && message.transcriptAnchorId && (
+                      <button
+                        type="button"
+                        onClick={() => onForkFromMessage(message)}
+                        title={t('message.forkFromHere')}
+                        aria-label={t('message.forkFromHere')}
+                        className="rounded p-1 hover:bg-muted"
+                      >
+                        <GitBranchIcon className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    {shouldShowUserCopyControl && (
+                      <MessageCopyControl content={userCopyContent} messageType="user" />
+                    )}
+                  </span>
                   <span>{formattedTime}</span>
                 </div>
               </div>
@@ -465,8 +469,11 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
 
             {(shouldShowAssistantCopyControl || !isGrouped) && (
               <div className="mt-1 flex w-full items-center gap-2 text-[11px] text-gray-400 dark:text-gray-500">
+                {/* Copy is in the right-click menu where there is a mouse. */}
                 {shouldShowAssistantCopyControl && (
-                  <MessageCopyControl content={assistantCopyContent} messageType="assistant" />
+                  <span className="hidden touch:inline-flex">
+                    <MessageCopyControl content={assistantCopyContent} messageType="assistant" />
+                  </span>
                 )}
                 {shouldShowAssistantCopyControl && (
                   <MessageSpeakControl content={assistantCopyContent} />
