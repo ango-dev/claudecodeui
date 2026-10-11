@@ -10,11 +10,12 @@ import type {
   RefObject,
   TouchEvent,
 } from 'react';
-import { PaperclipIcon, MessageSquareIcon, XIcon, Loader2, ArrowUpIcon, PencilIcon } from 'lucide-react';
+import { PaperclipIcon, MessageSquareIcon, XIcon, Loader2, ArrowUpIcon, PencilIcon, Settings2 } from 'lucide-react';
 
 import { useVoiceInput } from '@/modules/chat/hooks/useVoiceInput';
 import { useVoiceAvailable } from '@/modules/chat/hooks/useVoiceAvailable';
 import type { QueuedDraft, ScheduledMessage, SlashCommand,SessionActivity,PendingPermissionRequest,PermissionMode,ProviderModelOption } from '@/shared/types';
+import { QUICK_SETTINGS_TOGGLE_EVENT } from '@/shared/constants';
 import {
   PromptInput,
   PromptInputHeader,
@@ -458,6 +459,14 @@ export default function ChatComposer({
                   {slashCommandsCount}
                 </span>
               )}
+            </PromptInputButton>
+
+            <PromptInputButton
+              tooltip={{ content: t('quickSettings.title', { ns: 'settings', defaultValue: 'Quick Settings' }) }}
+              aria-label={t('quickSettings.title', { ns: 'settings', defaultValue: 'Quick Settings' })}
+              onClick={() => window.dispatchEvent(new Event(QUICK_SETTINGS_TOGGLE_EVENT))}
+            >
+              <Settings2 />
             </PromptInputButton>
 
             {hasInput && (

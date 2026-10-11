@@ -162,6 +162,17 @@ export const SETTING_ROW_CLASS =
 
 // ---------------------------
 
+//----------------- QUICK SETTINGS PANEL EVENTS ------------
+
+/**
+ * Window event that opens or closes the quick settings panel. Dispatched by the
+ * chat composer's quick settings button and handled by the quick-settings-panel
+ * module, so neither module has to import the other.
+ */
+export const QUICK_SETTINGS_TOGGLE_EVENT = 'cloudcli:toggle-quick-settings';
+
+// ---------------------------
+
 //----------------- TERMINAL TIMING ------------
 
 /**
