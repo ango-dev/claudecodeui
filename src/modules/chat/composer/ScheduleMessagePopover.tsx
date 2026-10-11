@@ -75,8 +75,8 @@ export function ScheduleMessagePopover({ disabled, onSchedule }: ScheduleMessage
         aria-label={ariaLabel}
         title={ariaLabel}
         className={cn(
-          'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted/40 text-muted-foreground transition-colors',
-          disabled ? 'cursor-not-allowed opacity-40' : 'hover:bg-muted hover:text-foreground',
+          'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors',
+          disabled ? 'cursor-not-allowed opacity-40' : 'hover:bg-accent hover:text-foreground',
           isOpen && 'text-foreground',
         )}
       >

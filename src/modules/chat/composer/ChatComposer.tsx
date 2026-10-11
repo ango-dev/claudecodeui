@@ -429,7 +429,7 @@ export default function ChatComposer({
             />
         </PromptInputBody>
 
-        <PromptInputFooter className="flex-wrap gap-y-1">
+        <PromptInputFooter className="flex-wrap gap-y-1 border-t-0 pt-0">
           <PromptInputTools className="min-w-0">
             <PromptInputButton
               tooltip={{ content: t('input.attachFiles') }}
@@ -522,7 +522,7 @@ export default function ChatComposer({
               }
               aria-label={submitAriaLabel}
               title={submitAriaLabel}
-              className="h-10 w-10 sm:h-10 sm:w-10"
+              className="h-8 w-8 sm:h-8 sm:w-8"
             >
               {isTranscribing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
