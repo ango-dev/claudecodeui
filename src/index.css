@@ -741,26 +741,6 @@
     .chat-message {
       touch-action: pan-y;
     }
-    
-    /* Fix hover states on mobile */
-    .group:active .group-hover\:opacity-100,
-    .group .group-hover\:opacity-100 {
-      opacity: 1 !important;
-    }
-    
-    @media (hover: none) and (pointer: coarse) {
-      .group-hover\:opacity-100 {
-        opacity: 1 !important;
-      }
-      
-      .hover\:bg-gray-50:hover,
-      .hover\:bg-gray-100:hover,
-      .hover\:bg-red-200:hover,
-      .dark\:hover\:bg-gray-700:hover,
-      .dark\:hover\:bg-red-900\/50:hover {
-        background-color: inherit;
-      }
-    }
   }
   
   /* Touch device optimizations for all screen sizes */
