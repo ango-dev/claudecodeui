@@ -29,6 +29,7 @@ import {
 import ChatMessagesPane from '@/modules/chat/transcript/ChatMessagesPane';
 import ChatComposer from '@/modules/chat/composer/ChatComposer';
 import ChatExportMenu from '@/modules/chat/transcript/ChatExportMenu';
+import { isPhoneSizedScreen } from '@/shared/hooks/useDeviceSettings';
 import CommandResultModal from '@/modules/chat/modals/CommandResultModal';
 
 type ChatInterfaceProps = {
@@ -625,7 +626,10 @@ function ChatInterface({
           onTextareaInput={handleTextareaInput}
           isInputFocused={isInputFocused}
           onInputFocusChange={handleInputFocusChange}
-          placeholder={t('input.placeholder', { provider: selectedProviderLabel })}
+          // The full hint does not fit a phone's one-line prompt box.
+          placeholder={isPhoneSizedScreen()
+            ? t('input.placeholderShort', { provider: selectedProviderLabel })
+            : t('input.placeholder', { provider: selectedProviderLabel })}
           isTextareaExpanded={isTextareaExpanded}
           sendByCtrlEnter={sendByCtrlEnter}
           exportControl={(
