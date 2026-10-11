@@ -419,7 +419,8 @@ function SidebarSessionItem({
           // open session and for every ticked one.
           className={cn(
             buttonVariants({ variant: 'ghost' }),
-            'h-8 w-full justify-start rounded-md px-2 py-1 text-left font-normal transition-colors duration-150',
+            // No colour transition: on iPad it left the old row half-painted.
+            'h-8 w-full justify-start rounded-md px-2 py-1 text-left font-normal transition-none',
             isSelecting ? 'pr-2' : 'pr-9',
             isChecked
               ? 'bg-accent hover:bg-accent'
@@ -481,6 +482,8 @@ function SidebarSessionItem({
                     className={cn(
                       'ml-auto flex-shrink-0 text-[11px] text-muted-foreground transition-opacity duration-200',
                       isEditing ? 'opacity-0' : !isSelecting && 'group-hover:opacity-0',
+                      // On touch screens the open session shows its "⋯" here instead.
+                      isSelected && !isSelecting && 'touch:opacity-0',
                     )}
                   >
                     {compactSessionAge}
@@ -493,7 +496,7 @@ function SidebarSessionItem({
 
         {!isSelecting && (
           <SessionOptions
-            className="absolute right-2 top-1/2 -translate-y-1/2 transform transition-all duration-200"
+            className="absolute inset-y-0 right-2"
             sessionId={session.id}
             sessionName={sessionView.sessionName}
             provider={session.__provider}
@@ -510,6 +513,7 @@ function SidebarSessionItem({
             onSelectForBulk={() => onModifierSelect(project.projectId, session.id, 'toggle')}
             onArchive={onArchiveSessions ? () => onArchiveSessions([session.id]) : undefined}
             openAt={contextMenuAt}
+            showOnTouch={isSelected}
             t={t}
           />
         )}

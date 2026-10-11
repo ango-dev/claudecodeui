@@ -10,6 +10,7 @@ import { usePaletteOpsRegister } from '@/modules/command-palette';
 import { TaskMasterPanel, useTaskMasterProjectSync, useTasksSettings } from '@/modules/task-master';
 import type { AppTab, DirectoryRevealRequest, Project, ProjectSession, SessionEstablishedContext, SessionNavigationOptions, SettingsMainTab } from '@/shared/types';
 import { useUiPreferences } from '@/shared/context/UiPreferencesContext';
+import { isPhoneSizedScreen } from '@/shared/hooks/useDeviceSettings';
 import { useFileOpenResolver } from '@/modules/project-workspace/hooks/useFileOpenResolver';
 import { EditorSidebar, useEditorSidebar } from '@/modules/code-editor';
 import WorkspaceHeader from '@/modules/project-workspace/WorkspaceHeader';
@@ -61,7 +62,7 @@ function WorkspaceMain({
 }: WorkspaceMainProps) {
   const preferences = useUiPreferences();
   // The sidebar is a drawer on phones, or anywhere with the slide-over preference.
-  const showMenuButton = isMobile || preferences.sidebarAsDrawer;
+  const showMenuButton = isPhoneSizedScreen() || preferences.sidebarAsDrawer;
   const { showRawParameters, showThinking, sendByCtrlEnter } = preferences;
 
   const { tasksEnabled, isTaskMasterInstalled } = useTasksSettings();

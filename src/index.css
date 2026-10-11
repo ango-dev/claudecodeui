@@ -194,8 +194,12 @@
     overflow: hidden;
   }
 
-  /* Adjust fixed inset positioning in PWA mode. (The workspace shell sets its
-     own bottom inline; see useVisualViewportKeyboardOffset.) */
+  /* Adjust fixed inset positioning in PWA mode. (The workspace shell positions
+     itself inline from --shell-top-inset; see useVisualViewportKeyboardOffset.) */
+  body.pwa-mode {
+    --shell-top-inset: var(--header-total-padding);
+  }
+
   body.pwa-mode .fixed.inset-0 {
     top: var(--header-total-padding);
     left: var(--safe-area-inset-left);
@@ -343,62 +347,71 @@
                 max-height 200ms ease-in-out;
   }
   
-  .scrollbar-thin {
-    scrollbar-width: thin;
-    scrollbar-color: hsl(var(--muted-foreground)) transparent;
-  }
-  
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-  
-  .scrollbar-thin::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  
-  .scrollbar-thin::-webkit-scrollbar-thumb {
-    background-color: hsl(var(--muted-foreground));
-    border-radius: 3px;
-  }
-  
-  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    background-color: hsl(var(--muted-foreground) / 0.8);
-  }
-  
-  /* Dark mode scrollbar styles */
-  .dark .scrollbar-thin {
-    scrollbar-color: hsl(var(--muted-foreground) / 0.5) transparent;
-  }
-  
-  .dark .scrollbar-thin::-webkit-scrollbar-track {
-    background: hsl(var(--muted) / 0.3);
-  }
-  
-  .dark .scrollbar-thin::-webkit-scrollbar-thumb {
-    background-color: hsl(var(--muted-foreground) / 0.5);
-    border-radius: 3px;
-  }
-  
-  .dark .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    background-color: hsl(var(--muted-foreground) / 0.7);
-  }
-  
-  /* Scrollbars are the browser's own thin scrollbar, as in Claude Code: a
-     gray thumb on a transparent track. color-scheme also makes form
-     controls draw dark in dark mode. */
+  /* color-scheme makes form controls draw dark in dark mode. */
   :root {
     color-scheme: light;
-    scrollbar-color: #b5b3ad transparent;
   }
 
   .dark {
     color-scheme: dark;
-    scrollbar-color: #5c5c5a transparent;
   }
 
-  * {
-    scrollbar-width: thin;
+  /* Scrollbars are the browser's own thin scrollbar, as in Claude Code: a gray
+     thumb on a transparent track. Desktop only: touch screens keep their native
+     overlay indicator, which iPad Safari otherwise swaps for a styled bar. */
+  @media (hover: hover) and (pointer: fine) {
+    :root {
+      scrollbar-color: #b5b3ad transparent;
+    }
+
+    .dark {
+      scrollbar-color: #5c5c5a transparent;
+    }
+
+    * {
+      scrollbar-width: thin;
+    }
+
+    .scrollbar-thin {
+      scrollbar-width: thin;
+      scrollbar-color: hsl(var(--muted-foreground)) transparent;
+    }
+  
+    .scrollbar-thin::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+  
+    .scrollbar-thin::-webkit-scrollbar-track {
+      background: transparent;
+    }
+  
+    .scrollbar-thin::-webkit-scrollbar-thumb {
+      background-color: hsl(var(--muted-foreground));
+      border-radius: 3px;
+    }
+  
+    .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+      background-color: hsl(var(--muted-foreground) / 0.8);
+    }
+  
+    /* Dark mode scrollbar styles */
+    .dark .scrollbar-thin {
+      scrollbar-color: hsl(var(--muted-foreground) / 0.5) transparent;
+    }
+  
+    .dark .scrollbar-thin::-webkit-scrollbar-track {
+      background: hsl(var(--muted) / 0.3);
+    }
+  
+    .dark .scrollbar-thin::-webkit-scrollbar-thumb {
+      background-color: hsl(var(--muted-foreground) / 0.5);
+      border-radius: 3px;
+    }
+  
+    .dark .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+      background-color: hsl(var(--muted-foreground) / 0.7);
+    }
   }
   
   /* Ensure checkbox styling is preserved */
@@ -756,21 +769,11 @@
       opacity: 1 !important;
     }
     
-    /* Only disable hover states for interactive elements, not containers */
-    button:hover,
-    [role="button"]:hover,
-    .cursor-pointer:hover,
-    a:hover,
-    .hover\:bg-gray-50:hover,
-    .hover\:bg-gray-100:hover,
-    .hover\:text-gray-900:hover,
-    .hover\:opacity-100:hover {
-      background-color: inherit !important;
-      color: inherit !important;
-      opacity: inherit !important;
-      transform: inherit !important;
-    }
-    
+    /* Hover styles need no undoing here: Tailwind only emits them for devices
+       with a real pointer (hoverOnlyWhenSupported in tailwind.config.js). The
+       old blanket reset also wiped the background of the row just tapped, so
+       the open session lost its highlight until the next tap elsewhere. */
+
     /* Force buttons to be immediately clickable */
     button, [role="button"], .cursor-pointer {
       cursor: pointer !important;
@@ -880,8 +883,6 @@
   /* Improved textarea styling */
   .chat-input-placeholder {
     display: block !important;
-    scrollbar-width: thin;
-    scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
   }
 
   /* Ensure container fits textarea tightly */
@@ -889,35 +890,39 @@
     height: auto;
   }
   
-  .chat-input-placeholder::-webkit-scrollbar {
-    width: 6px;
-  }
+  /* Desktop only, like the scrollbars above. */
+  @media (hover: hover) and (pointer: fine) {
+    .chat-input-placeholder::-webkit-scrollbar {
+      width: 6px;
+    }
   
-  .chat-input-placeholder::-webkit-scrollbar-track {
-    background: transparent;
-    margin: 8px 0;
-  }
+    .chat-input-placeholder::-webkit-scrollbar-track {
+      background: transparent;
+      margin: 8px 0;
+    }
   
-  .chat-input-placeholder::-webkit-scrollbar-thumb {
-    background-color: hsl(var(--muted-foreground) / 0.3);
-    border-radius: 3px;
-    transition: background-color 0.2s;
-  }
+    .chat-input-placeholder::-webkit-scrollbar-thumb {
+      background-color: hsl(var(--muted-foreground) / 0.3);
+      border-radius: 3px;
+      transition: background-color 0.2s;
+    }
   
-  .chat-input-placeholder::-webkit-scrollbar-thumb:hover {
-    background-color: hsl(var(--muted-foreground) / 0.5);
-  }
+    .chat-input-placeholder::-webkit-scrollbar-thumb:hover {
+      background-color: hsl(var(--muted-foreground) / 0.5);
+    }
   
-  .dark .chat-input-placeholder {
-    scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
-  }
+    .chat-input-placeholder {
+      scrollbar-width: thin;
+      scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+    }
   
-  .dark .chat-input-placeholder::-webkit-scrollbar-thumb {
-    background-color: hsl(var(--muted-foreground) / 0.3);
-  }
+    .dark .chat-input-placeholder::-webkit-scrollbar-thumb {
+      background-color: hsl(var(--muted-foreground) / 0.3);
+    }
   
-  .dark .chat-input-placeholder::-webkit-scrollbar-thumb:hover {
-    background-color: hsl(var(--muted-foreground) / 0.4);
+    .dark .chat-input-placeholder::-webkit-scrollbar-thumb:hover {
+      background-color: hsl(var(--muted-foreground) / 0.4);
+    }
   }
   
   /* Enhanced box shadow when textarea expands */

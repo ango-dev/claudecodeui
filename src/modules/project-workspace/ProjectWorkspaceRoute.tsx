@@ -8,7 +8,7 @@ import {
   useSessionProtectionActions,
 } from '@/shared/context/SessionProtectionContext';
 import { useWebSocket } from '@/shared/context/WebSocketContext';
-import { useDeviceSettings } from '@/shared/hooks/useDeviceSettings';
+import { isPhoneSizedScreen, useDeviceSettings } from '@/shared/hooks/useDeviceSettings';
 import { useUiPreferences } from '@/shared/context/UiPreferencesContext';
 import { useVisualViewportKeyboardOffset } from '@/modules/project-workspace/hooks/useVisualViewportKeyboardOffset';
 import ProjectWorkspaceShell from '@/modules/project-workspace/ProjectWorkspaceShell';
@@ -42,8 +42,8 @@ function ProjectWorkspaceRouteContent() {
       navigate={navigate}
       subscribe={subscribe}
       // The projects state only uses this for the sidebar (close it after a
-      // pick, drawer behaviour), so the drawer preference counts as mobile here.
-      isMobile={isMobile || sidebarAsDrawer}
+      // pick, drawer behaviour), so it means "the sidebar is a drawer" here.
+      isMobile={isPhoneSizedScreen() || sidebarAsDrawer}
       isSessionProcessing={isSessionProcessing}
     >
       <ProjectWorkspaceShell

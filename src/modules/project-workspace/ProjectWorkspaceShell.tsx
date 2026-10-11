@@ -16,12 +16,16 @@ function ProjectWorkspaceShell({
   return (
     <div
       className="fixed inset-0 flex bg-background"
-      // Above the keyboard when it is up; in iOS home-screen apps, down to the
-      // real screen bottom (see useVisualViewportKeyboardOffset).
-      style={{ bottom: 'calc(var(--keyboard-height, 0px) - var(--standalone-bottom-gap, 0px))' }}
+      // Sized to what is on screen: the area above the keyboard when it is up,
+      // the whole screen in iOS home-screen apps (see useVisualViewportKeyboardOffset).
+      style={{
+        top: 'calc(var(--app-offset-top, 0px) + var(--shell-top-inset, 0px))',
+        bottom: 'auto',
+        height: 'calc(var(--app-height, 100%) - var(--shell-top-inset, 0px))',
+      }}
     >
       <ProjectEffects navigate={navigate} />
-      <ProjectSidebarRegion isMobile={isMobile} />
+      <ProjectSidebarRegion />
 
       <div className="flex min-w-0 flex-1 flex-col">
         <ProjectMainRegion

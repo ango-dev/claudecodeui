@@ -35,6 +35,12 @@ const warmNeutral = {
 /** @type {import('tailwindcss').Config} */
 export default {
   darkMode: ["class"],
+  // Hover styles only on devices with a real pointer. On an iPad, iOS turns the
+  // first tap on an element whose hover style reveals something into a hover
+  // instead of a click, so rows took two taps and kept a stale hover state.
+  future: {
+    hoverOnlyWhenSupported: true,
+  },
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
@@ -147,5 +153,10 @@ export default {
       },
     },
   },
-  plugins: [require('@tailwindcss/typography')],
+  plugins: [
+    require('@tailwindcss/typography'),
+    // `touch:` styles touch-only screens, where hover-revealed controls must be
+    // shown some other way.
+    ({ addVariant }) => addVariant('touch', '@media (hover: none)'),
+  ],
 }

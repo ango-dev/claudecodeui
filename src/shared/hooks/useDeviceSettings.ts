@@ -14,6 +14,27 @@ const getIsMobile = (mobileBreakpoint: number): boolean => {
   return window.innerWidth < mobileBreakpoint;
 };
 
+/** Phones are under this on their short side; the smallest iPad is 744pt. */
+const PHONE_SCREEN_MAX_SHORT_SIDE = 600;
+
+/**
+ * True on a phone-sized screen, where the sidebar can only be a slide-over.
+ *
+ * Read from the physical screen rather than the window width: the window can
+ * report a narrow width for a moment on an iPad (launch from the home screen,
+ * Split View, Stage Manager), which used to force the slide-over sidebar on a
+ * device where it is only a preference. The screen does not change, so this
+ * needs no listener.
+ */
+export const isPhoneSizedScreen = (): boolean => {
+  if (typeof window === 'undefined' || !window.screen) {
+    return false;
+  }
+  const shortSide = Math.min(window.screen.width, window.screen.height);
+  // Zero means the size is unknown (no real screen), not a tiny one.
+  return shortSide > 0 && shortSide < PHONE_SCREEN_MAX_SHORT_SIDE;
+};
+
 const getIsPWA = (): boolean => {
   if (typeof window === 'undefined') {
     return false;

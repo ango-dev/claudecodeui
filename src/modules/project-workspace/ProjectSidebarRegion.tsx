@@ -16,20 +16,19 @@ import {
   SIDEBAR_WIDTH_MIN,
   useSidebarWidth,
 } from '@/shared/hooks/useSidebarWidth';
-import type { ProjectWorkspaceShellProps } from '@/shared/types';
+import { isPhoneSizedScreen } from '@/shared/hooks/useDeviceSettings';
 
-/** Rendered by ProjectWorkspaceShell to host the sidebar module, docked on desktop and as a drawer on mobile. */
-function ProjectSidebarRegion({
-  isMobile,
-}: Pick<ProjectWorkspaceShellProps, 'isMobile'>) {
+/** Rendered by ProjectWorkspaceShell to host the sidebar module, docked unless it is a slide-over drawer. */
+function ProjectSidebarRegion() {
   const { t } = useTranslation('common');
   const { sidebarOpen, setSidebarOpen, sidebarSharedProps } = useProjectSidebarState();
   const { width: sidebarWidth, setWidth: setSidebarWidth, resetWidth: resetSidebarWidth } = useSidebarWidth();
   // Hide sidebar leaves a 48px icon rail behind, which sizes itself — the stored
   // width and the drag handle only apply while the full sidebar is on screen.
   const { sidebarVisible, sidebarAsDrawer } = useUiPreferences();
-  // Drawer on phones, or anywhere when the user prefers the slide-over sidebar.
-  const isDrawer = isMobile || sidebarAsDrawer;
+  // Drawer on phones; anywhere else only when the user prefers the slide-over
+  // sidebar, never because the window happens to be narrow.
+  const isDrawer = isPhoneSizedScreen() || sidebarAsDrawer;
   const isSidebarResizable = !isDrawer && sidebarVisible;
   // Drag origin; null while no resize is in progress.
   const resizeOriginRef = useRef<{ pointerX: number; width: number } | null>(null);

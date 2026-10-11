@@ -165,7 +165,7 @@ export default function SidebarRecentConversations({
                 }}
                 data-testid="recent-conversation-row"
                 className={cn(
-                  'flex min-w-0 items-center gap-2 rounded-lg px-2 py-2 pr-11 text-left transition-colors',
+                  'flex min-w-0 items-center gap-2 rounded-lg px-2 py-2 pr-11 text-left',
                   isSelected
                     ? 'bg-accent text-foreground'
                     : 'text-foreground hover:bg-accent/60',
@@ -212,7 +212,7 @@ export default function SidebarRecentConversations({
               </a>
 
               <SessionOptions
-                className="absolute right-2 top-1/2 -translate-y-1/2 transform"
+                className="absolute inset-y-0 right-2"
                 sessionId={conversation.sessionId}
                 sessionName={conversation.sessionTitle}
                 provider={conversation.provider}
@@ -229,6 +229,7 @@ export default function SidebarRecentConversations({
                   ? () => sessionActions.onArchiveSessions?.([conversation.sessionId])
                   : undefined}
                 openAt={contextMenu?.sessionId === conversation.sessionId ? contextMenu.point : null}
+                showOnTouch={isSelected}
                 // The fork path reads only the id, provider and owning project,
                 // which is all a recents row knows about the session.
                 onFork={sessionActions.onForkSession

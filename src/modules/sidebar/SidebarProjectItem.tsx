@@ -410,8 +410,11 @@ function SidebarProjectItem({
             variant="ghost"
             size="icon"
             openAt={projectMenuAt}
-            className="absolute right-1 top-1/2 z-20 -translate-y-1/2"
-            triggerClassName="h-6 w-6 text-muted-foreground opacity-0 hover:bg-muted hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100 aria-expanded:opacity-100"
+            // Centred by flex rather than top-1/2 plus a transform, which iPad
+            // Safari sometimes misplaced inside this sticky header.
+            className="absolute inset-y-0 right-1 z-20 items-center"
+            // Hover-revealed on desktop; always shown on touch screens, which have no hover.
+            triggerClassName="h-6 w-6 text-muted-foreground opacity-0 hover:bg-muted hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100 aria-expanded:opacity-100 touch:opacity-100"
             menuClassName="w-[220px] rounded-xl p-1.5 shadow-xl"
             items={[
               {
