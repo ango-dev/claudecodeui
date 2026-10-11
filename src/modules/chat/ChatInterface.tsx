@@ -422,6 +422,32 @@ function ChatInterface({
     }
   }, [currentSessionId, provider, selectProviderEffort, selectedSession?.id]);
 
+  // The composer floats over the bottom of the transcript (as in Claude Code),
+  // so the transcript and its scrollbar run the full height of the column.
+  // Two measurements keep that layout honest: the composer's height becomes
+  // the transcript's bottom padding (the last message is never hidden), and
+  // the transcript's scrollbar width keeps the composer off the scrollbar.
+  const chatColumnRef = useRef<HTMLDivElement | null>(null);
+  const composerDockRef = useRef<HTMLDivElement | null>(null);
+  const hasSelectedProject = Boolean(selectedProject);
+  useEffect(() => {
+    const column = chatColumnRef.current;
+    const dock = composerDockRef.current;
+    const pane = scrollContainerRef.current;
+    if (!column || !dock || !pane || typeof ResizeObserver === 'undefined') {
+      return undefined;
+    }
+    const measure = () => {
+      column.style.setProperty('--composer-dock-height', `${dock.offsetHeight}px`);
+      column.style.setProperty('--chat-scrollbar-width', `${pane.offsetWidth - pane.clientWidth}px`);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(dock);
+    observer.observe(pane);
+    return () => observer.disconnect();
+  }, [hasSelectedProject, scrollContainerRef]);
+
   // Mirrors ChatComposer's own visibility check so the message pane can
   // reserve enough bottom space to keep the floating status tab from
   // overlapping the last message.
@@ -454,7 +480,7 @@ function ChatInterface({
 
   return (
     <PermissionContext.Provider value={permissionContextValue}>
-      <div className="flex h-full min-h-0 flex-col">
+      <div ref={chatColumnRef} data-composer-docked="" className="relative flex h-full min-h-0 flex-col">
         <MarkdownWorkspaceContext.Provider value={markdownWorkspaceValue}>
           <TranscriptSessionContext.Provider value={transcriptSessionValue}>
             <ChatMessagesPane
@@ -516,7 +542,10 @@ function ChatInterface({
           </TranscriptSessionContext.Provider>
         </MarkdownWorkspaceContext.Provider>
 
-        <div className="relative flex-shrink-0">
+        {/* Soft fade where messages scroll under the header. */}
+        <div aria-hidden="true" className="chat-top-fade pointer-events-none absolute left-0 top-0 z-10 h-6" />
+
+        <div ref={composerDockRef} className="chat-composer-dock absolute bottom-0 left-0 z-10">
           {isUserScrolledUp && chatMessages.length > 0 && (
             <div className="pointer-events-none absolute -top-11 left-0 right-0 z-20 flex justify-center">
               <button

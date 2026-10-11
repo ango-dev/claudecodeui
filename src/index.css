@@ -377,41 +377,14 @@
     background-color: hsl(var(--muted-foreground) / 0.7);
   }
   
-  /* Scrollbars: one thin, rounded, trackless style everywhere, without arrow
-     buttons. Chrome ignores the ::-webkit-scrollbar rules on any element that
-     has scrollbar-color/scrollbar-width (and scrollbar-color is inherited), so
-     the standard properties are only set where those pseudo-elements are
-     unsupported (Firefox). */
-  *::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+  /* Scrollbars are the browser's own, as in Claude Code; color-scheme makes
+     them (and form controls) draw dark in dark mode. */
+  :root {
+    color-scheme: light;
   }
 
-  *::-webkit-scrollbar-track,
-  *::-webkit-scrollbar-corner {
-    background: transparent;
-  }
-
-  *::-webkit-scrollbar-thumb {
-    background-color: hsl(var(--muted-foreground) / 0.35);
-    background-clip: padding-box;
-    border: 3px solid transparent;
-    border-radius: 9999px;
-  }
-
-  *::-webkit-scrollbar-thumb:hover {
-    background-color: hsl(var(--muted-foreground) / 0.55);
-  }
-
-  *::-webkit-scrollbar-button {
-    display: none;
-  }
-
-  @supports not selector(::-webkit-scrollbar) {
-    * {
-      scrollbar-width: thin;
-      scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent;
-    }
+  .dark {
+    color-scheme: dark;
   }
   
   /* Ensure checkbox styling is preserved */
@@ -592,10 +565,32 @@
 @layer components {
   .chat-messages-pane {
     contain: layout style paint;
-    /* Messages fade out at the top and bottom edges of the scroll area as
-       they pass under the header and above the composer. */
-    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 1.5rem, #000 calc(100% - 1.5rem), transparent 100%);
-    mask-image: linear-gradient(to bottom, transparent 0, #000 1.5rem, #000 calc(100% - 1.5rem), transparent 100%);
+  }
+
+  /* The composer floats over the bottom of the transcript (ChatInterface
+     measures both variables), so the transcript and its scrollbar run the
+     full height. Its bottom padding keeps the last message above the composer. */
+  [data-composer-docked] .chat-messages-pane {
+    padding-bottom: calc(var(--composer-dock-height, 0px) + 0.75rem);
+  }
+
+  /* Messages fade out as they pass under the header and behind the composer.
+     Both overlays stop short of the scrollbar. */
+  .chat-top-fade {
+    right: var(--chat-scrollbar-width, 0px);
+    background: linear-gradient(to bottom, hsl(var(--background)), hsl(var(--background) / 0));
+  }
+
+  .chat-composer-dock {
+    right: var(--chat-scrollbar-width, 0px);
+    padding-top: 1.5rem;
+    background: linear-gradient(to top, hsl(var(--background)) calc(100% - 1.5rem), hsl(var(--background) / 0));
+    /* The faded strip must not block clicks on the messages behind it. */
+    pointer-events: none;
+  }
+
+  .chat-composer-dock > * {
+    pointer-events: auto;
   }
 
   .chat-composer-shell {
