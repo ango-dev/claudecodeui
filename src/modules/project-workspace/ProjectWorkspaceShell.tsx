@@ -19,7 +19,11 @@ function ProjectWorkspaceShell({
       className="fixed inset-0 flex bg-background"
       // Sized to what is on screen: the area above the keyboard when it is up,
       // the whole screen in iOS home-screen apps (see useVisualViewportKeyboardOffset).
+      // Positioned in the page rather than fixed: iPad home-screen apps report a
+      // viewport 32pt shorter than the screen and clip fixed elements to it,
+      // while ordinary page content still draws down to the screen's edge.
       style={{
+        position: 'absolute',
         top: 'calc(var(--app-offset-top, 0px) + var(--shell-top-inset, 0px))',
         bottom: 'auto',
         height: 'calc(var(--app-height, 100%) - var(--shell-top-inset, 0px))',

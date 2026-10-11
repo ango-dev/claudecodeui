@@ -39,8 +39,9 @@ const getStandaloneScreenHeight = (): number | null => {
 };
 
 /**
- * Sizes the fixed workspace shell to what is actually on screen, through
- * `--app-offset-top` and `--app-height` (see ProjectWorkspaceShell).
+ * Places the workspace shell over what is actually on screen, through
+ * `--app-offset-top` (in page coordinates) and `--app-height` (see
+ * ProjectWorkspaceShell, which is absolutely positioned in the page).
  *
  * With the iOS keyboard up the shell follows the visual viewport: iOS also
  * scrolls the page to keep the focused input in view, so lifting the shell by
@@ -62,7 +63,7 @@ export function useVisualViewportKeyboardOffset() {
       const keyboardOpen = !isZoomed && window.innerHeight - viewportHeight >= MIN_KEYBOARD_HEIGHT_PX;
 
       if (keyboardOpen) {
-        root.style.setProperty('--app-offset-top', `${visualViewport?.offsetTop ?? 0}px`);
+        root.style.setProperty('--app-offset-top', `${visualViewport?.pageTop ?? window.scrollY}px`);
         root.style.setProperty('--app-height', `${viewportHeight}px`);
       } else {
         // iOS can leave the page scrolled after the keyboard goes; the document
@@ -70,7 +71,9 @@ export function useVisualViewportKeyboardOffset() {
         if (keyboardWasOpen && window.scrollY !== 0) {
           window.scrollTo(0, 0);
         }
-        root.style.setProperty('--app-offset-top', '0px');
+        // Wherever the page is scrolled (iOS can scroll it even though it
+        // clips), the shell sits at the top of what is on screen.
+        root.style.setProperty('--app-offset-top', `${window.scrollY}px`);
         root.style.setProperty('--app-height', `${getStandaloneScreenHeight() ?? window.innerHeight}px`);
       }
       keyboardWasOpen = keyboardOpen;
@@ -83,6 +86,7 @@ export function useVisualViewportKeyboardOffset() {
     visualViewport?.addEventListener('resize', update);
     visualViewport?.addEventListener('scroll', update);
     window.addEventListener('resize', update);
+    window.addEventListener('scroll', update);
     window.addEventListener('orientationchange', update);
     window.addEventListener('pageshow', update);
     return () => {
@@ -90,6 +94,7 @@ export function useVisualViewportKeyboardOffset() {
       visualViewport?.removeEventListener('resize', update);
       visualViewport?.removeEventListener('scroll', update);
       window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update);
       window.removeEventListener('orientationchange', update);
       window.removeEventListener('pageshow', update);
     };
