@@ -112,9 +112,6 @@ export default function WorkspaceTabs({
 
         return (
           <Fragment key={`${tab.id}-${index}`}>
-            {index === builtInTabs.length && pluginTabs.length > 0 && (
-              <span aria-hidden="true" className="mx-1 h-4 w-px shrink-0 bg-border" />
-            )}
             <Tooltip content={displayLabel} position="bottom">
               <Pill
                 role="tab"
