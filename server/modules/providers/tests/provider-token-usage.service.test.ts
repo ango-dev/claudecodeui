@@ -406,10 +406,12 @@ test('a reply after a compaction is read as usual', () => {
 });
 
 test('the Claude context window follows the model, the setting and the session size', () => {
-  assert.equal(resolveClaudeContextWindow('claude-opus-5-5', 0, undefined), 1_000_000, 'the Opus 5 family has a 1M window');
+  assert.equal(resolveClaudeContextWindow('claude-opus-5-5', 0, undefined), 1_000_000, 'Opus 5.5 has a 1M window');
   assert.equal(resolveClaudeContextWindow('claude-sonnet-5-5[1m]', 0, undefined), 1_000_000, 'a [1m] model has a 1M window');
-  assert.equal(resolveClaudeContextWindow('claude-haiku-5-5', 0, undefined), 200_000, 'otherwise the standard 200k');
-  assert.equal(resolveClaudeContextWindow('claude-haiku-5-5', 250_000, undefined), 1_000_000, 'a prompt past 200k proves a larger window');
+  assert.equal(resolveClaudeContextWindow('claude-haiku-5-5', 0, undefined), 1_000_000, 'Haiku 5.5 has a 1M window');
+  assert.equal(resolveClaudeContextWindow('claude-sonnet-4-6', 0, undefined), 1_000_000, 'so does Sonnet 4.6');
+  assert.equal(resolveClaudeContextWindow('claude-haiku-4-5', 0, undefined), 200_000, 'otherwise the standard 200k');
+  assert.equal(resolveClaudeContextWindow('claude-haiku-4-5', 250_000, undefined), 1_000_000, 'a prompt past 200k proves a larger window');
   assert.equal(resolveClaudeContextWindow('claude-opus-5-5', 0, '300000'), 300_000, 'CONTEXT_WINDOW overrides a guess');
 });
 

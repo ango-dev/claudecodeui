@@ -10,6 +10,8 @@ type CommandsRouterDependencies = {
   homeDirectory(): string;
   appRoot: string;
   models: typeof import('../providers/index.js').providerModelsService;
+  /** Slash commands Claude Code itself accepts (name without the slash, summary, argument hint). */
+  claudeCodeCommands(): Promise<Array<{ name: string; description: string; argumentHint?: string; aliases?: string[] }>>;
   runtime: {
     uptime(): number;
     memoryUsage(): NodeJS.MemoryUsage;
@@ -477,10 +479,28 @@ router.post("/list", async (req, res) => {
     // Sort commands alphabetically by name
     customCommands.sort((a, b) => a.name.localeCompare(b.name));
 
+    // Claude Code's own commands run inside a Claude session, so they are
+    // sent as a prompt rather than executed here. The app's built-ins win a
+    // name clash: they are what this UI handles.
+    const builtInNames = new Set(builtInCommands.map((command) => command.name));
+    const cliCommands = (await dependencies.claudeCodeCommands())
+      // `__`-prefixed names are Claude Code's internal plumbing, not for people.
+      .filter((command) => !command.name.startsWith("__"))
+      .map((command) => ({
+        name: `/${command.name}`,
+        description: command.description,
+        argumentHint: command.argumentHint || undefined,
+        namespace: "cli",
+        metadata: { type: "cli", aliases: command.aliases },
+      }))
+      .filter((command) => !builtInNames.has(command.name))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
     res.json({
       builtIn: builtInCommands,
       custom: customCommands,
-      count: allCommands.length,
+      cli: cliCommands,
+      count: allCommands.length + cliCommands.length,
     });
   } catch (error) {
     console.error("Error listing commands:", error);

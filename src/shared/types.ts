@@ -13,6 +13,10 @@ export type ProviderModelOption = {
   description?: string;
   recordId?: number;
   isCustom?: boolean;
+  /** `more` puts an earlier model under the picker's "More models" submenu. */
+  group?: 'more';
+  /** The full model id this option runs, when it is an alias (`opus` runs `claude-opus-5-5`). */
+  resolvesTo?: string;
   effort?: {
     default?: string;
     values: {

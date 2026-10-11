@@ -1,5 +1,7 @@
 import { readFile } from 'node:fs/promises';
 
+import type { ModelInfo } from '@anthropic-ai/claude-agent-sdk';
+
 import { sessionsDb } from '@/modules/database/index.js';
 import type { IProviderModels } from '@/shared/interfaces.js';
 import type {
@@ -7,6 +9,10 @@ import type {
   ProviderModelOption,
   ProviderModelsDefinition,
 } from '@/shared/types.js';
+import {
+  loadClaudeCodeInitialization,
+  type ClaudeCodeInitialization,
+} from '@/modules/providers/list/claude/claude-initialization.provider.js';
 import {
   buildDefaultProviderCurrentActiveModel,
   isPlaceholderProviderModel,
@@ -163,6 +169,90 @@ export const CLAUDE_PREDEFINED_MODELS: ProviderModelsDefinition = {
   DEFAULT: 'default',
 };
 
+const FULL_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
+const EFFORT_LEVELS_WITHOUT_XHIGH = ['low', 'medium', 'high', 'max'];
+
+/** Order of Claude Code's model menu; aliases it does not list keep the CLI's order after these. */
+const PRIMARY_MODEL_ORDER = ['default', 'opus', 'fable', 'sonnet', 'haiku'];
+
+/**
+ * Earlier models Claude Code still accepts by full id, for the menu's "More
+ * models" group, in the order Claude Code lists them. Effort levels follow
+ * each model's API support; Haiku 4.5 has none.
+ */
+const PREVIOUS_CLAUDE_MODELS: { value: string; label: string; effortLevels: string[] }[] = [
+  { value: 'claude-haiku-4-5', label: 'Haiku 4.5', effortLevels: [] },
+  { value: 'claude-sonnet-5', label: 'Sonnet 5', effortLevels: FULL_EFFORT_LEVELS },
+  { value: 'claude-opus-5', label: 'Opus 5', effortLevels: FULL_EFFORT_LEVELS },
+  { value: 'claude-fable-5', label: 'Fable 5', effortLevels: FULL_EFFORT_LEVELS },
+  { value: 'claude-opus-4-8', label: 'Opus 4.8', effortLevels: FULL_EFFORT_LEVELS },
+  { value: 'claude-opus-4-7', label: 'Opus 4.7', effortLevels: FULL_EFFORT_LEVELS },
+  { value: 'claude-opus-4-6', label: 'Opus 4.6', effortLevels: EFFORT_LEVELS_WITHOUT_XHIGH },
+  { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6', effortLevels: EFFORT_LEVELS_WITHOUT_XHIGH },
+];
+
+/** Claude Code recommends `high`; a model without it recommends its strongest level below. */
+const buildEffort = (levels: string[]): ProviderModelOption['effort'] => {
+  if (levels.length === 0) {
+    return undefined;
+  }
+  const values = levels.map((value) => ({ value }));
+  if (levels.includes('xhigh')) {
+    values.push(ULTRACODE_EFFORT_OPTION);
+  }
+  return {
+    default: levels.includes('high') ? 'high' : levels[levels.length - 1],
+    values,
+  };
+};
+
+/**
+ * Turns Claude Code's model list into this app's catalog. Claude Code
+ * describes each alias as "Opus 5.5 · Best for everyday, complex tasks": the
+ * part before the dot names the model the alias resolves to, so Default reads
+ * "Default (Sonnet 5.5)" and the rest read as their model.
+ * Exported for tests.
+ */
+export function buildClaudeModelsDefinition(models: ModelInfo[]): ProviderModelsDefinition {
+  const rank = (value: string) => {
+    const index = PRIMARY_MODEL_ORDER.indexOf(value);
+    return index === -1 ? PRIMARY_MODEL_ORDER.length : index;
+  };
+  const primary = [...models]
+    .sort((first, second) => rank(first.value) - rank(second.value))
+    .map((model): ProviderModelOption => {
+      const [modelName, ...summary] = (model.description ?? '').split(' · ');
+      const name = modelName?.trim() || model.displayName;
+      const resolvesTo = (model as ModelInfo & { resolvedModel?: string }).resolvedModel;
+      return {
+        value: model.value,
+        label: model.value === 'default' ? `Default (${name})` : name,
+        ...(resolvesTo ? { resolvesTo } : {}),
+        description: summary.join(' · ').trim() || model.description,
+        effort: model.supportsEffort ? buildEffort(model.supportedEffortLevels ?? []) : undefined,
+      };
+    });
+
+  // An earlier model that an alias already resolves to would appear twice.
+  const resolvedIds = new Set(
+    models.map((model) => (model as ModelInfo & { resolvedModel?: string }).resolvedModel).filter(Boolean),
+  );
+  const previous = PREVIOUS_CLAUDE_MODELS
+    .filter((model) => !resolvedIds.has(model.value))
+    .map((model): ProviderModelOption => ({
+      value: model.value,
+      label: model.label,
+      group: 'more',
+      resolvesTo: model.value,
+      effort: buildEffort(model.effortLevels),
+    }));
+
+  return {
+    OPTIONS: [...primary, ...previous],
+    DEFAULT: primary.some((option) => option.value === 'default') ? 'default' : primary[0]?.value ?? 'default',
+  };
+}
+
 export const findClaudeModelOption = (model: string | undefined | null): ProviderModelOption | null => {
   const normalizedModel = typeof model === 'string' ? model.trim() : '';
   if (!normalizedModel) {
@@ -277,19 +367,16 @@ const readClaudeSessionModelFromJsonl = async (
 };
 
 export class ClaudeProviderModels implements IProviderModels {
+  constructor(
+    private readonly loadInitialization: () => Promise<ClaudeCodeInitialization | null> = loadClaudeCodeInitialization,
+  ) {}
+
+  /** Claude Code's own model list for this account, or the static catalog when it cannot be read. */
   async getSupportedModels(): Promise<ProviderModelsDefinition> {
-    // claude creates a new jsonl file as a separate session for this request.
-    // As a result, it lists the workspace where this is invoked when it shouldn't.
-    //
-    // Disabled for now:
-    // const queryInstance = query({
-    //   prompt: 'Get supported models',
-    //   options: buildClaudeQueryOptions(),
-    // });
-    // const supportedModels = await queryInstance.supportedModels();
-    // queryInstance.close();
-    // return buildClaudeModelsDefinition(supportedModels);
-    return CLAUDE_PREDEFINED_MODELS;
+    const initialization = await this.loadInitialization();
+    return initialization && initialization.models.length > 0
+      ? buildClaudeModelsDefinition(initialization.models)
+      : CLAUDE_PREDEFINED_MODELS;
   }
 
   async getCurrentActiveModel(sessionId?: string): Promise<ProviderCurrentActiveModel> {

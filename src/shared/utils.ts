@@ -269,5 +269,13 @@ export const getPageTitle = (
 export const isSkillCommand = (command: SlashCommand): boolean =>
   command.type === 'skill' || command.metadata?.type === 'skill';
 
+/**
+ * True for a command Claude Code itself runs: a skill, or one of its own
+ * commands (`/compact`, `/clear`, ...). Such a command is sent as the prompt
+ * rather than executed by this app.
+ */
+export const isPromptCommand = (command: SlashCommand): boolean =>
+  isSkillCommand(command) || command.type === 'cli' || command.metadata?.type === 'cli';
+
 // ---------------------------
 

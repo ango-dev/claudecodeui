@@ -67,7 +67,7 @@ const mapSkillToSlashCommand = (skill: ProviderSkill): SlashCommand => ({
 /**
  * Used by the chat module (composer `/` menu) to load the slash commands —
  * built-in, provider skills and custom — available to a project. The fetch and
- * mapping live here; ordering and filtering stay with the consumer. Returns the list in built-in → skills → custom order. A consumer
+ * mapping live here; ordering and filtering stay with the consumer. Returns the list in built-in → Claude Code → skills → custom order. A consumer
  * that only shows the list sometimes passes `enabled: false` meanwhile so
  * project switches do not cost a second round-trip; re-enabling refetches.
  */
@@ -119,11 +119,20 @@ export function useProjectSlashCommands(
           : null;
         const skillCommands = dedupeProviderSkills(skillsData?.data?.skills || [])
           .map(mapSkillToSlashCommand);
+        // Claude Code's own commands run inside a Claude session; a bundled
+        // skill it also lists is already among the skills.
+        const skillNames = new Set(skillCommands.map((command) => command.name));
+        const claudeCodeCommands = provider === 'claude'
+          ? ((data.cli || []) as SlashCommand[])
+            .filter((command) => !skillNames.has(command.name))
+            .map((command) => ({ ...command, type: 'cli' }))
+          : [];
         const allCommands: SlashCommand[] = [
           ...((data.builtIn || []) as SlashCommand[]).map((command) => ({
             ...command,
             type: 'built-in',
           })),
+          ...claudeCodeCommands,
           ...skillCommands,
           ...((data.custom || []) as SlashCommand[]).map((command) => ({
             ...command,

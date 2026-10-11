@@ -50,6 +50,7 @@ async function executeCommand(
     homeDirectory: () => '/home/test',
     appRoot: '/app',
     models: createModelsService(sessionModels) as never,
+    claudeCodeCommands: async () => [],
     runtime: {
       uptime: () => 0,
       memoryUsage: () => ({ rss: 0, heapTotal: 0, heapUsed: 0, external: 0, arrayBuffers: 0 }),
@@ -111,4 +112,45 @@ test('cost and status commands report the same resolved model as /models', async
 
   assert.equal((cost.data as { model: string }).model, 'haiku');
   assert.equal((status.data as { model: string }).model, 'haiku');
+});
+
+test('the command list carries Claude Code\'s own commands, leaving the app\'s built-ins in charge of a shared name', async () => {
+  const router = createCommandsRouter({
+    fileSystem: {
+      access: async () => { throw new Error('missing'); },
+    } as unknown as typeof import('node:fs/promises'),
+    homeDirectory: () => '/home/test',
+    appRoot: '/app',
+    models: createModelsService() as never,
+    claudeCodeCommands: async () => [
+      { name: '__internal', description: 'Plumbing', argumentHint: '' },
+      { name: 'compact', description: 'Free up context by summarizing the conversation so far', argumentHint: '<optional custom summarization instructions>' },
+      { name: 'cost', description: 'Show the total cost of the session', argumentHint: '' },
+      { name: 'clear', description: 'Start a new session with empty context', argumentHint: '[name]', aliases: ['reset', 'new'] },
+    ],
+    runtime: {
+      uptime: () => 0,
+      memoryUsage: () => ({ rss: 0, heapTotal: 0, heapUsed: 0, external: 0, arrayBuffers: 0 }),
+      version: 'v22', platform: 'linux', pid: 1,
+    },
+  });
+  const app = express().use(express.json()).use('/api/commands', router);
+  const server = app.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  try {
+    const address = server.address() as AddressInfo;
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/commands/list`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json() as { cli: Array<Record<string, unknown>> };
+
+    assert.deepEqual(body.cli.map((command) => command.name), ['/clear', '/compact'], 'the app keeps /cost; the rest are sorted');
+    assert.equal(body.cli[1].description, 'Free up context by summarizing the conversation so far');
+    assert.equal(body.cli[1].argumentHint, '<optional custom summarization instructions>');
+    assert.deepEqual(body.cli[0].metadata, { type: 'cli', aliases: ['reset', 'new'] });
+  } finally {
+    server.close();
+  }
 });

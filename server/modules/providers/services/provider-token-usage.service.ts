@@ -183,9 +183,10 @@ function emptyCodexTokenUsage(): TokenUsageResult {
 
 /** Claude Code's standard context window. */
 const CLAUDE_STANDARD_CONTEXT_WINDOW = 200_000;
-/** The window of `[1m]` models, and the default of the Opus and Fable 5 family. */
+/** The window of `[1m]` models and of every current model but Haiku 4.5. */
 const CLAUDE_EXTENDED_CONTEXT_WINDOW = 1_000_000;
-const EXTENDED_CONTEXT_MODEL_PATTERN = /^claude-(opus|fable)-5/;
+/** The 5 family, and Opus 4.6 to 4.8 and Sonnet 4.6, have a 1M window. */
+const EXTENDED_CONTEXT_MODEL_PATTERN = /^claude-(?:(?:opus|fable|sonnet|haiku|mythos)-5|opus-4-[678]|sonnet-4-6)/;
 const ONE_MILLION_SUFFIX_PATTERN = /\[1m\]$/i;
 
 /**
@@ -218,7 +219,7 @@ export function rememberClaudeContextWindows(modelUsage: unknown): void {
  * window a Claude session's counter is measured against.
  *
  * In order: the window the SDK reported for the model; the `CONTEXT_WINDOW`
- * setting; 1M for a `[1m]` model or the Opus and Fable 5 family; 1M once the
+ * setting; 1M for a `[1m]` model or any model with a 1M window; 1M once the
  * session has held a prompt larger than the standard window (it could not have
  * otherwise); else Claude Code's standard 200k.
  */

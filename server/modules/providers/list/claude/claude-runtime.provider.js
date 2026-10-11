@@ -88,7 +88,11 @@ const TOOLS_REQUIRING_INTERACTION = new Set(['AskUserQuestion', 'ExitPlanMode'])
 const ULTRACODE_SDK_EFFORT = 'xhigh';
 
 function resolveClaudeEffort(model, effort, modelsDefinition = CLAUDE_PREDEFINED_MODELS) {
-  const selectedModel = modelsDefinition?.OPTIONS?.find((option) => option.value === model) || null;
+  // A session can record the full id (`claude-opus-5-5`) its alias resolves to.
+  const options = modelsDefinition?.OPTIONS || [];
+  const selectedModel = options.find((option) => option.value === model)
+    || options.find((option) => option.resolvesTo === model)
+    || null;
   const allowedEfforts = selectedModel?.effort?.values
     ?.map((value) => value.value) || [];
   return typeof effort === 'string' && effort !== 'default' && allowedEfforts.includes(effort)
