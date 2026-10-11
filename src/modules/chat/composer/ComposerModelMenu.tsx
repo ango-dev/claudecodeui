@@ -82,7 +82,9 @@ function ModelPicker({
   const primaryOptions = useMemo(() => modelOptions.filter((option) => option.group !== 'more'), [modelOptions]);
   const moreOptions = useMemo(() => modelOptions.filter((option) => option.group === 'more'), [modelOptions]);
   const selectedOption = findModelOption(modelOptions, model);
-  const triggerLabel = selectedOption?.label || readableModelName(model);
+  // The button names only the model in use; "Default (…)" is for the menu.
+  const optionLabel = selectedOption?.label || readableModelName(model);
+  const triggerLabel = /^Default \((.+)\)$/.exec(optionLabel)?.[1] ?? optionLabel;
   const ariaLabel = t('composer.modelMenu', { defaultValue: 'Select model' });
 
   const select = useCallback((value: string) => {
@@ -229,6 +231,8 @@ function EffortPicker({
     ? t('composer.effortDefaultNamed', { effort: effortName(defaultEffort), defaultValue: 'Default ({{effort}})' })
     : t('composer.effortDefault', { defaultValue: 'Default' });
   const currentLabel = isDefault ? defaultLabel : effortName(effort);
+  // The button names only the level in force; "Default (…)" is for the menu.
+  const triggerLabel = activeEffort ? effortName(activeEffort) : currentLabel;
   const ariaLabel = t('composer.effortMenu', { defaultValue: 'Select effort' });
   const activeIndex = Math.max(0, effortOptions.findIndex((option) => option.value === activeEffort));
   const defaultIndex = effortOptions.findIndex((option) => option.value === defaultEffort);
@@ -253,7 +257,7 @@ function EffortPicker({
         aria-label={`${ariaLabel}: ${currentLabel}`}
         title={ariaLabel}
       >
-        <span className="truncate">{currentLabel}</span>
+        <span className="truncate">{triggerLabel}</span>
       </button>
 
       {isOpen && anchor && createPortal(
