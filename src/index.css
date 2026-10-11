@@ -377,14 +377,21 @@
     background-color: hsl(var(--muted-foreground) / 0.7);
   }
   
-  /* Scrollbars are the browser's own, as in Claude Code; color-scheme makes
-     them (and form controls) draw dark in dark mode. */
+  /* Scrollbars are the browser's own thin scrollbar, as in Claude Code: a
+     gray thumb on a transparent track. color-scheme also makes form
+     controls draw dark in dark mode. */
   :root {
     color-scheme: light;
+    scrollbar-color: #b5b3ad transparent;
   }
 
   .dark {
     color-scheme: dark;
+    scrollbar-color: #5c5c5a transparent;
+  }
+
+  * {
+    scrollbar-width: thin;
   }
   
   /* Ensure checkbox styling is preserved */
