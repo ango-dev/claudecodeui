@@ -293,7 +293,7 @@ export default function SidebarContent({
                       id="conversation-content-results-heading"
                       className="text-[11px] font-medium text-muted-foreground"
                     >
-                      {t('search.conversationContents', 'Conversation contents')}
+                      {t('search.conversationContents', 'Session contents')}
                     </h3>
                     <span className="text-[10px] tabular-nums text-muted-foreground/70">
                       {t('search.matches', { count: conversationResults.totalMatches })}

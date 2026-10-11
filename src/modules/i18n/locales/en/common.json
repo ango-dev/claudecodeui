@@ -391,7 +391,7 @@
     "backgroundAgent": "Agent",
     "backgroundCommand": "Command",
     "stopTask": "Stop",
-    "taskRowNotLoaded": "Launched earlier in this conversation; click to load it",
+    "taskRowNotLoaded": "Launched earlier in this session; click to load it",
     "taskOfAgent": "Launched by one of this session's agents"
   },
   "cancel": "Cancel"

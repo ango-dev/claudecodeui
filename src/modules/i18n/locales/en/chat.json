@@ -175,7 +175,7 @@
   },
   "providerSelection": {
     "title": "Choose Your AI Assistant",
-    "description": "Select a provider to start a new conversation",
+    "description": "Select a provider to start a new session",
     "selectModel": "Select Model",
     "providerInfo": {
       "anthropic": "by Anthropic",
@@ -202,7 +202,7 @@
   },
   "session": {
     "continue": {
-      "title": "Continue your conversation",
+      "title": "Continue your session",
       "description": "Ask questions about your code, request changes, or get help with development tasks"
     },
     "loading": {
@@ -298,9 +298,9 @@
     "answeredBy": "Answered by {{model}}"
   },
   "export": {
-    "trigger": "Export conversation",
+    "trigger": "Export session",
     "heading": "Export as",
-    "untitled": "Conversation",
+    "untitled": "Session",
     "html": {
       "label": "Web page (.html)",
       "description": "Self-contained, looks like the app, prints to PDF."

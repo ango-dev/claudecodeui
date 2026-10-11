@@ -183,7 +183,7 @@ export const BackgroundTasksStrip = memo(({ messages, tasks, sessionId, sendMess
               <button
                 type="button"
                 onClick={onLoadAll}
-                title={`${[kind, name].filter(Boolean).join(' · ')} · ${t('workflow.taskRowNotLoaded', 'Launched earlier in this conversation; click to load it')}`}
+                title={`${[kind, name].filter(Boolean).join(' · ')} · ${t('workflow.taskRowNotLoaded', 'Launched earlier in this session; click to load it')}`}
                 className="flex min-w-0 max-w-xs items-center gap-1.5 rounded px-1.5 py-0.5 hover:bg-muted hover:text-foreground"
               >
                 {label}

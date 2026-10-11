@@ -16,7 +16,7 @@ import SidebarModeTabs from '@/modules/sidebar/SidebarModeTabs';
 
 const LABELS: Record<string, string> = {
   'search.modeProjects': 'Projects',
-  'search.modeConversations': 'Conversations',
+  'search.modeConversations': 'Sessions',
   'search.runningTooltip': 'Running sessions',
   'search.archiveOnlyTooltip': 'Archive only',
   'search.modeMore': 'More',
@@ -52,23 +52,25 @@ test('a wide row shows every tab and no overflow menu', () => {
   renderTabs(400, 'projects');
 
   assert.ok(screen.getByRole('button', { name: 'Projects' }));
-  assert.ok(screen.getByRole('button', { name: 'Conversations' }));
+  assert.ok(screen.getByRole('button', { name: 'Sessions' }));
   assert.ok(screen.getByRole('button', { name: 'Running sessions' }));
   assert.ok(screen.getByRole('button', { name: 'Archive only' }));
   assert.equal(screen.queryByRole('button', { name: 'More' }), null);
 });
 
 test('a narrow row moves the tabs that no longer fit into the dropdown', () => {
-  const changes = renderTabs(220, 'projects');
+  // Narrower than the 220px minimum: with the short "Sessions" label the stub
+  // widths would otherwise still fit that tab.
+  const changes = renderTabs(200, 'projects');
 
   assert.ok(screen.getByRole('button', { name: 'Projects' }));
-  assert.equal(screen.queryByRole('button', { name: 'Conversations' }), null);
+  assert.equal(screen.queryByRole('button', { name: 'Sessions' }), null);
 
   fireEvent.click(screen.getByRole('button', { name: 'More' }));
   assert.ok(screen.getByRole('menuitem', { name: 'Running sessions' }));
   assert.ok(screen.getByRole('menuitem', { name: 'Archive only' }));
 
-  fireEvent.click(screen.getByRole('menuitem', { name: 'Conversations' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Sessions' }));
   assert.deepEqual(changes, ['conversations']);
 });
 
@@ -79,6 +81,6 @@ test('the section on screen keeps its place in the row', () => {
   // is the open section, so the strip has to keep showing it as pressed.
   const archive = screen.getByRole('button', { name: 'Archive only' });
   assert.equal(archive.getAttribute('aria-pressed'), 'true');
-  assert.equal(screen.queryByRole('button', { name: 'Conversations' }), null);
+  assert.equal(screen.queryByRole('button', { name: 'Sessions' }), null);
   assert.ok(screen.getByRole('button', { name: 'More' }));
 });

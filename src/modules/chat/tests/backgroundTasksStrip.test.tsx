@@ -318,7 +318,7 @@ describe('the background tasks strip, for a task whose launch row is not loaded'
 
     const chips = screen.getAllByRole('button');
     expect(chips.map((chip) => chip.textContent)).toEqual(['Workflowaudit', '']);
-    expect(chips[0]?.title).toBe('Workflow · audit · Launched earlier in this conversation; click to load it');
+    expect(chips[0]?.title).toBe('Workflow · audit · Launched earlier in this session; click to load it');
     fireEvent.click(chips[0]!);
     expect(onLoadAll).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
