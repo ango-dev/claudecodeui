@@ -1,8 +1,8 @@
-import { memo, useEffect, useRef } from 'react';
-import { Check, ChevronDown, ChevronRight, Edit3, Star, Trash2, X } from 'lucide-react';
+import { memo, useEffect, useRef, useState } from 'react';
+import { Check, ChevronDown, ChevronRight, Edit3, MoreHorizontal, Star, Trash2, X } from 'lucide-react';
 import type { TFunction } from 'i18next';
 
-import { Button } from '@/shared/ui';
+import { ActionMenu, Button } from '@/shared/ui';
 import { cn } from '@/shared/utils';
 import type { LLMProvider, MCPServerStatus, Project, ProjectSession, SessionWithProvider, SidebarSessionSelection } from '@/shared/types';
 import { getTaskIndicatorStatus } from '@/modules/sidebar/utils/sidebarProjectFormatting';
@@ -138,6 +138,8 @@ function SidebarProjectItem({
   }, [isEditing]);
 
   const isCompact = useCompactSidebar();
+  // Where the project row was last right-clicked; a new object opens its menu there.
+  const [projectMenuAt, setProjectMenuAt] = useState<{ x: number; y: number } | null>(null);
 
   const toggleProject = () => onToggleProject(project.projectId);
   const toggleStarProject = () => onToggleStarProject(project.projectId);
@@ -301,44 +303,30 @@ function SidebarProjectItem({
         )}
 
         {!isCompact && (
+        <>
+        {/* One flat line, as in Claude Code: chevron, name, star, count. Rename,
+            delete and favourite live in the "⋯" menu, which right-click opens too. */}
         <Button
           variant="ghost"
           className={cn(
-            'sticky top-0 z-10 flex w-full justify-between p-2 h-auto font-normal hover:bg-accent/50',
-            isSelected
-              ? 'bg-accent text-accent-foreground'
-              : isStarred
-                ? 'bg-background hover:bg-accent/50'
-                : 'bg-background',
-            isStarred &&
-              !isSelected &&
-              'bg-yellow-50/50 dark:bg-yellow-900/10 hover:bg-yellow-100/50 dark:hover:bg-yellow-900/20',
+            'sticky top-0 z-10 flex h-8 w-full justify-between bg-background px-2 font-normal hover:bg-accent/60',
+            !isEditing && 'pr-9',
+            isEditing && 'h-auto py-1.5',
           )}
           onClick={selectAndToggleProject}
+          onContextMenu={(event) => {
+            if (isEditing) return;
+            event.preventDefault();
+            setProjectMenuAt({ x: event.clientX, y: event.clientY });
+          }}
+          title={isEditing ? undefined : project.fullPath}
         >
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            <div
-              className={cn(
-                'w-6 h-6 flex items-center justify-center rounded cursor-pointer transition-all duration-200',
-                isStarred
-                  ? 'hover:bg-yellow-50 dark:hover:bg-yellow-900/20'
-                  : 'opacity-40 hover:opacity-100 hover:bg-accent',
-              )}
-              onClick={(event) => {
-                event.stopPropagation();
-                toggleStarProject();
-              }}
-              title={isStarred ? t('tooltips.removeFromFavorites') : t('tooltips.addToFavorites')}
-            >
-              <Star
-                className={cn(
-                  'w-3 h-3 transition-colors',
-                  isStarred
-                    ? 'text-yellow-600 dark:text-yellow-400 fill-current'
-                    : 'text-muted-foreground',
-                )}
-              />
-            </div>
+          <div className="flex min-w-0 flex-1 items-center gap-1.5">
+            {isExpanded ? (
+              <ChevronDown className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+            )}
             <div className="min-w-0 flex-1 text-left">
               {isEditing ? (
                 <div className="space-y-1">
@@ -365,19 +353,16 @@ function SidebarProjectItem({
                   </div>
                 </div>
               ) : (
-                <div>
-                  <div className="truncate text-sm font-normal text-foreground" title={project.displayName}>
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span className={cn('truncate text-sm text-foreground', isSelected && 'font-medium')}>
                     {project.displayName}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {sessionCountDisplay}
-                    {project.fullPath !== project.displayName && (
-                      <span className="ml-1 opacity-60" title={project.fullPath}>
-                        {' - '}
-                        {project.fullPath.length > 25 ? `...${project.fullPath.slice(-22)}` : project.fullPath}
-                      </span>
-                    )}
-                  </div>
+                  </span>
+                  {isStarred && (
+                    <Star
+                      className="h-3 w-3 flex-shrink-0 fill-current text-yellow-600 dark:text-yellow-400"
+                      aria-label={t('tooltips.removeFromFavorites')}
+                    />
+                  )}
                 </div>
               )}
             </div>
@@ -406,36 +391,50 @@ function SidebarProjectItem({
                 </div>
               </>
             ) : (
-              <>
-                <div
-                  className="touch:opacity-100 flex h-6 w-6 cursor-pointer items-center justify-center rounded opacity-0 transition-all duration-200 hover:bg-accent group-hover:opacity-100"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onStartEditingProject(project);
-                  }}
-                  title={t('tooltips.renameProject')}
-                >
-                  <Edit3 className="h-3 w-3" />
-                </div>
-                <div
-                  className="touch:opacity-100 flex h-6 w-6 cursor-pointer items-center justify-center rounded opacity-0 transition-all duration-200 hover:bg-red-50 group-hover:opacity-100 dark:hover:bg-red-900/20"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onDeleteProject(project);
-                  }}
-                  title={t('tooltips.deleteProject')}
-                >
-                  <Trash2 className="h-3 w-3 text-red-600 dark:text-red-400" />
-                </div>
-                {isExpanded ? (
-                  <ChevronDown className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-foreground" />
-                ) : (
-                  <ChevronRight className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-foreground" />
-                )}
-              </>
+              <span className="text-xs text-muted-foreground transition-opacity group-hover:opacity-0">
+                {sessionCountDisplay}
+              </span>
             )}
           </div>
         </Button>
+        {!isEditing && (
+          <ActionMenu
+            label={t('tooltips.projectOptions', { defaultValue: 'Project options' })}
+            ariaLabel={`${t('tooltips.projectOptions', { defaultValue: 'Project options' })}: ${project.displayName}`}
+            icon={MoreHorizontal}
+            iconOnly
+            portal
+            variant="ghost"
+            size="icon"
+            openAt={projectMenuAt}
+            className="absolute right-1 top-1/2 z-20 -translate-y-1/2"
+            triggerClassName="h-6 w-6 text-muted-foreground opacity-0 hover:bg-muted hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100 aria-expanded:opacity-100"
+            menuClassName="w-[220px] rounded-xl p-1.5 shadow-xl"
+            items={[
+              {
+                key: 'star',
+                label: isStarred ? t('tooltips.removeFromFavorites') : t('tooltips.addToFavorites'),
+                icon: Star,
+                onSelect: toggleStarProject,
+              },
+              {
+                key: 'rename',
+                label: t('tooltips.renameProject'),
+                icon: Edit3,
+                onSelect: () => onStartEditingProject(project),
+              },
+              {
+                key: 'delete',
+                label: t('tooltips.deleteProject'),
+                icon: Trash2,
+                isDanger: true,
+                showDividerBefore: true,
+                onSelect: () => onDeleteProject(project),
+              },
+            ]}
+          />
+        )}
+        </>
         )}
       </div>
 

@@ -88,42 +88,44 @@ type ListOverrides = {
   onToggleSessionSelected?: (projectId: string, sessionId: string) => void;
   onCancelSessionSelection?: () => void;
   onDeleteSelectedSessions?: (sessionIds: string[]) => void;
+  onSessionSelect?: (session: SessionWithProvider, projectName: string) => void;
+  selectedSession?: SessionWithProvider | null;
 };
 
+const baseProps = (overrides: ListOverrides = {}) => ({
+  project: PROJECT,
+  isExpanded: true,
+  sessions: SESSIONS,
+  selectedSession: null,
+  initialSessionsLoaded: true,
+  hasMoreSessions: false,
+  isLoadingMoreSessions: false,
+  activeSessions: NO_IDS,
+  backgroundSessionIds: NO_IDS,
+  attentionSessionIds: NO_IDS,
+  currentTime: NOW,
+  sessionRenameId: null,
+  sessionRenameDraft: '',
+  onRenameDraftChange: noop,
+  onStartEditingSession: noop,
+  onCancelEditingSession: noop,
+  onSaveEditingSession: noop,
+  onProjectSelect: noop,
+  onSessionSelect: noop,
+  onDeleteSession: noop,
+  onLoadMoreSessions: noop,
+  onNewSession: noop,
+  selectedSessionIds: null,
+  onSetSessionSelection: noop,
+  onToggleSessionSelected: noop,
+  onCancelSessionSelection: noop,
+  onDeleteSelectedSessions: noop,
+  t,
+  ...overrides,
+});
+
 const renderSessions = (overrides: ListOverrides = {}) =>
-  render(
-    React.createElement(SidebarProjectSessions, {
-      project: PROJECT,
-      isExpanded: true,
-      sessions: SESSIONS,
-      selectedSession: null,
-      initialSessionsLoaded: true,
-      hasMoreSessions: false,
-      isLoadingMoreSessions: false,
-      activeSessions: NO_IDS,
-      backgroundSessionIds: NO_IDS,
-      attentionSessionIds: NO_IDS,
-      currentTime: NOW,
-      sessionRenameId: null,
-      sessionRenameDraft: '',
-      onRenameDraftChange: noop,
-      onStartEditingSession: noop,
-      onCancelEditingSession: noop,
-      onSaveEditingSession: noop,
-      onProjectSelect: noop,
-      onSessionSelect: noop,
-      onDeleteSession: noop,
-      onLoadMoreSessions: noop,
-      onNewSession: noop,
-      selectedSessionIds: null,
-      onSetSessionSelection: noop,
-      onToggleSessionSelected: noop,
-      onCancelSessionSelection: noop,
-      onDeleteSelectedSessions: noop,
-      t,
-      ...overrides,
-    }),
-  );
+  render(React.createElement(SidebarProjectSessions, baseProps(overrides)));
 
 const buttonWithText = (container: HTMLElement, text: string): HTMLButtonElement | null =>
   [...container.querySelectorAll('button')].find((button) => button.textContent?.trim() === text) ?? null;
@@ -150,20 +152,113 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-test('the idle list offers Select and opens an empty selection with it', () => {
+test('the compact list offers Select and opens an empty selection with it', () => {
+  isCompactLayout = true;
   const onSetSessionSelection = vi.fn();
   const { container } = renderSessions({ onSetSessionSelection });
 
   assert.equal(checkboxes(container).length, 0, 'no row acts as a checkbox before selecting');
-  assert.equal(recordedOptionsProps.length, SESSIONS.length, 'every row still has its options menu');
 
   const selectButton = buttonWithText(container, 'sessions.select');
-  assert.ok(selectButton, 'the idle list offers to start selecting');
+  assert.ok(selectButton, 'touch layouts have no modifier keys, so they keep the Select button');
 
   fireEvent.click(selectButton);
   const selection = onSetSessionSelection.mock.calls[0][0] as SidebarSessionSelection;
   assert.equal(selection.projectId, PROJECT.projectId);
   assert.deepEqual([...selection.sessionIds], [], 'selection mode opens with nothing ticked');
+});
+
+test('the idle desktop list has no Select button; every row keeps its options menu', () => {
+  const { container } = renderSessions();
+
+  assert.equal(buttonWithText(container, 'sessions.select'), null);
+  assert.equal(checkboxes(container).length, 0);
+  assert.equal(recordedOptionsProps.length, SESSIONS.length, 'every row still has its options menu');
+});
+
+const desktopRow = (container: HTMLElement, sessionId: string): HTMLElement => {
+  const row = container.querySelector<HTMLElement>(`a[href="/session/${sessionId}"]`);
+  assert.ok(row, `row ${sessionId} renders`);
+  return row;
+};
+
+test('Ctrl/Cmd-click on an idle desktop row starts a selection with that row instead of opening it', () => {
+  const onSetSessionSelection = vi.fn();
+  const onSessionSelect = vi.fn();
+  const { container } = renderSessions({ onSetSessionSelection, onSessionSelect });
+
+  fireEvent.click(desktopRow(container, 's2'), { ctrlKey: true });
+  fireEvent.click(desktopRow(container, 's3'), { metaKey: true });
+
+  assert.equal(onSessionSelect.mock.calls.length, 0, 'a modifier click never opens the session');
+  assert.deepEqual([...(onSetSessionSelection.mock.calls[0][0] as SidebarSessionSelection).sessionIds], ['s2']);
+  assert.deepEqual([...(onSetSessionSelection.mock.calls[1][0] as SidebarSessionSelection).sessionIds], ['s3']);
+});
+
+test('Ctrl/Cmd-click while selecting toggles the row', () => {
+  const onToggleSessionSelected = vi.fn();
+  const { container } = renderSessions({ selectedSessionIds: new Set(['s1']), onToggleSessionSelected });
+
+  fireEvent.click(desktopRow(container, 's2'), { ctrlKey: true });
+  assert.deepEqual(onToggleSessionSelected.mock.calls[0], ['project-1', 's2']);
+});
+
+test('Shift-click selects the range from the last toggled row, keeping what was already ticked', () => {
+  const onSetSessionSelection = vi.fn();
+  const sessions = [...SESSIONS, session('s4')];
+  const view = renderSessions({ sessions, onSetSessionSelection });
+
+  fireEvent.click(desktopRow(view.container, 's2'), { ctrlKey: true });
+  view.rerender(React.createElement(
+    SidebarProjectSessions,
+    baseProps({ sessions, onSetSessionSelection, selectedSessionIds: new Set(['s2', 's4']) }),
+  ));
+  fireEvent.click(desktopRow(view.container, 's3'), { shiftKey: true });
+
+  const range = onSetSessionSelection.mock.calls[1][0] as SidebarSessionSelection;
+  assert.deepEqual([...range.sessionIds].sort(), ['s2', 's3', 's4']);
+});
+
+test('Shift-click with nothing toggled starts the range at the open session and skips running rows', () => {
+  const onSetSessionSelection = vi.fn();
+  const { container } = renderSessions({
+    selectedSession: SESSIONS[0],
+    activeSessions: new Set(['s2']),
+    onSetSessionSelection,
+  });
+
+  fireEvent.click(desktopRow(container, 's3'), { shiftKey: true });
+
+  const range = onSetSessionSelection.mock.calls[0][0] as SidebarSessionSelection;
+  assert.deepEqual([...range.sessionIds].sort(), ['s1', 's3'], 'the running row is never ticked');
+});
+
+test('right-clicking a row opens its options menu at the pointer', () => {
+  const { container } = renderSessions();
+
+  const event = fireEvent.contextMenu(desktopRow(container, 's2'), { clientX: 120, clientY: 340 });
+  assert.equal(event, false, 'the browser menu is replaced');
+
+  const s2Options = recordedOptionsProps.filter((props) => props.sessionId === 's2').at(-1);
+  assert.deepEqual(s2Options?.openAt, { x: 120, y: 340 });
+});
+
+test('the row menu offers Select, which starts a selection with that row', () => {
+  const onSetSessionSelection = vi.fn();
+  renderSessions({ onSetSessionSelection });
+
+  const s3Options = recordedOptionsProps.filter((props) => props.sessionId === 's3').at(-1);
+  assert.equal(typeof s3Options?.onSelectForBulk, 'function');
+  act(() => (s3Options?.onSelectForBulk as () => void)());
+  assert.deepEqual([...(onSetSessionSelection.mock.calls[0][0] as SidebarSessionSelection).sessionIds], ['s3']);
+});
+
+test('Escape ends the selection', () => {
+  const onCancelSessionSelection = vi.fn();
+  renderSessions({ selectedSessionIds: new Set(['s1']), onCancelSessionSelection });
+
+  fireEvent.keyDown(window, { key: 'Escape' });
+  assert.equal(onCancelSessionSelection.mock.calls.length, 1);
 });
 
 test('a list whose every session is running has nothing to offer Select for', () => {

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Check, Edit2, GitBranch, MoreHorizontal, Trash2, X } from 'lucide-react';
+import { Check, CheckSquare, Edit2, GitBranch, MoreHorizontal, Trash2, X } from 'lucide-react';
 import type { TFunction } from 'i18next';
 
 import { ActionMenu } from '@/shared/ui';
@@ -31,6 +31,10 @@ type SessionOptionsProps = {
   onFork?: () => void;
   /** Withheld where the row has nowhere to send a delete. */
   canDelete?: boolean;
+  /** Starts a bulk selection with this session; absent where the row has no bulk actions. */
+  onSelectForBulk?: () => void;
+  /** Opens the options menu at a pointer position (the row's right-click). */
+  openAt?: { x: number; y: number } | null;
   className?: string;
   t: TFunction;
 };
@@ -59,6 +63,8 @@ export default function SessionOptions({
   onDeleteSession,
   onFork,
   canDelete = true,
+  onSelectForBulk,
+  openAt,
   className,
   t,
 }: SessionOptionsProps) {
@@ -149,7 +155,9 @@ export default function SessionOptions({
           variant="ghost"
           size="icon"
           onOpenChange={setOptionsOpen}
-          triggerClassName="h-7 w-7 text-muted-foreground opacity-70 hover:bg-muted hover:opacity-100"
+          openAt={openAt}
+          // Shown on row hover, keyboard focus or while open, like Claude Code's rows.
+          triggerClassName="h-7 w-7 text-muted-foreground opacity-0 hover:bg-muted hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100 aria-expanded:opacity-100"
           menuClassName="w-[260px] rounded-xl p-1.5 shadow-xl"
           header={(
             <div className="mb-1 border-b border-border px-3 py-2">
@@ -175,6 +183,12 @@ export default function SessionOptions({
               closeOnSelect: false,
               onSelect: handleCopyAction,
             },
+            ...(onSelectForBulk && !isProcessing ? [{
+              key: 'select',
+              label: 'Select',
+              icon: CheckSquare,
+              onSelect: onSelectForBulk,
+            }] : []),
             ...(canFork && onFork ? [{
               key: 'fork',
               label: 'Fork session',

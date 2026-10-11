@@ -53,6 +53,7 @@ const renderRow = (state: { isProcessing: boolean; hasBackgroundWork: boolean })
     isSelecting: false,
     isChecked: false,
     onToggleSessionSelected: noop,
+    onModifierSelect: noop,
     t,
     ...state,
   }),

@@ -1,5 +1,5 @@
 import { memo, useState } from 'react';
-import type { KeyboardEvent } from 'react';
+import type { KeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { Check, CheckSquare, Edit2, Loader2, MoreHorizontal, Square, Trash2, X } from 'lucide-react';
 import type { TFunction } from 'i18next';
 
@@ -38,6 +38,11 @@ type SidebarSessionItemProps = {
   isChecked: boolean;
   /** Takes the owning projectId so this memoized row binds itself without the list making a closure per row. */
   onToggleSessionSelected: (projectId: string, sessionId: string) => void;
+  /**
+   * Ctrl/Cmd-click ('toggle') or Shift-click ('range') on a desktop row, and the
+   * menu's Select item: starts or extends the bulk selection. Stable identity.
+   */
+  onModifierSelect: (projectId: string, sessionId: string, mode: 'toggle' | 'range') => void;
   t: TFunction;
 };
 
@@ -63,6 +68,7 @@ function SidebarSessionItem({
   isSelecting,
   isChecked,
   onToggleSessionSelected,
+  onModifierSelect,
   t,
 }: SidebarSessionItemProps) {
   const isCompact = useCompactSidebar();
@@ -108,6 +114,17 @@ function SidebarSessionItem({
   const isSelectable = isSelecting && !isProcessing;
   const toggleSelected = () => {
     onToggleSessionSelected(project.projectId, session.id);
+  };
+  // Where the row was last right-clicked; a new object asks the options menu
+  // to open there. Null until the first right-click.
+  const [contextMenuAt, setContextMenuAt] = useState<{ x: number; y: number } | null>(null);
+  const openContextMenu = (event: ReactMouseEvent) => {
+    // Selection and rename have no row menu, so the browser's own menu stays.
+    if (isSelecting || isEditing) {
+      return;
+    }
+    event.preventDefault();
+    setContextMenuAt({ x: event.clientX, y: event.clientY });
   };
   // Space activates neither the desktop anchor nor the compact div, and Enter
   // only the anchor, so both keys are handled here and tick either row alike.
@@ -384,22 +401,30 @@ function SidebarSessionItem({
           role={isSelecting ? 'checkbox' : undefined}
           aria-checked={isSelecting ? isChecked : undefined}
           aria-disabled={isSelecting && !isSelectable ? true : undefined}
+          // Flat rows as in Claude Code: no card border, a filled row for the
+          // open session and for every ticked one.
           className={cn(
             buttonVariants({ variant: 'ghost' }),
-            'h-auto w-full justify-start rounded-md border bg-card p-2 text-left font-normal transition-all duration-150',
-            isSelecting ? 'pr-2' : 'pr-11',
-            isSelected ? 'border-primary/20 bg-primary/5' : 'border-border/30',
-            !isSelected && isProcessing
-              ? 'border-border/60 bg-muted/20 hover:bg-muted/25'
-              : !isSelected && sessionView.isActive
-                ? 'border-green-500/30 bg-green-50/5 hover:bg-green-50/10 dark:bg-green-900/5 dark:hover:bg-green-900/10'
-                : 'hover:bg-accent/50',
-            isChecked && 'border-primary/40 bg-primary/10',
+            'h-8 w-full justify-start rounded-md px-2 py-1 text-left font-normal transition-colors duration-150',
+            isSelecting ? 'pr-2' : 'pr-9',
+            isChecked
+              ? 'bg-accent hover:bg-accent'
+              : isSelected
+                ? 'bg-accent/70 hover:bg-accent'
+                : 'hover:bg-accent/60',
           )}
-          // Left-click keeps in-app navigation; Ctrl/Cmd/middle-click and the
-          // native right-click menu use the href to open a new tab/window.
-          // While selecting, every click ticks the row instead.
+          // Left-click opens the session in-app; Ctrl/Cmd-click toggles it into
+          // the bulk selection and Shift-click selects a range, as in Claude
+          // Code. Middle-click still opens the href in a new tab. While
+          // selecting, a plain click ticks the row too.
           onClick={(event) => {
+            if (event.shiftKey || event.metaKey || event.ctrlKey) {
+              event.preventDefault();
+              if (!isProcessing) {
+                onModifierSelect(project.projectId, session.id, event.shiftKey ? 'range' : 'toggle');
+              }
+              return;
+            }
             if (isSelecting) {
               event.preventDefault();
               if (isSelectable) {
@@ -407,22 +432,15 @@ function SidebarSessionItem({
               }
               return;
             }
-            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            if (event.altKey) return;
             event.preventDefault();
             onSessionSelect(session, project.projectId);
           }}
+          onContextMenu={openContextMenu}
           onKeyDown={isSelecting ? handleSelectionKeyDown : undefined}
         >
           <div className="flex w-full min-w-0 items-center gap-2">
-            {selectionIcon}
-            <div
-              className={cn(
-                'flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md',
-                isSelected ? 'bg-primary/10' : 'bg-muted/50',
-              )}
-            >
-              <LLMProviderLogo provider={session.__provider} className="h-3 w-3" />
-            </div>
+            <LLMProviderLogo provider={session.__provider} className="h-3.5 w-3.5 flex-shrink-0" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <div
@@ -455,9 +473,6 @@ function SidebarSessionItem({
                   </span>
                 )}
               </div>
-              <div className="mt-0.5 flex items-center">
-                {sessionView.messageCount > 0 && <Badge variant="secondary" className="px-1 py-0 text-xs">{sessionView.messageCount}</Badge>}
-              </div>
             </div>
           </div>
         </a>
@@ -478,6 +493,8 @@ function SidebarSessionItem({
             onSaveEditingSession={onSaveEditingSession}
             onDeleteSession={onDeleteSession}
             onFork={onForkSession ? () => onForkSession(session) : undefined}
+            onSelectForBulk={() => onModifierSelect(project.projectId, session.id, 'toggle')}
+            openAt={contextMenuAt}
             t={t}
           />
         )}

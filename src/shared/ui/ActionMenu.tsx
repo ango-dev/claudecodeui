@@ -37,6 +37,11 @@ type ActionMenuProps = {
   portal?: boolean;
   header?: React.ReactNode;
   onOpenChange?: (open: boolean) => void;
+  /**
+   * Opens the menu at a viewport point, e.g. where a row was right-clicked.
+   * Pass a new object per request; requires `portal`.
+   */
+  openAt?: { x: number; y: number } | null;
 };
 
 /** Used by the mcp and sidebar modules for the "…" overflow menu on a server or session row. */
@@ -56,6 +61,7 @@ export function ActionMenu({
   portal = false,
   header,
   onOpenChange,
+  openAt,
 }: ActionMenuProps) {
   const [isOpen, setIsOpen] = React.useState(false);
   const [portalPosition, setPortalPosition] = React.useState<{ top: number; left: number } | null>(null);
@@ -157,6 +163,10 @@ export function ActionMenu({
     item.onSelect();
   };
 
+  const menuWidth = 260;
+  const estimatedMenuHeight = (header ? 52 : 0)
+    + items.reduce((height, item) => height + (item.description ? 50 : 32) + (item.showDividerBefore ? 9 : 0), 12);
+
   const toggleMenu = () => {
     if (isOpen) {
       setMenuOpen(false);
@@ -165,18 +175,31 @@ export function ActionMenu({
 
     if (portal && triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
-      const menuWidth = 260;
-      const estimatedHeight = (header ? 52 : 0)
-        + items.reduce((height, item) => height + (item.description ? 58 : 40) + (item.showDividerBefore ? 9 : 0), 12);
       setPortalPosition({
-        top: rect.bottom + 6 + estimatedHeight <= window.innerHeight - 8
+        top: rect.bottom + 6 + estimatedMenuHeight <= window.innerHeight - 8
           ? rect.bottom + 6
-          : Math.max(8, rect.top - estimatedHeight - 6),
+          : Math.max(8, rect.top - estimatedMenuHeight - 6),
         left: Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8)),
       });
     }
     setMenuOpen(true);
   };
+
+  // A context-menu request opens the menu at the pointer, kept on screen. The
+  // ref remembers the request already served, so a re-render (new items, a
+  // closed menu) never reopens it; only a new `openAt` object does.
+  const servedOpenAtRef = React.useRef<ActionMenuProps['openAt']>(null);
+  React.useEffect(() => {
+    if (!openAt || !portal || servedOpenAtRef.current === openAt) {
+      return;
+    }
+    servedOpenAtRef.current = openAt;
+    setPortalPosition({
+      top: Math.max(8, Math.min(openAt.y, window.innerHeight - estimatedMenuHeight - 8)),
+      left: Math.max(8, Math.min(openAt.x, window.innerWidth - menuWidth - 8)),
+    });
+    setMenuOpen(true);
+  }, [openAt, portal, estimatedMenuHeight, setMenuOpen]);
 
   const menu = isOpen && (!portal || portalPosition) && (
     <div
@@ -206,7 +229,7 @@ export function ActionMenu({
               disabled={item.disabled || item.loading}
               onClick={() => runItem(item)}
               className={cn(
-                'flex w-full items-start gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors',
+                'flex w-full items-start gap-2.5 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors',
                 'focus:outline-none focus-visible:bg-accent',
                 item.disabled || item.loading
                   ? 'cursor-not-allowed opacity-50'
@@ -218,10 +241,10 @@ export function ActionMenu({
               {item.loading ? (
                 <Loader2 className="mt-0.5 h-4 w-4 flex-shrink-0 animate-spin" />
               ) : (
-                Icon && <Icon className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                Icon && <Icon className="mt-0.5 h-4 w-4 flex-shrink-0 opacity-70" />
               )}
               <span className="min-w-0 flex-1">
-                <span className="block font-medium leading-5">{item.label}</span>
+                <span className="block leading-5">{item.label}</span>
                 {item.description && (
                   <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">
                     {item.description}

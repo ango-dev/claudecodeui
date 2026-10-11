@@ -1,4 +1,5 @@
-import { CheckSquare, Plus, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { CheckSquare, Plus, Trash2, X } from 'lucide-react';
 import type { TFunction } from 'i18next';
 
 import { Button } from '@/shared/ui';
@@ -93,17 +94,71 @@ export default function SidebarProjectSessions({
 }: SidebarProjectSessionsProps) {
   const isCompact = useCompactSidebar();
 
-  if (!isExpanded) {
-    return null;
-  }
-
-  const hasSessions = sessions.length > 0;
   const isSelecting = selectedSessionIds !== null;
   // A session with a response in flight cannot be deleted — the same rule the
   // row's options menu applies — so it is not selectable either.
   const isSessionRunning = (session: SessionWithProvider) =>
     activeSessions.has(session.id) && !backgroundSessionIds.has(session.id);
   const selectableSessionIds = sessions.filter((session) => !isSessionRunning(session)).map((session) => session.id);
+
+  // Ctrl/Cmd/Shift-click selection, as in Claude Code. The handler reads the
+  // live list and selection through a ref so its identity never changes: the
+  // memoized rows must not re-render when one row is ticked.
+  const selectionStateRef = useRef({ selectableSessionIds, selectedSessionIds, selectedSessionId: selectedSession?.id ?? null });
+  // Synced after each render, before any click can reach the handler.
+  useLayoutEffect(() => {
+    selectionStateRef.current = { selectableSessionIds, selectedSessionIds, selectedSessionId: selectedSession?.id ?? null };
+  });
+  // The row a Shift-click range starts from: the last row toggled.
+  const rangeAnchorRef = useRef<string | null>(null);
+  const handleModifierSelect = useCallback(
+    (projectId: string, sessionId: string, mode: 'toggle' | 'range') => {
+      const { selectableSessionIds: order, selectedSessionIds: current, selectedSessionId } = selectionStateRef.current;
+      // A range with no toggled row yet starts at the open session, if it is listed here.
+      const anchor = rangeAnchorRef.current ?? selectedSessionId;
+      const anchorIndex = anchor ? order.indexOf(anchor) : -1;
+      const targetIndex = order.indexOf(sessionId);
+      if (mode === 'range' && anchorIndex !== -1 && targetIndex !== -1) {
+        const [start, end] = anchorIndex < targetIndex ? [anchorIndex, targetIndex] : [targetIndex, anchorIndex];
+        onSetSessionSelection({
+          projectId,
+          sessionIds: new Set([...(current ?? []), ...order.slice(start, end + 1)]),
+        });
+        return;
+      }
+      rangeAnchorRef.current = sessionId;
+      if (current === null) {
+        onSetSessionSelection({ projectId, sessionIds: new Set([sessionId]) });
+      } else {
+        onToggleSessionSelected(projectId, sessionId);
+      }
+    },
+    [onSetSessionSelection, onToggleSessionSelected],
+  );
+
+  // Escape clears the selection, unless a field or another layer consumed it.
+  useEffect(() => {
+    if (!isSelecting) {
+      rangeAnchorRef.current = null;
+      return undefined;
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // The target can be the window or document, which have no closest().
+      const target = event.target instanceof Element ? event.target : null;
+      if (event.key !== 'Escape' || event.defaultPrevented || target?.closest('input, textarea, [contenteditable="true"]')) {
+        return;
+      }
+      onCancelSessionSelection();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isSelecting, onCancelSessionSelection]);
+
+  if (!isExpanded) {
+    return null;
+  }
+
+  const hasSessions = sessions.length > 0;
   // Re-derived from the selectable rows rather than read straight off the
   // selection, so a row that started running after it was ticked drops out of
   // the count, the button and the ids the confirmation is opened with.
@@ -123,7 +178,7 @@ export default function SidebarProjectSessions({
       : t('sessions.selectAll');
 
   return (
-    <div className="ml-3 space-y-1 border-l border-border pl-3">
+    <div className="ml-2 space-y-0.5 pl-1">
       {isCompact ? (
         <div className="px-3 pb-1 pt-1">
           <button
@@ -139,17 +194,19 @@ export default function SidebarProjectSessions({
         </div>
       ) : (
         <Button
-          variant="default"
+          variant="ghost"
           size="sm"
-          className="flex h-8 w-full justify-start gap-2 bg-primary text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          className="flex h-8 w-full justify-start gap-2 px-2 text-sm font-normal text-muted-foreground hover:bg-accent/60 hover:text-foreground"
           onClick={() => onNewSession(project)}
         >
-          <Plus className="h-3 w-3" />
+          <Plus className="h-3.5 w-3.5" />
           {t('sessions.newSession')}
         </Button>
       )}
 
-      {(isSelecting || (initialSessionsLoaded && selectableSessionIds.length > 0)) && (
+      {/* Desktop starts a selection with Ctrl/Cmd/Shift-click or the row menu;
+          touch layouts have no modifier keys, so they keep the Select button. */}
+      {(isSelecting || (isCompact && initialSessionsLoaded && selectableSessionIds.length > 0)) && (
         <div className={cn('space-y-1', isCompact && 'px-3')}>
           {isSelecting ? (
             <>
@@ -175,18 +232,20 @@ export default function SidebarProjectSessions({
                   size="sm"
                   className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
                   onClick={onCancelSessionSelection}
+                  title="Esc"
                 >
+                  <X className="h-3 w-3" />
                   {t('actions.cancel')}
                 </Button>
               </div>
               <Button
-                variant="destructive"
+                variant="ghost"
                 size="sm"
-                className="h-8 w-full justify-center gap-2 bg-red-600 text-xs font-medium text-white hover:bg-red-700"
+                className="h-8 w-full justify-start gap-2 px-2 text-xs font-medium text-destructive hover:bg-destructive/10 hover:text-destructive"
                 onClick={() => onDeleteSelectedSessions(effectiveSelectedIds)}
                 disabled={effectiveSelectedIds.length === 0}
               >
-                <Trash2 className="h-3 w-3" />
+                <Trash2 className="h-3.5 w-3.5" />
                 {t('sessions.deleteSelected', { count: effectiveSelectedIds.length })}
               </Button>
             </>
@@ -241,6 +300,7 @@ export default function SidebarProjectSessions({
               isSelecting={isSelecting}
               isChecked={checkedSessionIds.has(session.id)}
               onToggleSessionSelected={onToggleSessionSelected}
+              onModifierSelect={handleModifierSelect}
               t={t}
             />
           ))}
