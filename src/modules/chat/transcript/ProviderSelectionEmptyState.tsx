@@ -318,7 +318,7 @@ export default function ProviderSelectionEmptyState({
             <Trans
               ns="chat"
               i18nKey="providerSelection.pressToSearch"
-              values={{ shortcut: MOD_KEY === "⌘" ? "⌘K" : "Ctrl+K" }}
+              values={{ shortcut: MOD_KEY === "⌘" ? "⌘+K" : "Ctrl+K" }}
               components={{
                 kbd: (
                   <kbd className="inline-flex items-center gap-0.5 rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]" />

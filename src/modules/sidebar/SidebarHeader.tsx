@@ -170,8 +170,8 @@ export default function SidebarHeader({
                   title={t('tooltips.openCommandPalette')}
                   className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground md:inline-flex"
                 >
-                  {/* Same label as the new-session hint: "⌘K" on Mac, "Ctrl+K" elsewhere. */}
-                  {MOD_KEY === '⌘' ? '⌘K' : 'Ctrl+K'}
+                  {/* Same label as the new-session hint: "⌘+K" on Mac, "Ctrl+K" elsewhere. */}
+                  {MOD_KEY === '⌘' ? '⌘+K' : 'Ctrl+K'}
                 </kbd>
               )}
             </div>
