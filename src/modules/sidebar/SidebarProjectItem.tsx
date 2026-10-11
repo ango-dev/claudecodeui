@@ -394,9 +394,7 @@ function SidebarProjectItem({
                 </div>
               </>
             ) : (
-              // The "⋯" button takes the count's place: on hover with a pointer,
-              // and always on touch screens, which show that button permanently.
-              <span className="text-xs text-muted-foreground transition-opacity group-hover:opacity-0 touch:opacity-0">
+              <span className="text-xs text-muted-foreground">
                 {sessionCountDisplay}
               </span>
             )}
@@ -415,8 +413,8 @@ function SidebarProjectItem({
             // Centred by flex rather than top-1/2 plus a transform, which iPad
             // Safari sometimes misplaced inside this sticky header.
             className="absolute inset-y-0 right-1 z-20 items-center"
-            // Hover-revealed on desktop; always shown on touch screens, which have no hover.
-            triggerClassName="h-6 w-6 text-muted-foreground opacity-0 hover:bg-muted hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100 aria-expanded:opacity-100 touch:opacity-100"
+            // Always shown, beside the session count, on every device.
+            triggerClassName="h-6 w-6 text-muted-foreground hover:bg-muted"
             menuClassName="w-[220px] rounded-xl p-1.5 shadow-xl"
             items={[
               {
