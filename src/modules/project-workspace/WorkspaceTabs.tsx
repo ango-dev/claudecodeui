@@ -4,6 +4,7 @@ import type { Dispatch, KeyboardEvent, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Tooltip, PillBar, Pill } from '@/shared/ui';
+import { cn } from '@/shared/utils';
 import type { AppTab } from '@/shared/types';
 import { usePlugins,PluginIcon } from '@/modules/plugins';
 
@@ -103,7 +104,7 @@ export default function WorkspaceTabs({
     <PillBar
       role="tablist"
       aria-label={t('tabs.views', { defaultValue: 'Workspace views' })}
-      className="min-w-max border border-border/40 bg-muted/50 shadow-inner shadow-black/[0.025] dark:shadow-black/10"
+      className="min-w-max bg-transparent p-0"
     >
       {tabs.map((tab, index) => {
         const isActive = tab.id === activeTab;
@@ -123,7 +124,11 @@ export default function WorkspaceTabs({
                 isActive={isActive}
                 onClick={() => setActiveTab(tab.id)}
                 onKeyDown={handleTabKeyDown}
-                className="h-8 max-w-44 px-2.5 py-[5px]"
+                // Flat tabs: the active one is a filled gray chip, the rest are plain.
+                className={cn(
+                  'h-8 max-w-44 px-2.5 py-[5px] font-normal',
+                  isActive ? 'bg-accent font-medium shadow-none ring-0' : 'hover:bg-accent/60',
+                )}
               >
                 {tab.kind === 'builtin' ? (
                   <tab.icon className="h-3.5 w-3.5 shrink-0" strokeWidth={isActive ? 2.2 : 1.8} />

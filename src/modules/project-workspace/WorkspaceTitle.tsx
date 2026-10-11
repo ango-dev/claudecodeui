@@ -87,7 +87,7 @@ export default function WorkspaceTitle({
 
       <div className="min-w-0 flex-1">
         {activeTab === 'chat' && selectedSession ? (
-          <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-2">
             {isRenaming ? (
               <input
                 ref={renameInputRef}
@@ -108,24 +108,24 @@ export default function WorkspaceTitle({
               <h2
                 title={t('mainContent.renameSessionHint', { title: sessionTitle })}
                 onDoubleClick={startRenaming}
-                className="cursor-text truncate text-sm font-semibold leading-tight text-foreground"
+                className="min-w-0 cursor-text truncate text-sm font-medium leading-tight text-foreground"
               >
                 {sessionTitle}
               </h2>
             )}
-            <div className="truncate text-[11px] leading-tight text-muted-foreground">{selectedProject.displayName}</div>
+            <div className="max-w-[45%] shrink-0 truncate rounded-md bg-muted px-1.5 py-0.5 text-xs leading-tight text-muted-foreground">{selectedProject.displayName}</div>
           </div>
         ) : showChatNewSession ? (
-          <div className="min-w-0">
-            <h2 className="truncate text-base font-semibold leading-tight text-foreground">{t('mainContent.newSession')}</h2>
-            <div className="truncate text-xs leading-tight text-muted-foreground">{selectedProject.displayName}</div>
+          <div className="flex min-w-0 items-center gap-2">
+            <h2 className="min-w-0 truncate text-sm font-medium leading-tight text-foreground">{t('mainContent.newSession')}</h2>
+            <div className="max-w-[45%] shrink-0 truncate rounded-md bg-muted px-1.5 py-0.5 text-xs leading-tight text-muted-foreground">{selectedProject.displayName}</div>
           </div>
         ) : (
-          <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold leading-tight text-foreground">
+          <div className="flex min-w-0 items-center gap-2">
+            <h2 className="min-w-0 truncate text-sm font-medium leading-tight text-foreground">
               {getTabTitle(activeTab, shouldShowTasksTab, t, pluginDisplayName)}
             </h2>
-            <div className="truncate text-[11px] leading-tight text-muted-foreground">{selectedProject.displayName}</div>
+            <div className="max-w-[45%] shrink-0 truncate rounded-md bg-muted px-1.5 py-0.5 text-xs leading-tight text-muted-foreground">{selectedProject.displayName}</div>
           </div>
         )}
       </div>
