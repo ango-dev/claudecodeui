@@ -171,7 +171,7 @@ function HelpContent({ data }: { data: HelpCommandData }) {
             {filteredCommands.map((command, index) => (
               <div
                 key={`${command.namespace || 'builtin'}-${command.name}`}
-                className="settings-content-enter rounded-2xl border border-border/70 bg-background/75 p-3 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-muted/25"
+                className="settings-content-enter rounded-2xl border border-border/70 bg-background/75 px-3 py-2.5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-muted/25"
                 style={{ animationDelay: `${Math.min(index * 18, 160)}ms` }}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -182,7 +182,7 @@ function HelpContent({ data }: { data: HelpCommandData }) {
                     {command.namespace || 'builtin'}
                   </Badge>
                 </div>
-                <p className="mt-3 text-sm leading-5 text-muted-foreground">
+                <p className="mt-2 text-sm leading-5 text-muted-foreground">
                   {command.description
                     || (command.descriptionKey ? t(command.descriptionKey) : t('chat:misc.noDescription'))}
                 </p>
@@ -198,7 +198,8 @@ function HelpContent({ data }: { data: HelpCommandData }) {
         </div>
       </div>
 
-      <aside className="space-y-3">
+      {/* Below desktop width the list needs the whole height. */}
+      <aside className="hidden space-y-3 lg:block">
         <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
           <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
             <TerminalSquare className="h-4 w-4 text-primary" />

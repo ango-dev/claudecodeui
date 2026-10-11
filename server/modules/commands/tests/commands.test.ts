@@ -42,6 +42,7 @@ async function executeCommand(
   commandName: string,
   context: Record<string, unknown>,
   sessionModels: Record<string, string> = {},
+  claudeCodeCommands: Array<{ name: string; description: string; argumentHint?: string }> = [],
 ): Promise<Record<string, unknown>> {
   const router = createCommandsRouter({
     fileSystem: {
@@ -50,7 +51,7 @@ async function executeCommand(
     homeDirectory: () => '/home/test',
     appRoot: '/app',
     models: createModelsService(sessionModels) as never,
-    claudeCodeCommands: async () => [],
+    claudeCodeCommands: async () => claudeCodeCommands,
     runtime: {
       uptime: () => 0,
       memoryUsage: () => ({ rss: 0, heapTotal: 0, heapUsed: 0, external: 0, arrayBuffers: 0 }),
@@ -153,4 +154,22 @@ test('the command list carries Claude Code\'s own commands, leaving the app\'s b
   } finally {
     server.close();
   }
+});
+
+test('help lists Claude Code\'s commands after the app\'s, each with a few-word summary', async () => {
+  const result = await executeCommand('/help', {}, {}, [
+    { name: 'compact', description: 'Free up context by summarizing the conversation so far' },
+    { name: 'batch', description: 'Research and plan a large-scale change, then execute it in parallel' },
+    { name: 'docx', description: 'Use this skill whenever the user wants to create, read, or edit Word documents.' },
+    { name: 'cost', description: 'Show the total cost of the session' },
+  ]);
+  const commands = (result.data as { commands: Array<{ name: string; description: string; namespace?: string }> }).commands;
+  const claudeCode = commands.filter((command) => command.namespace === 'Claude Code');
+
+  assert.ok(commands.findIndex((command) => command.name === '/help') < commands.findIndex((command) => command.name === '/batch'));
+  assert.deepEqual(claudeCode.map((command) => [command.name, command.description]), [
+    ['/batch', 'Research and plan a large-scale change'],
+    ['/compact', 'Free up context by summarizing the conversation so far'],
+    ['/docx', 'Skill'],
+  ]);
 });

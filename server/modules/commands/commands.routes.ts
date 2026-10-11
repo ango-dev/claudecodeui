@@ -209,6 +209,48 @@ const builtInCommands = [
 ];
 
 /**
+ * Claude Code's own slash commands, shaped like the app's: `/`-prefixed,
+ * without its internal `__` commands or a name the app's built-ins already
+ * handle, sorted by name.
+ */
+const listClaudeCodeSlashCommands = async () => {
+  const builtInNames = new Set(builtInCommands.map((command) => command.name));
+  return (await dependencies.claudeCodeCommands())
+    // `__`-prefixed names are Claude Code's internal plumbing, not for people.
+    .filter((command) => !command.name.startsWith("__"))
+    .map((command) => ({
+      name: `/${command.name}`,
+      description: command.description,
+      argumentHint: command.argumentHint || undefined,
+      namespace: "cli",
+      metadata: { type: "cli", aliases: command.aliases },
+    }))
+    .filter((command) => !builtInNames.has(command.name))
+    .sort((a, b) => a.name.localeCompare(b.name));
+};
+
+/**
+ * A command summary cut to its first phrase for the help grid, whose cards
+ * hold a few words: "Review the current diff for correctness bugs and ..."
+ * becomes "Review the current diff for correctness bugs".
+ */
+const shortenCommandDescription = (description = "") => {
+  const MAX_LENGTH = 56;
+  const firstLine = description.split("\n")[0].trim();
+  // Skill summaries addressed to the model ("Use this skill whenever the
+  // user ...") say nothing useful in a few words.
+  if (/^(?:use|read) this\b/i.test(firstLine)) {
+    return "Skill";
+  }
+  const firstPhrase = firstLine.split(/(?:\. |: | — | – | - | \(|; |, or |, and |, then )/)[0].replace(/[.:]$/, "").trim();
+  if (firstPhrase.length <= MAX_LENGTH) {
+    return firstPhrase;
+  }
+  const cut = firstPhrase.slice(0, MAX_LENGTH);
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), 20)).trim()}…`;
+};
+
+/**
  * Built-in command handlers
  * Each handler returns { type: 'builtin', action: string, data: any }
  */
@@ -251,11 +293,18 @@ Custom commands can be created in:
       data: {
         content: helpText,
         format: "markdown",
-        commands: builtInCommands.map((command) => ({
-          name: command.name,
-          description: command.description,
-          namespace: command.namespace,
-        })),
+        commands: [
+          ...builtInCommands.map((command) => ({
+            name: command.name,
+            description: command.description,
+            namespace: command.namespace,
+          })),
+          ...(await listClaudeCodeSlashCommands()).map((command) => ({
+            name: command.name,
+            description: shortenCommandDescription(command.description),
+            namespace: "Claude Code",
+          })),
+        ],
       },
     };
   },
@@ -480,21 +529,8 @@ router.post("/list", async (req, res) => {
     customCommands.sort((a, b) => a.name.localeCompare(b.name));
 
     // Claude Code's own commands run inside a Claude session, so they are
-    // sent as a prompt rather than executed here. The app's built-ins win a
-    // name clash: they are what this UI handles.
-    const builtInNames = new Set(builtInCommands.map((command) => command.name));
-    const cliCommands = (await dependencies.claudeCodeCommands())
-      // `__`-prefixed names are Claude Code's internal plumbing, not for people.
-      .filter((command) => !command.name.startsWith("__"))
-      .map((command) => ({
-        name: `/${command.name}`,
-        description: command.description,
-        argumentHint: command.argumentHint || undefined,
-        namespace: "cli",
-        metadata: { type: "cli", aliases: command.aliases },
-      }))
-      .filter((command) => !builtInNames.has(command.name))
-      .sort((a, b) => a.name.localeCompare(b.name));
+    // sent as a prompt rather than executed here.
+    const cliCommands = await listClaudeCodeSlashCommands();
 
     res.json({
       builtIn: builtInCommands,
