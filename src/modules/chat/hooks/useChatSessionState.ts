@@ -8,6 +8,7 @@ import { SESSION_MESSAGES_PAGE_SIZE } from '@/modules/chat/utils/sessionMessageP
 import { createMessageHistoryRefreshCoordinator } from '@/modules/chat/utils/messageHistoryRefreshCoordinator';
 import { createCachedDiffCalculator } from '@/modules/chat/utils/messageTransforms';
 import { normalizedToChatMessages } from '@/modules/chat/hooks/useChatMessages';
+import { usesScrollAnchorFallback } from '@/modules/chat/hooks/useScrollAnchorFallback';
 import { findSearchTargetIndex, resolveSearchWindowSize } from '@/modules/chat/utils/searchTargetLocator';
 import { readSelectedProvider } from '@/shared/selectedProvider';
 import type { SearchTarget } from '@/modules/chat/utils/searchTargetLocator';
@@ -479,7 +480,6 @@ export function useChatSessionState({
 
       isLoadingMoreRef.current = true;
       setIsLoadingMoreMessages(true);
-      const scrollRestoreState = captureScrollRestoreState(container);
 
       try {
         const result = await sessionStore.fetchMore(selectedSession.id, {
@@ -510,7 +510,14 @@ export function useChatSessionState({
           return false;
         }
 
-        pendingScrollRestoreRef.current = scrollRestoreState;
+        // Captured now, not when the fetch began: the reader may have kept
+        // scrolling while it was in flight, and restoring the older position
+        // snapped them back. The new rows only render once the window widens
+        // below. Where the anchor fallback runs it keeps the reader's place
+        // itself, without stopping a fling the way setting scrollTop does.
+        if (!usesScrollAnchorFallback()) {
+          pendingScrollRestoreRef.current = captureScrollRestoreState(container);
+        }
         setVisibleMessageCount((prev) => prev + SESSION_MESSAGES_PAGE_SIZE);
         if (!slot.hasMore) {
           allMessagesLoadedRef.current = true;
@@ -560,8 +567,11 @@ export function useChatSessionState({
       wasNearTopRef.current = false;
     }
 
+    // Older messages start loading a screen before the top, so they are
+    // usually in place before the reader gets there.
+    const shouldLoadOlder = container.scrollTop < Math.max(100, container.clientHeight);
     if (!allMessagesLoadedRef.current) {
-      if (!scrolledNearTop) { topLoadLockRef.current = false; return; }
+      if (!shouldLoadOlder) { topLoadLockRef.current = false; return; }
       if (topLoadLockRef.current) {
         if (container.scrollTop > 20) topLoadLockRef.current = false;
         return;

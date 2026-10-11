@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { memo, useCallback, useMemo } from 'react';
+import { memo, useCallback, useMemo, useRef } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 
 import type { BackgroundTaskSummary,
@@ -12,6 +12,7 @@ import type { BackgroundTaskSummary,
 import { getIntrinsicMessageKey } from '@/modules/chat/utils/messageKeys';
 import { groupConsecutiveTools, isToolGroupItem } from '@/modules/chat/utils/toolGrouping';
 import { useLazyRowObserver } from '@/modules/chat/hooks/useLazyRowObserver';
+import { useScrollAnchorFallback } from '@/modules/chat/hooks/useScrollAnchorFallback';
 import LazyMessageRow from '@/modules/chat/transcript/LazyMessageRow';
 import MessageComponent from '@/modules/chat/transcript/MessageComponent';
 import ProviderSelectionEmptyState from '@/modules/chat/transcript/ProviderSelectionEmptyState';
@@ -144,6 +145,8 @@ function ChatMessagesPane({
 }: ChatMessagesPaneProps) {
   const { t } = useTranslation('chat');
   const lazyRows = useLazyRowObserver(scrollContainerRef);
+  const transcriptContentRef = useRef<HTMLDivElement>(null);
+  useScrollAnchorFallback(scrollContainerRef, transcriptContentRef);
   const groupedVisibleMessages = useMemo(
     () => groupConsecutiveTools(visibleMessages, Boolean(showThinking)),
     [visibleMessages, showThinking],
@@ -205,7 +208,7 @@ function ChatMessagesPane({
           </div>
         </div>
       )}
-      <div className="mx-auto w-full max-w-[54.25rem] space-y-3 px-4 sm:space-y-4">
+      <div ref={transcriptContentRef} className="mx-auto w-full max-w-[54.25rem] space-y-3 px-4 sm:space-y-4">
       {(isLoadingSessionMessages || isProcessing) && chatMessages.length === 0 ? (
         <div className="mt-8 text-center text-gray-500 dark:text-gray-400">
           <div className="flex items-center justify-center space-x-2">
