@@ -87,7 +87,8 @@ export default function SidebarFooter({
       {/* Community + Settings */}
       <div className="nav-divider" />
 
-      <div className="px-2 pt-1.5">
+      {/* One evenly spaced group, like the collapsed rail's icons. */}
+      <div className="px-2 py-1.5">
         <a
           href={GITHUB_ISSUES_URL}
           target="_blank"
@@ -97,9 +98,6 @@ export default function SidebarFooter({
           <Bug className="h-3.5 w-3.5" />
           <span className="text-sm">{t('actions.reportIssue')}</span>
         </a>
-      </div>
-
-      <div className="px-2">
         <a
           href={DISCORD_INVITE_URL}
           target="_blank"
@@ -109,9 +107,6 @@ export default function SidebarFooter({
           <DiscordIcon className="h-3.5 w-3.5" />
           <span className="text-sm">{t('actions.joinCommunity')}</span>
         </a>
-      </div>
-
-      <div className="px-2 py-1.5">
         <button
           className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
           onClick={onShowSettings}
