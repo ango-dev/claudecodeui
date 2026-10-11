@@ -532,13 +532,13 @@ export default function ChatComposer({
             </PromptInputSubmit>
           </div>
 
-          <div
-            className={`order-last hidden basis-full px-2 text-center text-xs leading-4 text-muted-foreground/50 transition-opacity duration-200 lg:block ${
-              input.trim() && !canQueueDraft ? 'opacity-0' : 'opacity-100'
-            }`}
-          >
-            {submitHint}
-          </div>
+          {/* The keyboard-help line is hidden in this fork; only the queue
+              hint shown while a reply is running remains. */}
+          {canQueueDraft && (
+            <div className="order-last hidden basis-full px-2 text-center text-xs leading-4 text-muted-foreground/50 lg:block">
+              {submitHint}
+            </div>
+          )}
         </PromptInputFooter>
       </PromptInput>
       </div>}
