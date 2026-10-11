@@ -149,6 +149,12 @@
     padding: 0;
   }
 
+  /* The page behind the app shows in iOS's status-bar and home-indicator
+     areas, so it carries the theme background instead of black. */
+  html {
+    background-color: hsl(var(--background));
+  }
+
   html, body {
     height: 100%;
     margin: 0;
@@ -188,12 +194,16 @@
     overflow: hidden;
   }
 
-  /* Adjust fixed inset positioning in PWA mode */
+  /* Adjust fixed inset positioning in PWA mode. iOS home-screen apps with the
+     black-translucent status bar report a viewport one status bar too short
+     while drawing under the status bar, so `bottom: 0` stops that far above
+     the screen edge; extending by the top inset reaches the edge. The inset is
+     0 wherever the status bar is not overlaid, so elsewhere this is bottom: 0. */
   body.pwa-mode .fixed.inset-0 {
     top: var(--header-total-padding);
     left: var(--safe-area-inset-left);
     right: var(--safe-area-inset-right);
-    bottom: 0;
+    bottom: calc(-1 * env(safe-area-inset-top, 0px));
   }
   
   /* Global transition defaults */
@@ -591,6 +601,8 @@
   .chat-composer-dock {
     right: var(--chat-scrollbar-width, 0px);
     padding-top: 1.5rem;
+    /* Clears the iPhone/iPad home indicator; 0 everywhere else. */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
     background: linear-gradient(to top, hsl(var(--background)) calc(100% - 1.5rem), hsl(var(--background) / 0));
     /* The faded strip must not block clicks on the messages behind it. */
     pointer-events: none;
