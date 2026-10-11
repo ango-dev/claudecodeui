@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict';
 
 import { test } from 'vitest';
-import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 import { buildSyntaxTheme } from '@/modules/chat/utils/syntaxHighlightTheme';
 import type { PrismStyleSheet } from '@/modules/chat/utils/syntaxHighlightTheme';
+import { warmPrismDark, warmPrismLight } from '@/shared/syntaxHighlighter';
 
 /**
- * The variable theme must be a lossless re-encoding of the two Prism themes:
- * resolving its variables with the `:root` block has to reproduce oneLight
- * exactly, and with the `.dark` block oneDark exactly. Otherwise the toggle
+ * The variable theme must be a lossless re-encoding of the two Prism themes the
+ * chat ships: resolving its variables with the `:root` block has to reproduce
+ * warmPrismLight exactly, and with the `.dark` block warmPrismDark exactly. Otherwise the toggle
  * would be fast but the colours would drift.
  */
 
@@ -54,16 +54,16 @@ const resolve = (
   return resolved;
 };
 
-const theme = buildSyntaxTheme(oneLight as PrismStyleSheet, oneDark as PrismStyleSheet);
+const theme = buildSyntaxTheme(warmPrismLight as PrismStyleSheet, warmPrismDark as PrismStyleSheet);
 
-test('the light variables reproduce oneLight exactly', () => {
+test('the light variables reproduce warmPrismLight exactly', () => {
   const resolved = resolve(theme.style, parseDeclarations(theme.css, ':root'));
-  assert.deepEqual(resolved, oneLight);
+  assert.deepEqual(resolved, warmPrismLight);
 });
 
-test('the dark variables reproduce oneDark exactly', () => {
+test('the dark variables reproduce warmPrismDark exactly', () => {
   const resolved = resolve(theme.style, parseDeclarations(theme.css, '\\.dark'));
-  assert.deepEqual(resolved, oneDark);
+  assert.deepEqual(resolved, warmPrismDark);
 });
 
 test('no theme-dependent value is left as a literal colour', () => {
@@ -71,8 +71,8 @@ test('no theme-dependent value is left as a literal colour', () => {
   // swapped again, which is what re-tokenized every block on a theme toggle.
   for (const [selector, rule] of Object.entries(theme.style)) {
     for (const [property, value] of Object.entries(rule)) {
-      const lightValue = (oneLight as PrismStyleSheet)[selector]?.[property];
-      const darkValue = (oneDark as PrismStyleSheet)[selector]?.[property];
+      const lightValue = (warmPrismLight as PrismStyleSheet)[selector]?.[property];
+      const darkValue = (warmPrismDark as PrismStyleSheet)[selector]?.[property];
       if (lightValue === darkValue) {
         continue;
       }
