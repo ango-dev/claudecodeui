@@ -8,7 +8,7 @@ import { SESSION_MESSAGES_PAGE_SIZE } from '@/modules/chat/utils/sessionMessageP
 import { createMessageHistoryRefreshCoordinator } from '@/modules/chat/utils/messageHistoryRefreshCoordinator';
 import { createCachedDiffCalculator } from '@/modules/chat/utils/messageTransforms';
 import { normalizedToChatMessages } from '@/modules/chat/hooks/useChatMessages';
-import { readScrollSlack, usesScrollAnchorFallback } from '@/modules/chat/hooks/useScrollAnchorFallback';
+import { usesScrollAnchorFallback } from '@/modules/chat/hooks/useScrollAnchorFallback';
 import { findSearchTargetIndex, resolveSearchWindowSize } from '@/modules/chat/utils/searchTargetLocator';
 import { readSelectedProvider } from '@/shared/selectedProvider';
 import type { SearchTarget } from '@/modules/chat/utils/searchTargetLocator';
@@ -549,9 +549,7 @@ export function useChatSessionState({
       top: container.scrollTop,
     };
 
-    // Measured from the first loaded row, below any spare space kept above it.
-    const scrollTopInRows = container.scrollTop - readScrollSlack(container);
-    const scrolledNearTop = scrollTopInRows < 100;
+    const scrolledNearTop = container.scrollTop < 100;
 
     // "Load all" prompt: appear (with fade-in) when the user reaches the top
     if (scrolledNearTop && hasMoreMessages && !allMessagesLoadedRef.current) {
@@ -571,29 +569,17 @@ export function useChatSessionState({
 
     // Older messages start loading a screen before the top, so they are
     // usually in place before the reader gets there.
-    const shouldLoadOlder = scrollTopInRows < Math.max(100, container.clientHeight);
+    const shouldLoadOlder = container.scrollTop < Math.max(100, container.clientHeight);
     if (!allMessagesLoadedRef.current) {
       if (!shouldLoadOlder) { topLoadLockRef.current = false; return; }
       if (topLoadLockRef.current) {
-        if (scrollTopInRows > 20) topLoadLockRef.current = false;
+        if (container.scrollTop > 20) topLoadLockRef.current = false;
         return;
       }
       const didLoad = await loadOlderMessages(container);
-      if (!didLoad) return;
-      if (usesScrollAnchorFallback()) {
-        // The new page went into the spare space above without moving the
-        // view or firing a scroll, so look again: a reader still near the
-        // top (or already in the spare space) gets the next page too.
-        requestAnimationFrame(() => { void handleScrollRef.current?.(); });
-      } else {
-        // The restore leaves the view near the top; wait for the reader to
-        // move before loading again.
-        topLoadLockRef.current = true;
-      }
+      if (didLoad) topLoadLockRef.current = true;
     }
   }, [hasMoreMessages, isActive, isNearBottom, loadOlderMessages]);
-  const handleScrollRef = useRef(handleScroll);
-  useEffect(() => { handleScrollRef.current = handleScroll; }, [handleScroll]);
 
   const wasChatActiveRef = useRef(isActive);
   useLayoutEffect(() => {

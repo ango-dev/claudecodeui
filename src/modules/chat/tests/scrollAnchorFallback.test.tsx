@@ -18,14 +18,12 @@ class StubResizeObserver {
 /** Where the first row's top sits, relative to the container's top. */
 let firstRowTop = -20;
 
-function Harness({ hasOlderMessages }: { hasOlderMessages: boolean }) {
+function Harness() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const slackRef = useRef<HTMLDivElement>(null);
-  useScrollAnchorFallback(scrollContainerRef, contentRef, slackRef, hasOlderMessages);
+  useScrollAnchorFallback(scrollContainerRef, contentRef);
   return (
     <div ref={scrollContainerRef} data-testid="container">
-      <div ref={slackRef} data-testid="slack" />
       <div ref={contentRef} data-testid="content">
         <div data-message-timestamp="1" data-testid="row" />
         <div data-message-timestamp="2" />
@@ -34,19 +32,19 @@ function Harness({ hasOlderMessages }: { hasOlderMessages: boolean }) {
   );
 }
 
-function renderTranscript({ hasOlderMessages = false } = {}) {
+function renderTranscript() {
   // Construct-time geometry: scrolled up from the bottom, first row on screen.
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
     const top = this.dataset.testid === 'row' ? firstRowTop : this.dataset.messageTimestamp ? firstRowTop + 100 : 0;
     return { top, bottom: top + 100, left: 0, right: 0, width: 0, height: 100, x: 0, y: top, toJSON: () => ({}) };
   });
-  vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(10000);
+  vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(3000);
   vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600);
-  const view = render(<Harness hasOlderMessages={hasOlderMessages} />);
+  const view = render(<Harness />);
   const container = view.getByTestId('container');
   container.scrollTop = 500;
   fireEvent.scroll(container);
-  return { container, content: view.getByTestId('content'), slack: view.getByTestId('slack') };
+  return { container, content: view.getByTestId('content') };
 }
 
 describe('useScrollAnchorFallback', () => {
@@ -88,32 +86,6 @@ describe('useScrollAnchorFallback', () => {
     expect(content.style.transform).toBe('');
   });
 
-  it('keeps spare space above while older messages remain, without moving anything on screen', () => {
-    const { container, slack } = renderTranscript({ hasOlderMessages: true });
-    vi.advanceTimersByTime(500);
-
-    // 4000px of spare space appeared above, and the scroll moved with it.
-    expect(slack.style.height).toBe('4000px');
-    expect(container.scrollTop).toBe(4500);
-  });
-
-  it('lets the spare space take a shift mid-scroll, so neither scrollTop nor a transform changes', () => {
-    const { container, content, slack } = renderTranscript({ hasOlderMessages: true });
-    vi.advanceTimersByTime(500);
-    fireEvent.scroll(container);
-
-    firstRowTop += 900; // a page of older messages arrived above
-    resizeCallback?.();
-    expect(slack.style.height).toBe('3100px');
-    expect(container.scrollTop).toBe(4500);
-    expect(content.style.transform).toBe('');
-
-    firstRowTop -= 300; // and rows above came out shorter than estimated
-    resizeCallback?.();
-    expect(slack.style.height).toBe('3400px');
-    expect(container.scrollTop).toBe(4500);
-  });
-
   it('takes over on Safari even where Safari reports scroll anchoring of its own', () => {
     vi.stubGlobal('CSS', { supports: () => true });
     vi.spyOn(navigator, 'vendor', 'get').mockReturnValue('Apple Computer, Inc.');
@@ -136,13 +108,13 @@ describe('useScrollAnchorFallback', () => {
 
   it('leaves a transcript that is following new output at the bottom alone', () => {
     const { container } = renderTranscript();
-    container.scrollTop = 9400; // 10000 - 600: at the bottom
+    container.scrollTop = 2400; // 3000 - 600: at the bottom
     fireEvent.scroll(container);
     vi.advanceTimersByTime(500);
 
     firstRowTop += 80;
     resizeCallback?.();
 
-    expect(container.scrollTop).toBe(9400);
+    expect(container.scrollTop).toBe(2400);
   });
 });
