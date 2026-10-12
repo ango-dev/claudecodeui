@@ -208,8 +208,15 @@ export function rememberClaudeContextWindows(modelUsage: unknown): void {
     const contextWindow = readUsageNumber((usage as AnyRecord | null)?.contextWindow);
     if (contextWindow > 0) {
       reportedClaudeContextWindows.set(model, contextWindow);
-      // Assistant rows name the model without the `[1m]` suffix the key may carry.
-      reportedClaudeContextWindows.set(model.replace(ONE_MILLION_SUFFIX_PATTERN, ''), contextWindow);
+      // Assistant rows name the model without the `[1m]` suffix the key may
+      // carry, so the window is also kept under the bare id; but only until
+      // the bare model reports its own, as the map is shared by every session
+      // and a standard-window session of the same model is not 1M.
+      const baseModel = model.replace(ONE_MILLION_SUFFIX_PATTERN, '');
+      if (baseModel !== model && reportedClaudeContextWindows.has(baseModel)) {
+        continue;
+      }
+      reportedClaudeContextWindows.set(baseModel, contextWindow);
     }
   }
 }

@@ -40,6 +40,9 @@ type TaskMasterSidebarContext = {
   setCurrentProject: (project: Project) => void;
 };
 
+/** The project row's select, unused in the drawer (see projectListProps). */
+const ignoreProjectSelect = () => {};
+
 /** Exported through the sidebar barrel; the project-workspace module renders it as the app's project and session navigation panel. */
 function Sidebar({
   projects,
@@ -211,7 +214,10 @@ function Sidebar({
     isProjectStarred,
     onRenameDraftChange: updateRenameDraft,
     onToggleProject: toggleProject,
-    onProjectSelect: handleProjectSelect,
+    // As a slide-over drawer, tapping a project only expands it: selecting it
+    // also leaves the open session and closes the drawer, so its sessions
+    // were never seen.
+    onProjectSelect: isMobile ? ignoreProjectSelect : handleProjectSelect,
     onToggleStarProject: toggleStarProject,
     onStartEditingProject: startEditingProject,
     onCancelEditingProject: cancelRename,

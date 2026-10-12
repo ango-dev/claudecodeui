@@ -7,6 +7,7 @@ import type { ProviderModelOption } from '@/shared/types';
 import { DEFAULT_EFFORT_VALUE } from '@/shared/constants';
 import { cn } from '@/shared/utils';
 import { useComposerMenuAnchor } from '@/modules/chat/hooks/useComposerMenuAnchor';
+import { findModelOption } from '@/modules/chat/utils/modelOptions';
 import {
   ComposerMenuItem,
   ComposerMenuSeparator,
@@ -38,16 +39,6 @@ const EFFORT_LABELS: Record<string, string> = {
 
 const effortName = (value: string) => EFFORT_LABELS[value] ?? value;
 
-/**
- * The catalog option a model id stands for. Sessions record the full id
- * (`claude-opus-5-5`) while the catalog lists aliases (`opus`), so an option
- * also matches the id it resolves to; a named alias wins over Default.
- */
-const findModelOption = (options: ProviderModelOption[], model: string): ProviderModelOption | null =>
-  options.find((option) => option.value === model)
-  ?? options.find((option) => option.value !== 'default' && option.resolvesTo === model)
-  ?? options.find((option) => option.resolvesTo === model)
-  ?? null;
 
 /** "claude-opus-4-8" reads "Opus 4.8" when the catalog does not know the id. */
 const readableModelName = (model: string): string => {

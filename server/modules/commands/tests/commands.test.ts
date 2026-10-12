@@ -173,3 +173,13 @@ test('help lists Claude Code\'s commands after the app\'s, each with a few-word 
     ['/docx', 'Skill'],
   ]);
 });
+
+test('help leaves Claude Code\'s own commands out for other providers', async () => {
+  const result = await executeCommand('/help', { provider: 'codex' }, {}, [
+    { name: 'compact', description: 'Free up context by summarizing the conversation so far' },
+  ]);
+  const commands = (result.data as { commands: Array<{ name: string; namespace?: string }> }).commands;
+
+  assert.ok(commands.some((command) => command.name === '/help'));
+  assert.equal(commands.filter((command) => command.namespace === 'Claude Code').length, 0);
+});

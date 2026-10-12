@@ -163,9 +163,11 @@ export default function SessionOptions({
           onOpenChange={setOptionsOpen}
           openAt={openAt}
           // Shown on row hover, keyboard focus or while open, like Claude Code's rows.
+          // A touch screen has no hover, so there it shows on the open session's
+          // row only; elsewhere it must not take the tap meant for the row.
           triggerClassName={cn(
             'h-7 w-7 text-muted-foreground opacity-0 hover:bg-muted hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100 aria-expanded:opacity-100',
-            showOnTouch && 'touch:opacity-100',
+            showOnTouch ? 'touch:opacity-100' : 'touch:pointer-events-none',
           )}
           // Plain, compact items as in Claude Code's menus.
           menuClassName="w-[220px] rounded-xl p-1.5 shadow-xl"

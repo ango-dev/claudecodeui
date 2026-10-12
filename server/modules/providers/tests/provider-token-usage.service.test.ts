@@ -429,3 +429,11 @@ test('the Claude summarizer measures against the transcript model\'s window', ()
 
   assert.equal(summarizeClaudeTokenUsage(entries, undefined).total, 1_000_000);
 });
+
+test('a 1M session does not lend its window to a standard session of the same model', () => {
+  rememberClaudeContextWindows({ 'claude-test-model-2': { contextWindow: 200_000 } });
+  rememberClaudeContextWindows({ 'claude-test-model-2[1m]': { contextWindow: 1_000_000 } });
+
+  assert.equal(resolveClaudeContextWindow('claude-test-model-2', 0, ''), 200_000);
+  assert.equal(resolveClaudeContextWindow('claude-test-model-2[1m]', 0, ''), 1_000_000);
+});

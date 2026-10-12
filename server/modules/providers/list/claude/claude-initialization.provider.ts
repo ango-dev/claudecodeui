@@ -54,9 +54,12 @@ async function readInitialization(): Promise<ClaudeCodeInitialization | null> {
     options.pathToClaudeCodeExecutable = executablePath;
   }
 
-  const handle = query({ prompt: idlePrompt(abortController.signal), options });
   const timeout = setTimeout(() => abortController.abort(), INITIALIZE_TIMEOUT_MS);
+  let handle: ReturnType<typeof query> | null = null;
   try {
+    // Inside the try: `query` throws synchronously when it can find no Claude
+    // Code executable at all, which is a normal "not installed" state here.
+    handle = query({ prompt: idlePrompt(abortController.signal), options });
     const result = await handle.initializationResult();
     return { models: result.models ?? [], commands: result.commands ?? [] };
   } catch (error) {
@@ -65,7 +68,7 @@ async function readInitialization(): Promise<ClaudeCodeInitialization | null> {
   } finally {
     clearTimeout(timeout);
     abortController.abort();
-    handle.close();
+    handle?.close();
   }
 }
 
@@ -84,11 +87,15 @@ export function loadClaudeCodeInitialization(): Promise<ClaudeCodeInitialization
   if (cached && cached.expiresAt > Date.now()) {
     return Promise.resolve(cached.value);
   }
-  inFlight ??= readInitialization().then((value) => {
-    cached = { value, expiresAt: Date.now() + (value ? CACHE_TTL_MS : FAILURE_RETRY_MS) };
-    inFlight = null;
-    return value;
-  });
+  // Settles to null rather than rejecting, and always clears `inFlight`: a
+  // rejection kept here would be served to every caller until a restart.
+  inFlight ??= readInitialization()
+    .catch(() => null)
+    .then((value) => {
+      cached = { value, expiresAt: Date.now() + (value ? CACHE_TTL_MS : FAILURE_RETRY_MS) };
+      inFlight = null;
+      return value;
+    });
   return inFlight;
 }
 

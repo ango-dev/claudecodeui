@@ -46,6 +46,9 @@ type ActionMenuProps = {
   hideTrigger?: boolean;
 };
 
+/** Context-menu requests (`openAt` objects) already opened; see ActionMenu. */
+const servedOpenAtRequests = new WeakSet<object>();
+
 /** Used by the mcp and sidebar modules for the "…" overflow menu on a server or session row. */
 export function ActionMenu({
   label,
@@ -188,15 +191,16 @@ export function ActionMenu({
     setMenuOpen(true);
   };
 
-  // A context-menu request opens the menu at the pointer, kept on screen. The
-  // ref remembers the request already served, so a re-render (new items, a
-  // closed menu) never reopens it; only a new `openAt` object does.
-  const servedOpenAtRef = React.useRef<ActionMenuProps['openAt']>(null);
+  // A context-menu request opens the menu at the pointer, kept on screen. Each
+  // request is served once, so a re-render (new items, a closed menu) never
+  // reopens it; only a new `openAt` object does. Remembered outside the
+  // component: callers keep the last point in state, and a menu unmounted
+  // meanwhile (a row being renamed or selected) reopened at it when it came back.
   React.useEffect(() => {
-    if (!openAt || !portal || servedOpenAtRef.current === openAt) {
+    if (!openAt || !portal || servedOpenAtRequests.has(openAt)) {
       return;
     }
-    servedOpenAtRef.current = openAt;
+    servedOpenAtRequests.add(openAt);
     setPortalPosition({
       top: Math.max(8, Math.min(openAt.y, window.innerHeight - estimatedMenuHeight - 8)),
       left: Math.max(8, Math.min(openAt.x, window.innerWidth - menuWidth - 8)),

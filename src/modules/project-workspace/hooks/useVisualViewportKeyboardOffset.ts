@@ -7,9 +7,13 @@ const MIN_KEYBOARD_HEIGHT_PX = 120;
 // Largest viewport shortfall treated as the iOS home-screen quirk below.
 const MAX_STANDALONE_GAP_PX = 80;
 
-const isStandaloneDisplay = (): boolean =>
-  window.matchMedia?.('(display-mode: standalone)').matches === true
-  || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+/**
+ * An iOS or iPadOS home-screen app. `navigator.standalone` exists only there;
+ * an installed app on Android or a desktop is also `display-mode: standalone`,
+ * but its window is genuinely shorter than the screen.
+ */
+const isIosHomeScreenApp = (): boolean =>
+  (navigator as Navigator & { standalone?: boolean }).standalone === true;
 
 /**
  * The height a full-screen iOS home-screen app should fill: the screen's.
@@ -21,7 +25,7 @@ const isStandaloneDisplay = (): boolean =>
  * the viewport's height.
  */
 const getStandaloneScreenHeight = (): number | null => {
-  if (!isStandaloneDisplay() || !window.screen) {
+  if (!isIosHomeScreenApp() || !window.screen) {
     return null;
   }
   const isLandscape = window.innerWidth > window.innerHeight;

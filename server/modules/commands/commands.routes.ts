@@ -299,7 +299,8 @@ Custom commands can be created in:
             description: command.description,
             namespace: command.namespace,
           })),
-          ...(await listClaudeCodeSlashCommands()).map((command) => ({
+          // Claude Code's own commands only mean something in a Claude session.
+          ...(readModelProvider(context?.provider) === "claude" ? await listClaudeCodeSlashCommands() : []).map((command) => ({
             name: command.name,
             description: shortenCommandDescription(command.description),
             namespace: "Claude Code",
@@ -530,7 +531,11 @@ router.post("/list", async (req, res) => {
 
     // Claude Code's own commands run inside a Claude session, so they are
     // sent as a prompt rather than executed here.
-    const cliCommands = await listClaudeCodeSlashCommands();
+    // Claude Code also reports the user's own ~/.claude/commands, which are
+    // already listed above as custom commands.
+    const customNames = new Set(customCommands.map((command) => command.name));
+    const cliCommands = (await listClaudeCodeSlashCommands())
+      .filter((command) => !customNames.has(command.name));
 
     res.json({
       builtIn: builtInCommands,
