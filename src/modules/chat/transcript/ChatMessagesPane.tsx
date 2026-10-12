@@ -12,7 +12,7 @@ import type { BackgroundTaskSummary,
 import { getIntrinsicMessageKey } from '@/modules/chat/utils/messageKeys';
 import { groupConsecutiveTools, isToolGroupItem } from '@/modules/chat/utils/toolGrouping';
 import { useLazyRowObserver } from '@/modules/chat/hooks/useLazyRowObserver';
-import { useScrollAnchorFallback } from '@/modules/chat/hooks/useScrollAnchorFallback';
+import { useScrollAnchorFallback, usesScrollAnchorFallback } from '@/modules/chat/hooks/useScrollAnchorFallback';
 import LazyMessageRow from '@/modules/chat/transcript/LazyMessageRow';
 import MessageComponent from '@/modules/chat/transcript/MessageComponent';
 import ProviderSelectionEmptyState from '@/modules/chat/transcript/ProviderSelectionEmptyState';
@@ -26,6 +26,13 @@ import { BackgroundTasksStrip } from '@/modules/chat/transcript/BackgroundTasksS
  * near the viewport. Covers a bit more than one screen of typical rows.
  */
 const INITIAL_MOUNTED_TAIL_ROWS = 30;
+/**
+ * Up to this many rows, Safari renders every row on first commit instead of
+ * starting older ones as estimated placeholders: an estimate that turns out
+ * wrong moves the transcript there (see useScrollAnchorFallback), while a row
+ * that was rendered once collapses to its measured height and moves nothing.
+ */
+const MAX_ROWS_RENDERED_BEFORE_MEASURING = 300;
 
 type ChatMessagesPaneProps = {
   scrollContainerRef: RefObject<HTMLDivElement>;
@@ -285,12 +292,13 @@ function ChatMessagesPane({
           {(() => {
             let prevMessage: ChatMessage | null = null;
             const rowCount = groupedVisibleMessages.length;
+            const renderEveryRowFirst = usesScrollAnchorFallback() && rowCount <= MAX_ROWS_RENDERED_BEFORE_MEASURING;
 
             return groupedVisibleMessages.map((item, index) => {
               // Rows near the tail mount their content on first commit so the
               // initial scroll-to-bottom measures real heights; older rows
               // start as placeholders and mount when scrolled toward.
-              const initiallyNearViewport = index >= rowCount - INITIAL_MOUNTED_TAIL_ROWS;
+              const initiallyNearViewport = renderEveryRowFirst || index >= rowCount - INITIAL_MOUNTED_TAIL_ROWS;
 
               if (isToolGroupItem(item)) {
                 const groupPrevMessage = prevMessage;

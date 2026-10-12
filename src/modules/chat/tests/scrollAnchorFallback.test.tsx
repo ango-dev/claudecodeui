@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import React, { useRef } from 'react';
 import { fireEvent, render } from '@testing-library/react';
 
-import { useScrollAnchorFallback } from '@/modules/chat/hooks/useScrollAnchorFallback';
+import { useScrollAnchorFallback, waitForScrollRest } from '@/modules/chat/hooks/useScrollAnchorFallback';
 
 /**
  * jsdom has neither ResizeObserver nor scroll anchoring (as in Safari), so a
@@ -84,6 +84,25 @@ describe('useScrollAnchorFallback', () => {
     vi.advanceTimersByTime(400);
     expect(container.scrollTop).toBe(560);
     expect(content.style.transform).toBe('');
+  });
+
+  it('holds a page of older messages back until the scroll comes to rest', async () => {
+    const { container } = renderTranscript();
+    let rested = false;
+    void waitForScrollRest(container).then(() => { rested = true; });
+
+    vi.advanceTimersByTime(100);
+    fireEvent.scroll(container); // still flinging
+    vi.advanceTimersByTime(100);
+    await Promise.resolve();
+    expect(rested).toBe(false);
+
+    vi.advanceTimersByTime(300);
+    await Promise.resolve();
+    expect(rested).toBe(true);
+
+    // Already at rest: no wait at all.
+    await expect(waitForScrollRest(container)).resolves.toBeUndefined();
   });
 
   it('takes over on Safari even where Safari reports scroll anchoring of its own', () => {

@@ -8,7 +8,7 @@ import { SESSION_MESSAGES_PAGE_SIZE } from '@/modules/chat/utils/sessionMessageP
 import { createMessageHistoryRefreshCoordinator } from '@/modules/chat/utils/messageHistoryRefreshCoordinator';
 import { createCachedDiffCalculator } from '@/modules/chat/utils/messageTransforms';
 import { normalizedToChatMessages } from '@/modules/chat/hooks/useChatMessages';
-import { usesScrollAnchorFallback } from '@/modules/chat/hooks/useScrollAnchorFallback';
+import { usesScrollAnchorFallback, waitForScrollRest } from '@/modules/chat/hooks/useScrollAnchorFallback';
 import { findSearchTargetIndex, resolveSearchWindowSize } from '@/modules/chat/utils/searchTargetLocator';
 import { readSelectedProvider } from '@/shared/selectedProvider';
 import type { SearchTarget } from '@/modules/chat/utils/searchTargetLocator';
@@ -423,6 +423,9 @@ export function useChatSessionState({
     }
     return all;
   }, [storeMessages, pendingUserMessage]);
+  // Read by loadOlderMessages across its awaits, after the page has merged.
+  const chatMessagesLengthRef = useRef(chatMessages.length);
+  useEffect(() => { chatMessagesLengthRef.current = chatMessages.length; }, [chatMessages.length]);
 
   /* ---------------------------------------------------------------- */
   /*  addMessage                                                       */
@@ -480,6 +483,12 @@ export function useChatSessionState({
 
       isLoadingMoreRef.current = true;
       setIsLoadingMoreMessages(true);
+      const holdsPagesUntilRest = usesScrollAnchorFallback();
+      if (holdsPagesUntilRest) {
+        // The window starts wider than the first page, so without this the
+        // next pages would render the moment they arrive, mid-fling.
+        setVisibleMessageCount((prev) => Math.min(prev, chatMessagesLengthRef.current));
+      }
 
       try {
         const result = await sessionStore.fetchMore(selectedSession.id, {
@@ -510,15 +519,27 @@ export function useChatSessionState({
           return false;
         }
 
+        // The page is in the store, but it only renders once the window
+        // widens below. On Safari that waits for the scroll to rest: keeping
+        // the reader's place then is invisible, where mid-fling it either
+        // stops iOS momentum or hides the new rows until the fling ends.
+        if (holdsPagesUntilRest) {
+          await waitForScrollRest(container);
+          if (!isActiveRef.current || activeSessionIdRef.current !== selectedSession.id) {
+            return false;
+          }
+        }
         // Captured now, not when the fetch began: the reader may have kept
         // scrolling while it was in flight, and restoring the older position
-        // snapped them back. The new rows only render once the window widens
-        // below. Where the anchor fallback runs it keeps the reader's place
-        // itself, without stopping a fling the way setting scrollTop does.
-        if (!usesScrollAnchorFallback()) {
-          pendingScrollRestoreRef.current = captureScrollRestoreState(container);
-        }
-        setVisibleMessageCount((prev) => prev + SESSION_MESSAGES_PAGE_SIZE);
+        // snapped them back.
+        pendingScrollRestoreRef.current = captureScrollRestoreState(container);
+        setVisibleMessageCount((prev) => (
+          holdsPagesUntilRest
+            // Everything loaded so far, plus the usual headroom so new live
+            // messages do not push the oldest rows out of the window.
+            ? chatMessagesLengthRef.current + INITIAL_VISIBLE_MESSAGES
+            : prev + SESSION_MESSAGES_PAGE_SIZE
+        ));
         if (!slot.hasMore) {
           allMessagesLoadedRef.current = true;
           setAllMessagesLoaded(true);
@@ -608,7 +629,7 @@ export function useChatSessionState({
         ? scrollPositionRef.current.top
         : container.scrollHeight;
     }
-  }, [chatMessages.length, isActive, isUserScrolledUp]);
+  }, [chatMessages.length, isActive, isUserScrolledUp, visibleMessageCount]);
 
   // Reset scroll/pagination state on session change
   useEffect(() => {
