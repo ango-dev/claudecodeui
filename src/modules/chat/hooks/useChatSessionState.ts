@@ -457,11 +457,35 @@ export function useChatSessionState({
     isUserScrolledUpRef.current = isUserScrolledUp;
   }, [isUserScrolledUp]);
 
+  // Rows below the old position are sized by an estimate until drawn (see
+  // `.chat-message` in index.css), so one jump to the bottom ended short of
+  // it once they were. Holds the bottom while the height still moves, for at
+  // most a second; the reader's first touch, wheel or click lets go.
+  const bottomPinFrameRef = useRef<number | null>(null);
+  const releaseBottomPin = useCallback(() => {
+    if (bottomPinFrameRef.current !== null) {
+      cancelAnimationFrame(bottomPinFrameRef.current);
+      bottomPinFrameRef.current = null;
+    }
+  }, []);
   const scrollToBottom = useCallback(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
     container.scrollTop = container.scrollHeight;
-  }, []);
+    releaseBottomPin();
+    let frame = 0;
+    let stableFrames = 0;
+    let lastHeight = container.scrollHeight;
+    const hold = () => {
+      container.scrollTop = container.scrollHeight;
+      stableFrames = container.scrollHeight === lastHeight ? stableFrames + 1 : 0;
+      lastHeight = container.scrollHeight;
+      frame += 1;
+      bottomPinFrameRef.current = stableFrames < 3 && frame < 60 ? requestAnimationFrame(hold) : null;
+    };
+    bottomPinFrameRef.current = requestAnimationFrame(hold);
+  }, [releaseBottomPin]);
+  useEffect(() => releaseBottomPin, [releaseBottomPin]);
 
   const scrollToBottomAndReset = useCallback(() => {
     scrollToBottom();
@@ -1066,7 +1090,10 @@ export function useChatSessionState({
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return undefined;
-    const handleReaderIntent = () => { pendingInitialScrollRef.current = false; };
+    const handleReaderIntent = () => {
+      pendingInitialScrollRef.current = false;
+      releaseBottomPin();
+    };
     const options = { passive: true } as const;
     container.addEventListener('touchstart', handleReaderIntent, options);
     container.addEventListener('wheel', handleReaderIntent, options);
@@ -1076,7 +1103,30 @@ export function useChatSessionState({
       container.removeEventListener('wheel', handleReaderIntent);
       container.removeEventListener('mousedown', handleReaderIntent);
     };
-  }, [isActive, selectedSession?.id]);
+  }, [isActive, releaseBottomPin, selectedSession?.id]);
+
+  // Rotating a phone or tablet (or resizing the window) reflows every row; a
+  // reader who was at the bottom stays there rather than ending wherever the
+  // old offset now points.
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container || typeof ResizeObserver === 'undefined') return undefined;
+    let lastWidth = container.clientWidth;
+    let lastHeight = container.clientHeight;
+    const observer = new ResizeObserver(() => {
+      const { clientWidth, clientHeight } = container;
+      // Zero is a hidden tab, not a new size.
+      if (clientWidth === 0 || clientHeight === 0) return;
+      if (clientWidth === lastWidth && clientHeight === lastHeight) return;
+      lastWidth = clientWidth;
+      lastHeight = clientHeight;
+      if (!isUserScrolledUpRef.current) {
+        scrollToBottom();
+      }
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [isActive, scrollToBottom, selectedSession?.id]);
 
   // "Load all" overlay visibility is driven by scroll-to-top in handleScroll;
   // timers are cleared on session change via the reset effect above.

@@ -185,7 +185,7 @@ export default function FileTreeNode({
     >
       {viewMode === 'detailed' ? (
         <>
-          <div className="col-span-5 flex min-w-0 items-center gap-1.5">
+          <div className="col-span-7 flex min-w-0 items-center gap-1.5 sm:col-span-5">
             <TreeItemIcon item={item} isOpen={isOpen} renderFileIcon={renderFileIcon} />
             <span className={nameClassName}>{item.name}</span>
           </div>
@@ -193,7 +193,7 @@ export default function FileTreeNode({
             {item.type === 'file' ? formatFileSize(item.size) : ''}
           </div>
           <div className="col-span-3 text-sm text-muted-foreground">{formatRelativeTime(item.modified)}</div>
-          <div className="col-span-2 font-mono text-sm text-muted-foreground">{item.permissionsRwx || ''}</div>
+          <div className="col-span-2 hidden font-mono text-sm text-muted-foreground sm:block">{item.permissionsRwx || ''}</div>
         </>
       ) : viewMode === 'compact' ? (
         <>

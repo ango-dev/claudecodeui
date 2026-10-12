@@ -119,9 +119,30 @@ const normalizeNotificationPreferences = (
   };
 };
 
+/** The settings this dialog auto-saves, as they were loaded or last saved. */
+type SettingsSnapshot = {
+  claudePermissions: ClaudePermissionsState;
+  cursorPermissions: CursorPermissionsState;
+  codexPermissionMode: CodexPermissionMode;
+  projectSortOrder: ProjectSortOrder;
+  notificationPreferences: NotificationPreferencesState;
+};
+
+/** Compares two snapshots by value; key order is fixed by SettingsSnapshot. */
+const settingsSnapshotKey = (snapshot: SettingsSnapshot): string => JSON.stringify([
+  snapshot.claudePermissions,
+  snapshot.cursorPermissions,
+  snapshot.codexPermissionMode,
+  snapshot.projectSortOrder,
+  snapshot.notificationPreferences,
+]);
+
 export function useSettingsController({ isOpen, initialTab }: UseSettingsControllerArgs) {
   const { isDarkMode, toggleDarkMode } = useTheme() as ThemeContextValue;
   const closeTimerRef = useRef<number | null>(null);
+  // See loadSettings and the auto-save effect.
+  const isLoadingSettingsRef = useRef(false);
+  const persistedSettingsKeyRef = useRef<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<SettingsMainTab>(() => normalizeMainTab(initialTab));
   const [saveStatus, setSaveStatus] = useState<'success' | 'error' | null>(null);
@@ -150,49 +171,59 @@ export function useSettingsController({ isOpen, initialTab }: UseSettingsControl
   } = useProviderAuthStatus();
 
   const loadSettings = useCallback(async () => {
+    // No auto-save until everything has arrived: the notification preferences
+    // come from the server after the rest, and a save in between wrote the
+    // defaults over them.
+    isLoadingSettingsRef.current = true;
+    const loaded: SettingsSnapshot = {
+      claudePermissions: createEmptyClaudePermissions(),
+      cursorPermissions: createEmptyCursorPermissions(),
+      codexPermissionMode: 'default',
+      projectSortOrder: 'name',
+      notificationPreferences: createDefaultNotificationPreferences(),
+    };
     try {
       const savedClaudeSettings = readUserPreference<ClaudeSettingsStorage>('claudePermissions', {});
-      setClaudePermissions({
+      loaded.claudePermissions = {
         allowedTools: savedClaudeSettings.allowedTools || [],
         disallowedTools: savedClaudeSettings.disallowedTools || [],
         skipPermissions: Boolean(savedClaudeSettings.skipPermissions),
-      });
-      setProjectSortOrder(readUserPreference<ProjectSortOrder>('projectSortOrder', 'name') === 'date' ? 'date' : 'name');
+      };
+      loaded.projectSortOrder = readUserPreference<ProjectSortOrder>('projectSortOrder', 'name') === 'date' ? 'date' : 'name';
 
       const savedCursorSettings = readUserPreference<CursorSettingsStorage>('cursorPermissions', {});
-      setCursorPermissions({
+      loaded.cursorPermissions = {
         allowedCommands: savedCursorSettings.allowedCommands || [],
         disallowedCommands: savedCursorSettings.disallowedCommands || [],
         skipPermissions: Boolean(savedCursorSettings.skipPermissions),
-      });
+      };
 
       const savedCodexSettings = readUserPreference<CodexSettingsStorage>('codexPermissions', {});
-      setCodexPermissionMode(toCodexPermissionMode(savedCodexSettings.permissionMode));
+      loaded.codexPermissionMode = toCodexPermissionMode(savedCodexSettings.permissionMode);
 
       try {
         const notificationResponse = await api.settings.notificationPreferences();
         if (notificationResponse.ok) {
           const notificationData = await toResponseJson<NotificationPreferencesResponse>(notificationResponse);
           if (notificationData.success && notificationData.preferences) {
-            setNotificationPreferences(normalizeNotificationPreferences(notificationData.preferences));
-          } else {
-            setNotificationPreferences(createDefaultNotificationPreferences());
+            loaded.notificationPreferences = normalizeNotificationPreferences(notificationData.preferences);
           }
-        } else {
-          setNotificationPreferences(createDefaultNotificationPreferences());
         }
       } catch {
-        setNotificationPreferences(createDefaultNotificationPreferences());
+        // Defaults stand in.
       }
-
     } catch (error) {
       console.error('Error loading settings:', error);
-      setClaudePermissions(createEmptyClaudePermissions());
-      setCursorPermissions(createEmptyCursorPermissions());
-      setNotificationPreferences(createDefaultNotificationPreferences());
-      setCodexPermissionMode('default');
-      setProjectSortOrder('name');
     }
+
+    setClaudePermissions(loaded.claudePermissions);
+    setCursorPermissions(loaded.cursorPermissions);
+    setCodexPermissionMode(loaded.codexPermissionMode);
+    setProjectSortOrder(loaded.projectSortOrder);
+    setNotificationPreferences(loaded.notificationPreferences);
+    // What is on the server now: only a change from this is worth saving.
+    persistedSettingsKeyRef.current = settingsSnapshotKey(loaded);
+    isLoadingSettingsRef.current = false;
   }, []);
 
   const openLoginForProvider = useCallback((provider: AgentProvider) => {
@@ -296,14 +327,25 @@ export function useSettingsController({ isOpen, initialTab }: UseSettingsControl
     setNotificationSoundEnabled(notificationPreferences.channels.sound);
   }, [notificationPreferences.channels.sound]);
 
-  // Auto-save permissions and sort order with debounce
+  // Auto-save permissions, sort order and notifications with debounce, but
+  // only an actual edit: opening the dialog used to save (and announce
+  // "Settings saved") as its stored values arrived.
   const autoSaveTimerRef = useRef<number | null>(null);
-  const isInitialLoadRef = useRef(true);
+  const settingsKey = settingsSnapshotKey({
+    claudePermissions,
+    cursorPermissions,
+    codexPermissionMode,
+    projectSortOrder,
+    notificationPreferences,
+  });
 
   useEffect(() => {
-    // Skip auto-save on initial load (settings are being loaded from the store)
-    if (isInitialLoadRef.current) {
-      isInitialLoadRef.current = false;
+    // Nothing to compare against until the stored settings have loaded once.
+    if (
+      isLoadingSettingsRef.current
+      || persistedSettingsKeyRef.current === null
+      || settingsKey === persistedSettingsKeyRef.current
+    ) {
       return;
     }
 
@@ -312,6 +354,7 @@ export function useSettingsController({ isOpen, initialTab }: UseSettingsControl
     }
 
     autoSaveTimerRef.current = window.setTimeout(() => {
+      persistedSettingsKeyRef.current = settingsKey;
       saveSettings();
     }, 500);
 
@@ -320,7 +363,7 @@ export function useSettingsController({ isOpen, initialTab }: UseSettingsControl
         window.clearTimeout(autoSaveTimerRef.current);
       }
     };
-  }, [saveSettings]);
+  }, [saveSettings, settingsKey]);
 
   // Clear save status after 2 seconds
   useEffect(() => {
@@ -331,13 +374,6 @@ export function useSettingsController({ isOpen, initialTab }: UseSettingsControl
     const timer = window.setTimeout(() => setSaveStatus(null), 2000);
     return () => window.clearTimeout(timer);
   }, [saveStatus]);
-
-  // Reset initial load flag when settings dialog opens
-  useEffect(() => {
-    if (isOpen) {
-      isInitialLoadRef.current = true;
-    }
-  }, [isOpen]);
 
   useEffect(() => () => {
     if (closeTimerRef.current !== null) {

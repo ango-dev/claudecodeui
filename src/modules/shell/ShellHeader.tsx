@@ -52,12 +52,14 @@ export default function ShellHeader({
 }: ShellHeaderProps) {
   return (
     <div className="flex-shrink-0 border-b border-border bg-background px-4 py-2">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          <div className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+      <div className="flex items-center justify-between gap-2">
+        {/* One line that gives way to the buttons: on a phone the session name
+            wrapped into a column a few characters wide. */}
+        <div className="flex min-w-0 flex-1 items-center space-x-2">
+          <div className={`h-2 w-2 shrink-0 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
 
           {hasSession && sessionDisplayNameShort && (
-            <span className="text-xs text-blue-600 dark:text-blue-300">({sessionDisplayNameShort}...)</span>
+            <span className="truncate text-xs text-blue-600 dark:text-blue-300">({sessionDisplayNameShort}...)</span>
           )}
 
           {!hasSession && <span className="text-xs text-muted-foreground">{statusNewSessionText}</span>}
@@ -67,7 +69,7 @@ export default function ShellHeader({
           {isRestarting && <span className="text-xs text-blue-600 dark:text-blue-400">{statusRestartingText}</span>}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           {showBypassToggle && (
             <button
               type="button"

@@ -7,10 +7,11 @@ export default function FileTreeDetailedColumns() {
   return (
     <div className="border-b border-border px-3 pb-1 pt-1.5">
       <div className="grid grid-cols-12 gap-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-        <div className="col-span-5">{t('fileTree.name')}</div>
+        {/* A phone has no room for permissions beside the rest; the name takes it. */}
+        <div className="col-span-7 sm:col-span-5">{t('fileTree.name')}</div>
         <div className="col-span-2">{t('fileTree.size')}</div>
         <div className="col-span-3">{t('fileTree.modified')}</div>
-        <div className="col-span-2">{t('fileTree.permissions')}</div>
+        <div className="col-span-2 hidden sm:block">{t('fileTree.permissions')}</div>
       </div>
     </div>
   );

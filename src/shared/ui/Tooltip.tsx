@@ -91,6 +91,12 @@ export function Tooltip({
   };
 
   const handleMouseEnter = () => {
+    // A tap on a touch screen is followed by an emulated mouseenter and no
+    // mouseleave, which left the tooltip up over the next controls until
+    // another tap. Touch shows it on a long press instead (handleTouchStart).
+    if (window.matchMedia?.('(hover: none)').matches) {
+      return;
+    }
     clearTooltipTimer();
     timeoutRef.current = window.setTimeout(() => {
       setIsVisible(true);
