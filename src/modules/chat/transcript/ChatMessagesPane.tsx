@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { memo, useCallback, useMemo, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 
 import type { BackgroundTaskSummary,
@@ -13,6 +13,7 @@ import { getIntrinsicMessageKey } from '@/modules/chat/utils/messageKeys';
 import { groupConsecutiveTools, isToolGroupItem } from '@/modules/chat/utils/toolGrouping';
 import { useLazyRowObserver } from '@/modules/chat/hooks/useLazyRowObserver';
 import { useScrollAnchorFallback, usesScrollAnchorFallback } from '@/modules/chat/hooks/useScrollAnchorFallback';
+import { attachScrollDebug } from '@/modules/chat/utils/scrollDebug';
 import LazyMessageRow from '@/modules/chat/transcript/LazyMessageRow';
 import MessageComponent from '@/modules/chat/transcript/MessageComponent';
 import ProviderSelectionEmptyState from '@/modules/chat/transcript/ProviderSelectionEmptyState';
@@ -154,6 +155,10 @@ function ChatMessagesPane({
   const lazyRows = useLazyRowObserver(scrollContainerRef);
   const transcriptContentRef = useRef<HTMLDivElement>(null);
   useScrollAnchorFallback(scrollContainerRef, transcriptContentRef);
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    return container ? attachScrollDebug(container) : undefined;
+  }, [scrollContainerRef]);
   const groupedVisibleMessages = useMemo(
     () => groupConsecutiveTools(visibleMessages, Boolean(showThinking)),
     [visibleMessages, showThinking],

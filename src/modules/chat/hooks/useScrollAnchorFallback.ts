@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 import type { RefObject } from 'react';
 
+import { scrollDebugLog } from '@/modules/chat/utils/scrollDebug';
+
 /** A scroll quieter than this long has ended, momentum included. */
 const SCROLL_IDLE_MS = 150;
 /** Within this distance of the bottom the transcript follows new output instead. */
@@ -128,6 +130,7 @@ export function useScrollAnchorFallback(
 
     const flushPendingShift = () => {
       if (pendingShift === 0) return;
+      scrollDebugLog(`flush held shift ${Math.round(pendingShift)}`);
       content.style.transform = '';
       container.scrollTop += pendingShift;
       pendingShift = 0;
@@ -184,6 +187,7 @@ export function useScrollAnchorFallback(
       const shift = offset - anchor.offset;
       if (Math.abs(shift) < 0.5) return;
 
+      scrollDebugLog(`anchor shift ${Math.round(shift)} ${isScrolling() ? 'held in transform' : 'applied'}`);
       if (isScrolling()) {
         pendingShift += shift;
         content.style.transform = `translateY(${-pendingShift}px)`;

@@ -9,6 +9,7 @@ import { createMessageHistoryRefreshCoordinator } from '@/modules/chat/utils/mes
 import { createCachedDiffCalculator } from '@/modules/chat/utils/messageTransforms';
 import { normalizedToChatMessages } from '@/modules/chat/hooks/useChatMessages';
 import { usesScrollAnchorFallback, waitForScrollRest } from '@/modules/chat/hooks/useScrollAnchorFallback';
+import { scrollDebugLog } from '@/modules/chat/utils/scrollDebug';
 import { findSearchTargetIndex, resolveSearchWindowSize } from '@/modules/chat/utils/searchTargetLocator';
 import { readSelectedProvider } from '@/shared/selectedProvider';
 import type { SearchTarget } from '@/modules/chat/utils/searchTargetLocator';
@@ -483,6 +484,7 @@ export function useChatSessionState({
 
       isLoadingMoreRef.current = true;
       setIsLoadingMoreMessages(true);
+      scrollDebugLog(`load older start at ${Math.round(container.scrollTop)}`);
       const holdsPagesUntilRest = usesScrollAnchorFallback();
       if (holdsPagesUntilRest) {
         // The window starts wider than the first page, so without this the
@@ -533,6 +535,7 @@ export function useChatSessionState({
         // scrolling while it was in flight, and restoring the older position
         // snapped them back.
         pendingScrollRestoreRef.current = captureScrollRestoreState(container);
+        scrollDebugLog(`page add (${prependedCount}) at ${Math.round(container.scrollTop)}`);
         setVisibleMessageCount((prev) => (
           holdsPagesUntilRest
             // Everything loaded so far, plus the usual headroom so new live
@@ -1053,6 +1056,28 @@ export function useChatSessionState({
     container.addEventListener('scroll', handleScroll);
     return () => container.removeEventListener('scroll', handleScroll);
   }, [handleScroll]);
+
+  // Opening a session keeps re-scrolling to the bottom while its rows settle
+  // (and again when a page of older messages merges in); a reader who has
+  // started scrolling was yanked back down. Their first touch, wheel or click
+  // ends that.
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return undefined;
+    const handleReaderIntent = () => {
+      if (pendingInitialScrollRef.current) scrollDebugLog('initial scroll-to-bottom cancelled by reader');
+      pendingInitialScrollRef.current = false;
+    };
+    const options = { passive: true } as const;
+    container.addEventListener('touchstart', handleReaderIntent, options);
+    container.addEventListener('wheel', handleReaderIntent, options);
+    container.addEventListener('mousedown', handleReaderIntent, options);
+    return () => {
+      container.removeEventListener('touchstart', handleReaderIntent);
+      container.removeEventListener('wheel', handleReaderIntent);
+      container.removeEventListener('mousedown', handleReaderIntent);
+    };
+  }, [isActive, selectedSession?.id]);
 
   // "Load all" overlay visibility is driven by scroll-to-top in handleScroll;
   // timers are cleared on session change via the reset effect above.
