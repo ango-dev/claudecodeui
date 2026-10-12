@@ -115,6 +115,8 @@ export function useScrollAnchorFallback(
     }
 
     container.style.overflowAnchor = 'none';
+    // Turns off estimated message heights for this transcript (index.css).
+    container.dataset.scrollAnchorFallback = '';
     let anchor: Anchor | null = null;
     let wasNearBottom = true;
     let isTouching = false;
@@ -224,6 +226,7 @@ export function useScrollAnchorFallback(
       if (idleTimer) clearTimeout(idleTimer);
       content.style.transform = '';
       container.style.overflowAnchor = '';
+      delete container.dataset.scrollAnchorFallback;
     };
   }, [scrollContainerRef, contentRef]);
 }

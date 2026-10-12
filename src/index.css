@@ -669,6 +669,14 @@
     contain-intrinsic-size: auto 96px;
   }
 
+  /* Safari (see useScrollAnchorFallback): a message sized by the estimate
+     above until it is drawn changes height as it scrolls into view, and
+     without working scroll anchoring that moves the whole transcript. */
+  .chat-messages-pane[data-scroll-anchor-fallback] .chat-message {
+    content-visibility: visible;
+    contain-intrinsic-size: none;
+  }
+
   /* Mobile touch optimization and safe areas */
   @media (max-width: 768px) {
     * {
