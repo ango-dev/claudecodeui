@@ -14,11 +14,18 @@ const supportsNativeScrollAnchoring = (): boolean =>
   && CSS.supports('overflow-anchor', 'auto');
 
 /**
+ * Safari, and so every iOS and iPadOS browser. Its own scroll anchoring, where
+ * it has any, did not keep the transcript still, so it is not relied on.
+ */
+const isAppleWebKit = (): boolean =>
+  typeof navigator !== 'undefined' && /^Apple/.test(navigator.vendor ?? '');
+
+/**
  * Used by useChatSessionState, which leaves keeping the reader's place after a
  * page of older messages to this fallback wherever it runs.
  */
 export const usesScrollAnchorFallback = (): boolean =>
-  typeof ResizeObserver !== 'undefined' && !supportsNativeScrollAnchoring();
+  typeof ResizeObserver !== 'undefined' && (isAppleWebKit() || !supportsNativeScrollAnchoring());
 
 /**
  * The first transcript row still on screen (its bottom below the container's
@@ -49,8 +56,10 @@ function findAnchor(container: HTMLElement, content: HTMLElement): Anchor | null
  * a prepended page settling, the loading row coming and going.
  *
  * Chrome and Firefox do this themselves (CSS scroll anchoring), so there it is
- * a no-op; Safari, and so every iOS browser, has no scroll anchoring, and each
- * of those changes pushed the transcript up or down under the reader's thumb.
+ * a no-op. Safari long had no scroll anchoring, and its newer one still let
+ * each of those changes push the transcript up or down under the reader's
+ * thumb, so on Safari this takes over and the browser's own is switched off
+ * for the transcript; two corrections for one shift would be a jump again.
  *
  * Setting scrollTop mid-fling stops iOS momentum scrolling, so while a scroll
  * is still moving the shift is cancelled with a transform on the content, and
@@ -68,6 +77,7 @@ export function useScrollAnchorFallback(
       return undefined;
     }
 
+    container.style.overflowAnchor = 'none';
     let anchor: Anchor | null = null;
     let wasNearBottom = true;
     let isTouching = false;
@@ -148,6 +158,7 @@ export function useScrollAnchorFallback(
       container.removeEventListener('touchcancel', handleTouchEnd);
       if (idleTimer) clearTimeout(idleTimer);
       content.style.transform = '';
+      container.style.overflowAnchor = '';
     };
   }, [scrollContainerRef, contentRef]);
 }

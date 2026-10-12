@@ -86,6 +86,26 @@ describe('useScrollAnchorFallback', () => {
     expect(content.style.transform).toBe('');
   });
 
+  it('takes over on Safari even where Safari reports scroll anchoring of its own', () => {
+    vi.stubGlobal('CSS', { supports: () => true });
+    vi.spyOn(navigator, 'vendor', 'get').mockReturnValue('Apple Computer, Inc.');
+    const { container } = renderTranscript();
+    vi.advanceTimersByTime(500);
+
+    expect(container.style.overflowAnchor).toBe('none');
+    firstRowTop += 80;
+    resizeCallback?.();
+    expect(container.scrollTop).toBe(580);
+  });
+
+  it('leaves browsers with working scroll anchoring to it', () => {
+    vi.stubGlobal('CSS', { supports: () => true });
+    vi.spyOn(navigator, 'vendor', 'get').mockReturnValue('Google Inc.');
+    renderTranscript();
+
+    expect(resizeCallback).toBeNull();
+  });
+
   it('leaves a transcript that is following new output at the bottom alone', () => {
     const { container } = renderTranscript();
     container.scrollTop = 2400; // 3000 - 600: at the bottom
