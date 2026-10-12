@@ -146,7 +146,13 @@ function ChatMessagesPane({
   const { t } = useTranslation('chat');
   const lazyRows = useLazyRowObserver(scrollContainerRef);
   const transcriptContentRef = useRef<HTMLDivElement>(null);
-  useScrollAnchorFallback(scrollContainerRef, transcriptContentRef);
+  const scrollSlackRef = useRef<HTMLDivElement>(null);
+  useScrollAnchorFallback(
+    scrollContainerRef,
+    transcriptContentRef,
+    scrollSlackRef,
+    hasMoreMessages && !allMessagesLoaded,
+  );
   const groupedVisibleMessages = useMemo(
     () => groupConsecutiveTools(visibleMessages, Boolean(showThinking)),
     [visibleMessages, showThinking],
@@ -208,6 +214,8 @@ function ChatMessagesPane({
           </div>
         </div>
       )}
+      {/* Spare space above the rows, sized by useScrollAnchorFallback (Safari only). */}
+      <div ref={scrollSlackRef} data-scroll-slack aria-hidden />
       <div ref={transcriptContentRef} className="mx-auto w-full max-w-[54.25rem] space-y-3 px-4 sm:space-y-4">
       {(isLoadingSessionMessages || isProcessing) && chatMessages.length === 0 ? (
         <div className="mt-8 text-center text-gray-500 dark:text-gray-400">
