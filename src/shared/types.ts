@@ -781,9 +781,12 @@ export type QueuedDraft = {
   options?: QueuedSendOptions;
 };
 
-/** Viewport-relative placement box (right/bottom offsets plus max height and width) computed for a composer popover so the model and permission menus stay inside the window. */
+/** Viewport-relative placement box (a left or right offset, bottom, max height and width) computed for a composer popover so the model and permission menus stay inside the window. */
 export type ComposerMenuAnchor = {
-  right: number;
+  /** Set for a trigger in the left half of the window: the menu opens rightward from it. */
+  left?: number;
+  /** Set otherwise: the menu opens leftward from the trigger's right edge. */
+  right?: number;
   bottom: number;
   maxHeight: number;
   maxWidth: number;

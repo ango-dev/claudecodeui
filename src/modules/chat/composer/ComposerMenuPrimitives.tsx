@@ -28,6 +28,7 @@ export function ComposerMenuSurface({
       aria-label={ariaLabel}
       className="fixed z-[100] min-w-48 overflow-y-auto overscroll-contain rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-xl"
       style={{
+        left: anchor.left,
         right: anchor.right,
         bottom: anchor.bottom,
         maxHeight: anchor.maxHeight,

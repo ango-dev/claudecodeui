@@ -7,12 +7,14 @@ const VIEWPORT_MARGIN = 8;
 const MENU_GAP = 8;
 
 /**
- * Positions a composer popover above its trigger and right-aligned to it.
+ * Positions a composer popover above its trigger, aligned to the trigger's
+ * side of the window: right-aligned for a trigger on the right (the model
+ * menu), left-aligned for one on the left (the permission menu). Right-aligned
+ * on a phone, a menu from a trigger near the left edge ran off the screen,
+ * since it cannot be narrower than its content.
  *
- * Anchoring with `right`/`bottom` rather than `left`/`top` lets the menu grow
- * upward and leftward without measuring itself first, so it never paints in the
- * wrong spot for a frame. The same anchor works on phones because `maxWidth`
- * shrinks the menu instead of letting it run off the left edge.
+ * Anchoring with `bottom` rather than `top` lets the menu grow upward without
+ * measuring itself first, so it never paints in the wrong spot for a frame.
  */
 export function useComposerMenuAnchor(
   isOpen: boolean,
@@ -29,12 +31,25 @@ export function useComposerMenuAnchor(
       return;
     }
 
+    const bottom = window.innerHeight - rect.top + MENU_GAP;
+    const maxHeight = Math.max(160, rect.top - MENU_GAP - VIEWPORT_MARGIN);
+    const opensRightward = rect.left + rect.width / 2 < window.innerWidth / 2;
+    if (opensRightward) {
+      const left = Math.max(VIEWPORT_MARGIN, rect.left);
+      setAnchor({
+        left,
+        bottom,
+        maxHeight,
+        maxWidth: Math.min(preferredWidth, window.innerWidth - left - VIEWPORT_MARGIN),
+      });
+      return;
+    }
     const right = Math.max(VIEWPORT_MARGIN, window.innerWidth - rect.right);
     setAnchor({
       right,
-      bottom: window.innerHeight - rect.top + MENU_GAP,
-      maxHeight: Math.max(160, rect.top - MENU_GAP - VIEWPORT_MARGIN),
-      maxWidth: Math.max(200, Math.min(preferredWidth, window.innerWidth - right - VIEWPORT_MARGIN)),
+      bottom,
+      maxHeight,
+      maxWidth: Math.min(preferredWidth, window.innerWidth - right - VIEWPORT_MARGIN),
     });
   }, [preferredWidth]);
 

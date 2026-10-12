@@ -11,6 +11,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
+import { isPhoneSizedScreen } from '@/shared/hooks/useDeviceSettings';
 import type { PermissionMode } from '@/shared/types';
 import { useComposerMenuAnchor } from '@/modules/chat/hooks/useComposerMenuAnchor';
 import {
@@ -96,6 +97,9 @@ function ComposerPermissionMenu({
     return null;
   }
 
+  // A phone has room for the mode names only; the descriptions made the list
+  // taller than the space above the composer.
+  const compact = isPhoneSizedScreen();
   const activeAppearance = getAppearance(permissionMode);
   const ActiveIcon = activeAppearance.icon;
   const heading = t('composer.permissionHeading', {
@@ -132,7 +136,7 @@ function ComposerPermissionMenu({
                 key={mode}
                 icon={<ModeIcon className="h-4 w-4" />}
                 label={t(`codex.modes.${mode}`, { defaultValue: mode })}
-                description={t(`codex.descriptions.${mode}`, { defaultValue: '' }) || undefined}
+                description={compact ? undefined : t(`codex.descriptions.${mode}`, { defaultValue: '' }) || undefined}
                 isSelected={mode === permissionMode}
                 onSelect={() => {
                   onSelectPermissionMode(mode);
