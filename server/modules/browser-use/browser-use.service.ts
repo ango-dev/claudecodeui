@@ -56,11 +56,74 @@ type RuntimeHandle = {
   page?: any;
 };
 
+/**
+ * The automation library the browser runs under. Both drive Chromium through
+ * the same Playwright API; Patchright is a fork patched against the usual
+ * automation tells (navigator.webdriver, the Runtime.enable CDP leak, the
+ * --enable-automation flag), for sites that turn automated browsers away.
+ */
+type BrowserUseEngine = 'playwright' | 'patchright';
+
+/**
+ * The browser the engine drives: the engine's own downloaded Chromium build,
+ * or the Google Chrome installed on the machine. Patchright's authors advise
+ * real Chrome for the best results against bot detection; installing it
+ * system-wide needs administrator rights (see installRuntime).
+ */
+type BrowserUseBrowser = 'chromium' | 'chrome';
+
 type BrowserUseSettings = {
   enabled: boolean;
+  engine: BrowserUseEngine;
+  browser: BrowserUseBrowser;
+  /** Where Chrome is, when it is not in its standard place (e.g. unpacked into a home folder without admin rights). */
+  chromePath: string | null;
 };
 
+const BROWSER_USE_ENGINES: readonly BrowserUseEngine[] = ['playwright', 'patchright'];
+
+const readEngine = (value: unknown): BrowserUseEngine => (
+  BROWSER_USE_ENGINES.includes(value as BrowserUseEngine) ? value as BrowserUseEngine : 'playwright'
+);
+
+const readBrowser = (value: unknown): BrowserUseBrowser => (value === 'chrome' ? 'chrome' : 'chromium');
+
+const readChromePath = (value: unknown): string | null => {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  return trimmed ? trimmed.slice(0, 1024) : null;
+};
+
+/** Expands a leading ~ so a path typed as ~/chrome/... works. */
+const expandHome = (value: string): string => (
+  value === '~' || value.startsWith('~/') ? path.join(os.homedir(), value.slice(1)) : value
+);
+
+/**
+ * Google Chrome where its installers put it on each platform: the same places
+ * Playwright's `channel: 'chrome'` looks. The Windows per-user location is
+ * where Chrome's installer goes when it runs without administrator rights.
+ */
+function findGoogleChrome(): string | null {
+  const candidates: string[] = [];
+  if (process.platform === 'linux') {
+    candidates.push('/opt/google/chrome/chrome');
+  } else if (process.platform === 'darwin') {
+    candidates.push(
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      path.join(os.homedir(), 'Applications/Google Chrome.app/Contents/MacOS/Google Chrome'),
+    );
+  } else if (process.platform === 'win32') {
+    for (const root of [process.env.LOCALAPPDATA, process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)']]) {
+      if (root) candidates.push(path.join(root, 'Google', 'Chrome', 'Application', 'chrome.exe'));
+    }
+  }
+  return candidates.find((candidate) => fs.existsSync(candidate)) ?? null;
+}
+
 type RuntimeReadiness = {
+  engine: BrowserUseEngine;
+  browser: BrowserUseBrowser;
+  /** The selected engine's module (Playwright's API either way). */
   playwright: any | null;
   playwrightInstalled: boolean;
   chromiumInstalled: boolean;
@@ -79,6 +142,9 @@ let runtimeProbeCache: { value: RuntimeProbe; updatedAt: number } | null = null;
 
 const DEFAULT_SETTINGS: BrowserUseSettings = {
   enabled: false,
+  engine: 'playwright',
+  browser: 'chromium',
+  chromePath: null,
 };
 const AGENT_OWNER_ID = 'agent';
 const PROFILE_ROOT = path.join(os.homedir(), '.cloudcli', 'browser-use', 'profiles');
@@ -96,6 +162,9 @@ function readSettings(): BrowserUseSettings {
     const parsed = JSON.parse(raw) as Partial<BrowserUseSettings>;
     return {
       enabled: parsed.enabled === true,
+      engine: readEngine(parsed.engine),
+      browser: readBrowser(parsed.browser),
+      chromePath: readChromePath(parsed.chromePath),
     };
   } catch (error: any) {
     console.warn('[Browser] Failed to read settings:', error?.message || error);
@@ -106,6 +175,9 @@ function readSettings(): BrowserUseSettings {
 function writeSettings(settings: BrowserUseSettings): BrowserUseSettings {
   const normalized = {
     enabled: settings.enabled === true,
+    engine: readEngine(settings.engine),
+    browser: readBrowser(settings.browser),
+    chromePath: readChromePath(settings.chromePath),
   };
 
   appConfigDb.set(BROWSER_USE_SETTINGS_KEY, JSON.stringify(normalized));
@@ -127,20 +199,24 @@ function getSetupMessage(settings: BrowserUseSettings, readiness: RuntimeReadine
     return 'Browser is disabled in settings.';
   }
 
+  const engineName = readiness.engine === 'patchright' ? 'Patchright' : 'Playwright';
   if (!readiness.playwrightInstalled) {
-    return 'Install Playwright and Chromium to use browser sessions.';
+    return `Install ${engineName} and ${readiness.browser === 'chrome' ? 'Google Chrome' : 'Chromium'} to use browser sessions.`;
   }
 
   if (!readiness.chromiumInstalled) {
-    return 'Playwright is installed, but Chromium is missing. Install the Chromium runtime to continue.';
+    return readiness.browser === 'chrome'
+      ? `${engineName} is installed, but Google Chrome was not found. Install Chrome (this needs administrator rights), or set where it is.`
+      : `${engineName} is installed, but Chromium is missing. Install the Chromium runtime to continue.`;
   }
 
   return readiness.installMessage || 'Browser runtime is not ready.';
 }
 
-function getPlaywright(): any | null {
+function loadEngine(engine: BrowserUseEngine): any | null {
   try {
-    return require('playwright');
+    // Patchright is a drop-in fork: the same API under another package name.
+    return require(engine);
   } catch {
     return null;
   }
@@ -192,9 +268,12 @@ function getProfilePath(profileName: string): string {
   return path.join(PROFILE_ROOT, safeName);
 }
 
-function probeRuntime(): RuntimeProbe {
-  const playwright = getPlaywright();
+function probeRuntime(settings: BrowserUseSettings): RuntimeProbe {
+  const { engine, browser } = settings;
+  const playwright = loadEngine(engine);
   const readiness: RuntimeProbe = {
+    engine,
+    browser,
     playwright,
     playwrightInstalled: Boolean(playwright),
     chromiumInstalled: false,
@@ -202,6 +281,14 @@ function probeRuntime(): RuntimeProbe {
   };
 
   if (!playwright) {
+    return readiness;
+  }
+
+  if (browser === 'chrome') {
+    const configured = settings.chromePath ? expandHome(settings.chromePath) : null;
+    const executablePath = configured ?? findGoogleChrome();
+    readiness.chromiumExecutablePath = executablePath;
+    readiness.chromiumInstalled = Boolean(executablePath && fs.existsSync(executablePath));
     return readiness;
   }
 
@@ -218,12 +305,15 @@ function probeRuntime(): RuntimeProbe {
 
 function getRuntimeReadiness(options: { force?: boolean } = {}): RuntimeReadiness {
   const now = Date.now();
+  const settings = readSettings();
   const cachedProbe = runtimeProbeCache;
   const canUseCache = !options.force
     && !installPromise
     && cachedProbe
+    && cachedProbe.value.engine === settings.engine
+    && cachedProbe.value.browser === settings.browser
     && now - cachedProbe.updatedAt < RUNTIME_READINESS_CACHE_TTL_MS;
-  const probe = canUseCache ? cachedProbe.value : probeRuntime();
+  const probe = canUseCache ? cachedProbe.value : probeRuntime(settings);
 
   if (!canUseCache && !installPromise) {
     runtimeProbeCache = { value: probe, updatedAt: now };
@@ -287,32 +377,81 @@ function runCommand(command: string, args: string[]): Promise<void> {
 function formatInstallError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes('sudo') && message.includes('password')) {
-    return 'Installing Chromium system dependencies requires administrator privileges. Run `npx playwright install-deps chromium` on the machine where CloudCLI runs, then try again.';
+    return 'Installing Chromium system dependencies requires administrator privileges. Run `npx playwright install-deps chromium` (or `npx patchright install-deps chromium`) on the machine where CloudCLI runs, then try again.';
   }
   return message || 'Failed to install Browser runtime.';
 }
 
-async function installRuntime(): Promise<{ success: boolean; message: string }> {
+/** True when this process can install system packages itself (root on Linux and macOS). */
+const isAdministrator = (): boolean => typeof process.getuid === 'function' && process.getuid() === 0;
+
+/**
+ * The commands that need administrator rights, for the message shown when an
+ * install step could not run without them. Run in CloudCLI's folder.
+ */
+function adminInstructions(engine: BrowserUseEngine, browser: BrowserUseBrowser): string {
+  if (browser === 'chrome') {
+    if (process.platform === 'linux') {
+      return `Installing Google Chrome needs administrator rights. Run \`sudo npx ${engine} install chrome\` in CloudCLI's folder, or install Chrome from google.com/chrome. Without admin rights, unpack Chrome into your home folder and set its location here, or choose Stealth with Chromium.`;
+    }
+    if (process.platform === 'darwin') {
+      return 'Installing Google Chrome needs an administrator password. Install Chrome from google.com/chrome, or drag Google Chrome.app into Applications in your home folder (no admin rights needed), then check again.';
+    }
+    return 'Install Google Chrome from google.com/chrome. Run without administrator rights, its installer puts Chrome in your user folder, which CloudCLI finds.';
+  }
+  return `Chromium is installed, but Linux may need its system libraries, which only an administrator can add: \`sudo npx ${engine} install-deps chromium\` in CloudCLI's folder.`;
+}
+
+async function installRuntime(settings: BrowserUseSettings): Promise<{ success: boolean; message: string }> {
   if (installPromise) {
     return installPromise;
   }
 
+  const { engine, browser } = settings;
   const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  // Each engine has its own package and its own Chromium build, installed
+  // through its own CLI (Patchright's is Playwright's under another name).
+  const engineName = engine === 'patchright' ? 'Patchright' : 'Playwright';
   runtimeProbeCache = null;
   installPromise = (async () => {
     try {
-      lastInstallMessage = 'Installing Playwright package...';
-      await runCommand(npmCommand, ['install', '--no-save', '--no-package-lock', 'playwright']);
+      lastInstallMessage = `Installing ${engineName} package...`;
+      await runCommand(npmCommand, ['install', '--no-save', '--no-package-lock', engine]);
 
-      if (process.platform === 'linux') {
+      if (browser === 'chrome') {
+        const configured = settings.chromePath ? expandHome(settings.chromePath) : null;
+        if ((configured && fs.existsSync(configured)) || findGoogleChrome()) {
+          lastInstallMessage = `${engineName} is ready to use Google Chrome.`;
+          return { success: true, message: lastInstallMessage };
+        }
+        // A system-wide install: apt on Linux, an installer package on macOS,
+        // an elevated installer on Windows. Without admin rights it fails,
+        // and the message says what to run instead.
+        lastInstallMessage = 'Installing Google Chrome...';
+        try {
+          await runCommand(npmCommand, ['exec', '--', engine, 'install', 'chrome']);
+        } catch {
+          lastInstallMessage = adminInstructions(engine, browser);
+          return { success: false, message: lastInstallMessage };
+        }
+        lastInstallMessage = `${engineName} and Google Chrome installed.`;
+        return { success: true, message: lastInstallMessage };
+      }
+
+      // System libraries need root; a normal user skips them, as they are
+      // often present already, and is told the command if Chromium fails.
+      const needsDeps = process.platform === 'linux';
+      if (needsDeps && isAdministrator()) {
         lastInstallMessage = 'Installing Chromium system dependencies...';
-        await runCommand(npmCommand, ['exec', '--', 'playwright', 'install-deps', 'chromium']);
+        await runCommand(npmCommand, ['exec', '--', engine, 'install-deps', 'chromium']);
       }
 
       lastInstallMessage = 'Installing Chromium runtime...';
-      await runCommand(npmCommand, ['exec', '--', 'playwright', 'install', 'chromium']);
+      await runCommand(npmCommand, ['exec', '--', engine, 'install', 'chromium']);
 
-      lastInstallMessage = 'Browser runtime installed.';
+      lastInstallMessage = needsDeps && !isAdministrator()
+        ? `Browser runtime installed. ${adminInstructions(engine, browser)}`
+        : 'Browser runtime installed.';
       return { success: true, message: lastInstallMessage };
     } catch (error) {
       lastInstallMessage = formatInstallError(error);
@@ -389,16 +528,63 @@ async function captureSession(session: BrowserUseSession, page: any): Promise<vo
   session.updatedAt = new Date().toISOString();
 }
 
-async function getActionPoint(page: any, input: { selector?: string; text?: string; x?: number; y?: number }) {
+type ClickTarget = { ref?: string; selector?: string; text?: string; role?: string; name?: string; x?: number; y?: number };
+
+/**
+ * An element reference from browser_snapshot ("e12"; "[ref=e12]" and "@e12"
+ * are accepted too), checked so nothing else reaches the locator engine.
+ */
+function readRef(ref: string): string {
+  const match = /^(?:\[ref=|@)?(e\d+)\]?$/.exec(ref.trim());
+  if (!match) {
+    throw new Error(`"${ref}" is not an element reference from browser_snapshot (expected e.g. e12).`);
+  }
+  return match[1];
+}
+
+/**
+ * The element an action names: a reference from browser_snapshot first (the
+ * reliable way: it names one element of the page as last captured), then role
+ * and accessible name, a CSS selector, or visible text.
+ */
+function resolveTarget(page: any, input: ClickTarget) {
+  if (input.ref) {
+    return page.locator(`aria-ref=${readRef(input.ref)}`);
+  }
+  if (input.role) {
+    return page.getByRole(input.role, input.name ? { name: input.name, exact: false } : {}).first();
+  }
+  if (input.selector) {
+    return page.locator(input.selector).first();
+  }
+  if (input.text) {
+    return page.getByText(input.text, { exact: false }).first();
+  }
+  return null;
+}
+
+/**
+ * The page's accessibility tree with element references, as Playwright's
+ * agent tooling produces it; a tree without references where the installed
+ * Playwright predates that mode.
+ */
+async function readAgentSnapshot(page: any): Promise<string> {
+  try {
+    if (typeof page.ariaSnapshot === 'function') {
+      return await page.ariaSnapshot({ mode: 'ai', timeout: 5_000 });
+    }
+  } catch {
+    // Falls through to the plain tree.
+  }
+  return page.locator('body').ariaSnapshot({ timeout: 5_000 }).catch(() => '');
+}
+
+async function getActionPoint(page: any, input: ClickTarget) {
   if (typeof input.x === 'number' && typeof input.y === 'number') {
     return { x: input.x, y: input.y };
   }
 
-  const locator = input.selector
-    ? page.locator(input.selector).first()
-    : input.text
-      ? page.getByText(input.text, { exact: false }).first()
-      : null;
+  const locator = resolveTarget(page, input);
 
   if (!locator) {
     return null;
@@ -424,9 +610,17 @@ export const browserUseService = {
     const current = readSettings();
     const nextSettings = {
       enabled: typeof settings.enabled === 'boolean' ? settings.enabled : current.enabled,
+      engine: settings.engine === undefined ? current.engine : readEngine(settings.engine),
+      browser: settings.browser === undefined ? current.browser : readBrowser(settings.browser),
+      chromePath: settings.chromePath === undefined ? current.chromePath : readChromePath(settings.chromePath),
     };
 
     const next = writeSettings(nextSettings);
+    if (next.engine !== current.engine || next.browser !== current.browser || next.chromePath !== current.chromePath) {
+      // Open sessions run under the old engine; they end rather than mix.
+      runtimeProbeCache = null;
+      await this.stopAllSessions();
+    }
     if (next.enabled) {
       await this.registerAgentMcp();
     } else if (current.enabled) {
@@ -443,6 +637,11 @@ export const browserUseService = {
 
     return {
       enabled: settings.enabled,
+      engine: settings.engine,
+      browser: settings.browser,
+      browserExecutablePath: readiness.chromiumExecutablePath,
+      isAdministrator: isAdministrator(),
+      platform: process.platform,
       runtime: getBrowserUseRuntime(),
       available,
       playwrightInstalled: readiness.playwrightInstalled,
@@ -484,7 +683,7 @@ export const browserUseService = {
   },
 
   async installRuntime() {
-    const result = await installRuntime();
+    const result = await installRuntime(readSettings());
     return {
       ...result,
       status: await this.getStatus(),
@@ -544,23 +743,37 @@ export const browserUseService = {
     const launchOptions = {
       headless: true,
       args: ['--disable-dev-shm-usage'],
+      // Real Chrome, where chosen: readiness found it in its standard place or
+      // at the location set in Settings.
+      ...(settings.browser === 'chrome' && readiness.chromiumExecutablePath
+        ? { executablePath: readiness.chromiumExecutablePath }
+        : {}),
     };
     const contextOptions = {
       viewport: { width: 1440, height: 900 },
       serviceWorkers: 'block',
     };
 
-    if (profileName) {
-      fs.mkdirSync(PROFILE_ROOT, { recursive: true });
-      context = await readiness.playwright.chromium.launchPersistentContext(getProfilePath(profileName), {
-        ...launchOptions,
-        ...contextOptions,
-      });
-      page = context.pages()[0] || await context.newPage();
-    } else {
-      browser = await readiness.playwright.chromium.launch(launchOptions);
-      context = await browser.newContext(contextOptions);
-      page = await context.newPage();
+    try {
+      if (profileName) {
+        fs.mkdirSync(PROFILE_ROOT, { recursive: true });
+        context = await readiness.playwright.chromium.launchPersistentContext(getProfilePath(profileName), {
+          ...launchOptions,
+          ...contextOptions,
+        });
+        page = context.pages()[0] || await context.newPage();
+      } else {
+        browser = await readiness.playwright.chromium.launch(launchOptions);
+        context = await browser.newContext(contextOptions);
+        page = await context.newPage();
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // Chromium without its Linux system libraries: only an admin can add them.
+      if (/shared librar|missing dependencies|install-deps/i.test(message)) {
+        throw new Error(`The browser could not start: ${adminInstructions(settings.engine, 'chromium')}`);
+      }
+      throw error;
     }
     session.status = 'ready';
     session.message = 'Browser session is ready.';
@@ -626,14 +839,21 @@ export const browserUseService = {
       throw new Error('Browser runtime handle is not available.');
     }
     await captureSession(session, handle.page);
-    const text = await handle.page.locator('body').innerText({ timeout: 5_000 }).catch(() => '');
+    // The page as an accessibility tree, each element the agent can act on
+    // tagged [ref=eN]; actions take those refs. Far fewer tokens than a page
+    // dump, and unambiguous where text is not (two "Add to cart" buttons).
+    const snapshot = await readAgentSnapshot(handle.page);
     return {
       session: publicSession(session),
-      text: text.slice(0, 30_000),
+      snapshot: snapshot.slice(0, 40_000),
+      // Plain text only where the tree could not be read.
+      ...(snapshot ? {} : {
+        text: (await handle.page.locator('body').innerText({ timeout: 5_000 }).catch(() => '')).slice(0, 30_000),
+      }),
     };
   },
 
-  async agentClick(sessionId: string, input: { selector?: string; text?: string; x?: number; y?: number }) {
+  async agentClick(sessionId: string, input: ClickTarget) {
     const session = await this.getAgentSession(sessionId);
     const handle = handles.get(sessionId);
     if (!handle?.page) {
@@ -641,14 +861,13 @@ export const browserUseService = {
     }
     const point = await getActionPoint(handle.page, input);
 
-    if (input.selector) {
-      await handle.page.locator(input.selector).first().click({ timeout: 10_000 });
-    } else if (input.text) {
-      await handle.page.getByText(input.text, { exact: false }).first().click({ timeout: 10_000 });
+    const target = resolveTarget(handle.page, input);
+    if (target) {
+      await target.click({ timeout: 10_000 });
     } else if (typeof input.x === 'number' && typeof input.y === 'number') {
       await handle.page.mouse.click(input.x, input.y);
     } else {
-      throw new Error('Provide selector, text, or x/y coordinates.');
+      throw new Error('Provide role (and name), selector, text, or x/y coordinates.');
     }
 
     session.lastAction = 'click';
@@ -657,16 +876,16 @@ export const browserUseService = {
     return publicSession(session);
   },
 
-  async agentType(sessionId: string, input: { selector?: string; text: string; submit?: boolean }) {
+  async agentType(sessionId: string, input: { ref?: string; selector?: string; text: string; submit?: boolean }) {
     const session = await this.getAgentSession(sessionId);
     const handle = handles.get(sessionId);
     if (!handle?.page) {
       throw new Error('Browser runtime handle is not available.');
     }
 
-    if (input.selector) {
-      await handle.page.locator(input.selector).first().fill(input.text, { timeout: 10_000 });
-      session.cursor = await getActionPoint(handle.page, input).then((point) => (
+    if (input.ref || input.selector) {
+      await resolveTarget(handle.page, { ref: input.ref, selector: input.selector }).fill(input.text, { timeout: 10_000 });
+      session.cursor = await getActionPoint(handle.page, { ref: input.ref, selector: input.selector }).then((point) => (
         point ? { ...point, actor: 'agent' as const } : null
       ));
     } else {
@@ -681,18 +900,22 @@ export const browserUseService = {
     return publicSession(session);
   },
 
-  async agentFillForm(sessionId: string, fields: Array<{ selector: string; value: string }>) {
+  async agentFillForm(sessionId: string, fields: Array<{ ref?: string; selector?: string; value: string }>) {
     const session = await this.getAgentSession(sessionId);
     const handle = handles.get(sessionId);
     if (!handle?.page) {
       throw new Error('Browser runtime handle is not available.');
     }
     for (const field of fields) {
-      await handle.page.locator(field.selector).first().fill(field.value, { timeout: 10_000 });
+      const target = resolveTarget(handle.page, { ref: field.ref, selector: field.selector });
+      if (!target) {
+        throw new Error('Each field needs a ref or a selector.');
+      }
+      await target.fill(field.value, { timeout: 10_000 });
     }
     session.lastAction = 'fill_form';
     if (fields[0]) {
-      session.cursor = await getActionPoint(handle.page, { selector: fields[0].selector }).then((point) => (
+      session.cursor = await getActionPoint(handle.page, { ref: fields[0].ref, selector: fields[0].selector }).then((point) => (
         point ? { ...point, actor: 'agent' as const } : null
       ));
     }
@@ -712,15 +935,19 @@ export const browserUseService = {
     return publicSession(session);
   },
 
-  async agentSelectOption(sessionId: string, selector: string, values: string[]) {
+  async agentSelectOption(sessionId: string, target: { ref?: string; selector?: string }, values: string[]) {
     const session = await this.getAgentSession(sessionId);
     const handle = handles.get(sessionId);
     if (!handle?.page) {
       throw new Error('Browser runtime handle is not available.');
     }
-    await handle.page.locator(selector).first().selectOption(values, { timeout: 10_000 });
+    const locator = resolveTarget(handle.page, target);
+    if (!locator) {
+      throw new Error('Provide the ref or selector of the select element.');
+    }
+    await locator.selectOption(values, { timeout: 10_000 });
     session.lastAction = 'select_option';
-    session.cursor = await getActionPoint(handle.page, { selector }).then((point) => (
+    session.cursor = await getActionPoint(handle.page, target).then((point) => (
       point ? { ...point, actor: 'agent' as const } : null
     ));
     await captureSession(session, handle.page);

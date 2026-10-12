@@ -4,6 +4,8 @@ import { browserUseService } from '@/modules/browser-use/browser-use.service.js'
 
 const router = express.Router();
 
+const optionalString = (value: unknown): string | undefined => (typeof value === 'string' && value ? value : undefined);
+
 function readBearerToken(header: unknown): string | null {
   if (typeof header !== 'string') {
     return null;
@@ -47,6 +49,9 @@ router.post('/tools/:toolName', async (req, res) => {
         break;
       case 'browser_click':
         result = await browserUseService.agentClick(sessionId, {
+          ref: optionalString(input.ref),
+          role: optionalString(input.role),
+          name: optionalString(input.name),
           selector: typeof input.selector === 'string' ? input.selector : undefined,
           text: typeof input.text === 'string' ? input.text : undefined,
           x: typeof input.x === 'number' ? input.x : undefined,
@@ -55,6 +60,7 @@ router.post('/tools/:toolName', async (req, res) => {
         break;
       case 'browser_type':
         result = await browserUseService.agentType(sessionId, {
+          ref: optionalString(input.ref),
           selector: typeof input.selector === 'string' ? input.selector : undefined,
           text: String(input.text || ''),
           submit: input.submit === true,
@@ -67,7 +73,8 @@ router.post('/tools/:toolName', async (req, res) => {
             ? input.fields.map((field) => {
               const record = field as Record<string, unknown>;
               return {
-                selector: String(record.selector || ''),
+                ref: optionalString(record.ref),
+                selector: optionalString(record.selector),
                 value: String(record.value || ''),
               };
             })
@@ -80,7 +87,7 @@ router.post('/tools/:toolName', async (req, res) => {
       case 'browser_select_option':
         result = await browserUseService.agentSelectOption(
           sessionId,
-          String(input.selector || ''),
+          { ref: optionalString(input.ref), selector: optionalString(input.selector) },
           Array.isArray(input.values) ? input.values.filter((value): value is string => typeof value === 'string') : [],
         );
         break;

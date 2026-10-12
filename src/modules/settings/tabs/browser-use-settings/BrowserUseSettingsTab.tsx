@@ -2,25 +2,44 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Download, Loader2 } from 'lucide-react';
 
-import { Button } from '@/shared/ui';
+import { Button, Input } from '@/shared/ui';
 import { api, readApiJson, ApiRequestError } from '@/shared/api';
 import SettingsCard from '@/modules/settings/SettingsCard';
 import SettingsRow from '@/modules/settings/SettingsRow';
 import SettingsSection from '@/modules/settings/SettingsSection';
 import SettingsToggle from '@/modules/settings/SettingsToggle';
+import BrowserAdminRightsNotice from '@/modules/settings/tabs/browser-use-settings/BrowserAdminRightsNotice';
+import type { BrowserEngineChoice } from '@/modules/settings/tabs/browser-use-settings/BrowserAdminRightsNotice';
+
+type BrowserUseEngine = 'playwright' | 'patchright';
+type BrowserUseBrowser = 'chromium' | 'chrome';
 
 type BrowserUseSettings = {
   enabled: boolean;
+  engine: BrowserUseEngine;
+  browser: BrowserUseBrowser;
+  /** Where Google Chrome is, when it is not where its installer puts it. */
+  chromePath: string | null;
 };
 
 type BrowserUseStatus = {
   enabled: boolean;
+  engine: BrowserUseEngine;
+  browser: BrowserUseBrowser;
+  browserExecutablePath: string | null;
+  isAdministrator: boolean;
+  platform: string;
   available: boolean;
+  /** Whether the chosen engine's package (Playwright or Patchright) loads. */
   playwrightInstalled: boolean;
+  /** Whether the chosen browser (Chromium or Google Chrome) was found. */
   chromiumInstalled: boolean;
   installInProgress: boolean;
   message: string;
 };
+
+/** Recommended first: Patchright hides the automation tells sites check for, and real Chrome looks like a person's browser. */
+const ENGINE_CHOICES: BrowserEngineChoice[] = ['patchright-chrome', 'patchright-chromium', 'playwright-chromium', 'playwright-chrome'];
 
 /** Rendered by Settings for the "browser" tab, configuring the browser automation integration. */
 const BROWSER_USE_ERROR_KEYS: Record<string, string> = {
@@ -46,11 +65,15 @@ export default function BrowserUseSettingsTab() {
   const [isSaving, setIsSaving] = useState(false);
   const [isInstalling, setIsInstalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The Chrome location as typed; saved on blur or Enter, not per keystroke,
+  // since each change of location ends the open browser sessions.
+  const [chromePathDraft, setChromePathDraft] = useState('');
 
   const loadSettings = useCallback(async () => {
     const settingsResponse = await api.browserUse.settings();
     const settingsData = await readApiJson<{ data: { settings: BrowserUseSettings } }>(settingsResponse);
     setSettings(settingsData.data.settings);
+    setChromePathDraft(settingsData.data.settings.chromePath ?? '');
   }, [t]);
 
   const loadStatus = useCallback(async () => {
@@ -80,6 +103,7 @@ export default function BrowserUseSettingsTab() {
       const response = await api.browserUse.saveSettings(nextSettings);
       const data = await readApiJson<{ data: { settings: BrowserUseSettings } }>(response);
       setSettings(data.data.settings);
+      setChromePathDraft(data.data.settings.chromePath ?? '');
       window.dispatchEvent(new Event('browserUseSettingsChanged'));
       setIsStatusLoading(true);
       await loadStatus();
@@ -100,7 +124,11 @@ export default function BrowserUseSettingsTab() {
       setIsStatusLoading(true);
       await loadStatus();
     } catch (err) {
-      setError(localizeApiError(err, 'browserUseSettings.installFailed', t));
+      // The server says what failed and, for Chrome, the admin commands to run.
+      const details = err instanceof ApiRequestError && typeof err.details === 'string' ? err.details : null;
+      setError(details ?? localizeApiError(err, 'browserUseSettings.installFailed', t));
+      setIsStatusLoading(true);
+      await loadStatus().catch(() => undefined);
     } finally {
       setIsStatusLoading(false);
       setIsInstalling(false);
@@ -108,6 +136,15 @@ export default function BrowserUseSettingsTab() {
   };
 
   const browserEnabled = settings?.enabled === true;
+  const engineChoice: BrowserEngineChoice = `${settings?.engine ?? 'playwright'}-${settings?.browser ?? 'chromium'}`;
+  const usesChrome = settings?.browser === 'chrome';
+  const engineLabel = settings?.engine === 'patchright' ? 'Patchright' : 'Playwright';
+  const saveChromePath = () => {
+    const next = chromePathDraft.trim() || null;
+    if (next !== (settings?.chromePath ?? null)) {
+      void updateSettings({ chromePath: next });
+    }
+  };
   const needsBrowserBinaries = Boolean(browserEnabled && status && (!status.playwrightInstalled || !status.chromiumInstalled));
   const runtimeLabel = (installed?: boolean) => {
     if (isStatusLoading && !status) {
@@ -139,13 +176,74 @@ export default function BrowserUseSettingsTab() {
             )}
           </SettingsRow>
 
+          <div className="space-y-3 px-4 py-4">
+            <div>
+              <label htmlFor="browser-use-engine" className="text-sm font-medium text-foreground">
+                {t('browserUseSettings.engineLabel')}
+              </label>
+              <p className="mt-0.5 text-sm text-muted-foreground">{t('browserUseSettings.engineDescription')}</p>
+            </div>
+            <select
+              id="browser-use-engine"
+              value={engineChoice}
+              disabled={!settings || isSaving}
+              onChange={(event) => {
+                const [engine, browser] = event.target.value.split('-') as [BrowserUseEngine, BrowserUseBrowser];
+                void updateSettings({ engine, browser });
+              }}
+              className="w-full max-w-md touch-manipulation rounded-lg border border-input bg-card p-2.5 pr-8 text-sm text-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+            >
+              {ENGINE_CHOICES.map((choice) => (
+                <option key={choice} value={choice}>{t(`browserUseSettings.engines.${choice}`)}</option>
+              ))}
+            </select>
+
+            {usesChrome && (
+              <div className="space-y-1">
+                <label htmlFor="browser-use-chrome-path" className="text-sm font-medium text-foreground">
+                  {t('browserUseSettings.chromePathLabel')}
+                </label>
+                <p className="text-sm text-muted-foreground">{t('browserUseSettings.chromePathDescription')}</p>
+                <Input
+                  id="browser-use-chrome-path"
+                  value={chromePathDraft}
+                  onChange={(event) => setChromePathDraft(event.target.value)}
+                  onBlur={saveChromePath}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') event.currentTarget.blur();
+                  }}
+                  disabled={isSaving}
+                  placeholder={status?.browserExecutablePath ?? t('browserUseSettings.chromePathPlaceholder')}
+                  spellCheck={false}
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  className="font-mono text-xs"
+                />
+                {status?.browserExecutablePath && status.chromiumInstalled && (
+                  <p className="break-all text-xs text-muted-foreground">
+                    {t('browserUseSettings.chromeFoundAt', { path: status.browserExecutablePath })}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {settings && (
+              <BrowserAdminRightsNotice
+                choice={engineChoice}
+                platform={status?.platform ?? 'linux'}
+                isAdministrator={status?.isAdministrator === true}
+                t={t}
+              />
+            )}
+          </div>
+
           <div className="space-y-4 px-4 py-4">
             <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
               <span className="rounded-md border border-border px-2 py-1">
-                {t('browserUseSettings.playwrightLabel')}: {runtimeLabel(status?.playwrightInstalled)}
+                {engineLabel}: {runtimeLabel(status?.playwrightInstalled)}
               </span>
               <span className="rounded-md border border-border px-2 py-1">
-                {t('browserUseSettings.chromiumLabel')}: {runtimeLabel(status?.chromiumInstalled)}
+                {usesChrome ? t('browserUseSettings.chromeLabel') : t('browserUseSettings.chromiumLabel')}: {runtimeLabel(status?.chromiumInstalled)}
               </span>
               <span className="rounded-md border border-border px-2 py-1">
                 {t('browserUseSettings.statusPrefix')}: {isStatusLoading && !status
@@ -163,7 +261,7 @@ export default function BrowserUseSettingsTab() {
                 <div className="min-w-0 space-y-1">
                   <div className="text-sm font-medium text-foreground">{t('browserUseSettings.runtimeRequiredTitle')}</div>
                   <p className="text-sm text-muted-foreground">
-                    {t('browserUseSettings.runtimeRequiredFallback')}
+                    {status?.message || t('browserUseSettings.runtimeRequiredFallback')}
                   </p>
                 </div>
 

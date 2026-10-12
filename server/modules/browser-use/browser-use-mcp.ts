@@ -20,7 +20,32 @@ const textResponse = (text: string) => ({
   content: [{ type: 'text', text }],
 });
 
-const jsonResponse = (value: unknown) => textResponse(JSON.stringify(value, null, 2));
+/**
+ * Every tool's result, minus the screenshot. The session record carries the
+ * latest screenshot as a base64 data URL for the Browser tab; sent back as
+ * text it was tens of thousands of characters per call that the model could
+ * not even see as an image. browser_take_screenshot returns it as one.
+ */
+const withoutScreenshots = (value: unknown): unknown => JSON.parse(JSON.stringify(value, (key, field) => (
+  key === 'screenshotDataUrl' ? undefined : field
+)));
+
+const jsonResponse = (value: unknown) => textResponse(JSON.stringify(withoutScreenshots(value), null, 2));
+
+/** The latest screenshot as an MCP image block, with the page it shows. */
+const screenshotResponse = (value: unknown) => {
+  const session = ((value as { session?: Record<string, unknown> } | null)?.session ?? {}) as Record<string, unknown>;
+  const match = /^data:(image\/[a-z]+);base64,(.+)$/.exec(String(session.screenshotDataUrl ?? ''));
+  if (!match) {
+    return textResponse('No screenshot is available for this session yet.');
+  }
+  return {
+    content: [
+      { type: 'image', data: match[2], mimeType: match[1] },
+      { type: 'text', text: JSON.stringify({ url: session.url ?? null, title: session.title ?? null }) },
+    ],
+  };
+};
 
 const readString = (value: unknown, name: string): string => {
   if (typeof value !== 'string' || value.trim() === '') {
@@ -86,12 +111,12 @@ const tools: ToolDefinition[] = [
   },
   {
     name: 'browser_snapshot',
-    description: 'Capture current page metadata, screenshot data URL, and visible body text for a Browser session.',
+    description: 'Read the page as an accessibility tree: roles, names and values, with every element you can act on tagged [ref=eN]. Pass that ref to browser_click, browser_type, browser_fill_form or browser_select_option. Take a new snapshot after the page changes; refs only hold for the snapshot they came from. Prefer this to screenshots for reading and acting.',
     inputSchema: sessionIdSchema,
   },
   {
     name: 'browser_take_screenshot',
-    description: 'Capture the latest screenshot for a Browser session.',
+    description: 'See the page as an image, for layout or visual details the accessibility tree does not convey.',
     inputSchema: sessionIdSchema,
   },
   {
@@ -108,11 +133,14 @@ const tools: ToolDefinition[] = [
   },
   {
     name: 'browser_click',
-    description: 'Click an element by CSS selector, visible text, or x/y coordinates.',
+    description: 'Click an element. Best: its ref from browser_snapshot. Otherwise role and name (e.g. role "button", name "Sign in"), a CSS selector, visible text, or x/y coordinates.',
     inputSchema: {
       type: 'object',
       properties: {
         sessionId: { type: 'string' },
+        ref: { type: 'string', description: 'Element ref from browser_snapshot, e.g. e12.' },
+        role: { type: 'string', description: 'ARIA role, e.g. button, link, textbox, checkbox.' },
+        name: { type: 'string', description: 'Accessible name to match with role.' },
         selector: { type: 'string' },
         text: { type: 'string' },
         x: { type: 'number' },
@@ -123,11 +151,12 @@ const tools: ToolDefinition[] = [
   },
   {
     name: 'browser_type',
-    description: 'Type text into the focused page or fill a CSS selector. Set submit to press Enter after typing.',
+    description: 'Fill a field (its ref from browser_snapshot, or a CSS selector), or type into whatever has focus. Set submit to press Enter after typing.',
     inputSchema: {
       type: 'object',
       properties: {
         sessionId: { type: 'string' },
+        ref: { type: 'string', description: 'Element ref from browser_snapshot, e.g. e12.' },
         selector: { type: 'string' },
         text: { type: 'string' },
         submit: { type: 'boolean' },
@@ -137,7 +166,7 @@ const tools: ToolDefinition[] = [
   },
   {
     name: 'browser_fill_form',
-    description: 'Fill multiple form fields using CSS selectors.',
+    description: 'Fill several form fields at once, each by its ref from browser_snapshot or a CSS selector.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -147,10 +176,11 @@ const tools: ToolDefinition[] = [
           items: {
             type: 'object',
             properties: {
+              ref: { type: 'string', description: 'Element ref from browser_snapshot, e.g. e12.' },
               selector: { type: 'string' },
               value: { type: 'string' },
             },
-            required: ['selector', 'value'],
+            required: ['value'],
           },
         },
       },
@@ -171,15 +201,16 @@ const tools: ToolDefinition[] = [
   },
   {
     name: 'browser_select_option',
-    description: 'Select option values in a select element found by CSS selector.',
+    description: 'Choose options in a select element, by its ref from browser_snapshot or a CSS selector.',
     inputSchema: {
       type: 'object',
       properties: {
         sessionId: { type: 'string' },
+        ref: { type: 'string', description: 'Element ref from browser_snapshot, e.g. e12.' },
         selector: { type: 'string' },
         values: { type: 'array', items: { type: 'string' } },
       },
-      required: ['sessionId', 'selector', 'values'],
+      required: ['sessionId', 'values'],
     },
   },
   {
@@ -228,7 +259,7 @@ async function callTool(name: string, args: Record<string, unknown>) {
     case 'browser_snapshot':
       return jsonResponse(await callBrowserUseApi(name, { sessionId: readString(args.sessionId, 'sessionId') }));
     case 'browser_take_screenshot': {
-      return jsonResponse(await callBrowserUseApi(name, { sessionId: readString(args.sessionId, 'sessionId') }));
+      return screenshotResponse(await callBrowserUseApi(name, { sessionId: readString(args.sessionId, 'sessionId') }));
     }
     case 'browser_navigate':
       return jsonResponse(await callBrowserUseApi(name, {
@@ -238,6 +269,9 @@ async function callTool(name: string, args: Record<string, unknown>) {
     case 'browser_click':
       return jsonResponse(await callBrowserUseApi(name, {
         sessionId: readString(args.sessionId, 'sessionId'),
+        ref: readOptionalString(args.ref),
+        role: readOptionalString(args.role),
+        name: readOptionalString(args.name),
         selector: readOptionalString(args.selector),
         text: readOptionalString(args.text),
         x: readNumber(args.x),
@@ -246,6 +280,7 @@ async function callTool(name: string, args: Record<string, unknown>) {
     case 'browser_type':
       return jsonResponse(await callBrowserUseApi(name, {
         sessionId: readString(args.sessionId, 'sessionId'),
+        ref: readOptionalString(args.ref),
         selector: readOptionalString(args.selector),
         text: readString(args.text, 'text'),
         submit: args.submit === true,
@@ -254,10 +289,12 @@ async function callTool(name: string, args: Record<string, unknown>) {
       const fields = Array.isArray(args.fields)
         ? args.fields.map((field) => {
           const record = field as Record<string, unknown>;
-          return {
-            selector: readString(record.selector, 'field.selector'),
-            value: readString(record.value, 'field.value'),
-          };
+          const ref = readOptionalString(record.ref);
+          const selector = readOptionalString(record.selector);
+          if (!ref && !selector) {
+            throw new Error('Each field needs a ref or a selector.');
+          }
+          return { ref, selector, value: readString(record.value, 'field.value') };
         })
         : [];
       return jsonResponse(await callBrowserUseApi(name, {
@@ -273,7 +310,8 @@ async function callTool(name: string, args: Record<string, unknown>) {
     case 'browser_select_option':
       return jsonResponse(await callBrowserUseApi(name, {
         sessionId: readString(args.sessionId, 'sessionId'),
-        selector: readString(args.selector, 'selector'),
+        ref: readOptionalString(args.ref),
+        selector: readOptionalString(args.selector),
         values: Array.isArray(args.values) ? args.values.filter((value): value is string => typeof value === 'string') : [],
       }));
     case 'browser_wait_for':
