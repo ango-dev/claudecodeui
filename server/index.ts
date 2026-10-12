@@ -267,6 +267,23 @@ app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
     });
   }
 
+  // Express and body-parser report the client's mistakes (a malformed URL
+  // escape, unparsable JSON, a body over the size limit) as errors carrying a
+  // 4xx status; they are not server faults, so they keep that status and are
+  // not logged as crashes.
+  const clientStatus = (err as { status?: unknown; statusCode?: unknown } | null)?.status
+    ?? (err as { statusCode?: unknown } | null)?.statusCode;
+  if (typeof clientStatus === 'number' && clientStatus >= 400 && clientStatus < 500) {
+    const exposed = (err as { expose?: unknown }).expose === true && err instanceof Error;
+    return res.status(clientStatus).json({
+      success: false,
+      error: {
+        code: 'BAD_REQUEST',
+        message: exposed ? err.message : 'Bad request',
+      },
+    });
+  }
+
   console.error(err);
 
   return res.status(500).json({

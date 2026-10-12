@@ -497,7 +497,7 @@ Custom commands can be created in:
  */
 router.post("/list", async (req, res) => {
   try {
-    const { projectPath } = req.body;
+    const projectPath = typeof req.body?.projectPath === "string" ? req.body.projectPath : null;
     const allCommands = [...builtInCommands];
 
     // Scan project-level commands (.claude/commands/)
@@ -562,14 +562,20 @@ router.post("/execute", async (req, res) => {
   try {
     const { commandName, commandPath, args = [], context = {} } = req.body;
 
-    if (!commandName) {
+    if (!commandName || typeof commandName !== "string") {
       return res.status(400).json({
         error: "Command name is required",
       });
     }
+    if (commandPath !== undefined && typeof commandPath !== "string") {
+      return res.status(400).json({
+        error: "Command path must be a string",
+      });
+    }
 
     // Handle built-in commands
-    const handler = builtInHandlers[commandName];
+    // Own keys only: names like "toString" or "__proto__" are not commands.
+    const handler = Object.hasOwn(builtInHandlers, commandName) ? builtInHandlers[commandName] : undefined;
     if (handler) {
       try {
         const result = await handler(args, context);

@@ -183,3 +183,34 @@ test('help leaves Claude Code\'s own commands out for other providers', async ()
   assert.ok(commands.some((command) => command.name === '/help'));
   assert.equal(commands.filter((command) => command.namespace === 'Claude Code').length, 0);
 });
+
+test('execute treats only its own built-ins as commands', async () => {
+  for (const commandName of ['toString', '__proto__', 'constructor']) {
+    const router = createCommandsRouter({
+      fileSystem: {} as typeof import('node:fs/promises'),
+      homeDirectory: () => '/home/test',
+      appRoot: '/app',
+      models: createModelsService() as never,
+      claudeCodeCommands: async () => [],
+      runtime: {
+        uptime: () => 0,
+        memoryUsage: () => ({ rss: 0, heapTotal: 0, heapUsed: 0, external: 0, arrayBuffers: 0 }),
+        version: 'v22', platform: 'linux', pid: 1,
+      },
+    });
+    const app = express().use(express.json()).use('/api/commands', router);
+    const server = app.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    try {
+      const address = server.address() as AddressInfo;
+      const response = await fetch(`http://127.0.0.1:${address.port}/api/commands/execute`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ commandName, context: {} }),
+      });
+      // Not a built-in, and no command file was named: a client error.
+      assert.equal(response.status, 400, commandName);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }
+});

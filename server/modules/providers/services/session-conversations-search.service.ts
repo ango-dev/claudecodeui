@@ -8,6 +8,13 @@ import { rgPath } from '@vscode/ripgrep';
 import { stripAnsiSequences } from '@/shared/utils.js';
 import { projectsDb, sessionsDb } from '@/modules/database/index.js';
 
+/**
+ * The bundled ripgrep, or one on PATH when the package's binary was never
+ * downloaded (an install without network access, or with scripts disabled),
+ * which otherwise failed every content search.
+ */
+const ripgrepExecutable = fsSync.existsSync(rgPath) ? rgPath : 'rg';
+
 type AnyRecord = Record<string, any>;
 type SearchableProvider = 'claude' | 'codex';
 
@@ -651,7 +658,7 @@ async function runRipgrepFilesWithMatches(
       pattern,
       ...filePaths,
     ];
-    const rg = spawn(rgPath, args, {
+    const rg = spawn(ripgrepExecutable, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     });

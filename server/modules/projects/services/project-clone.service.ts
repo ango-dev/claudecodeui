@@ -94,13 +94,17 @@ function buildGitCloneEnvironment(githubToken: string | null): NodeJS.ProcessEnv
     return { ...process.env, GIT_TERMINAL_PROMPT: '0' };
   }
 
+  // Appended after any env-only config the server was started with (a proxy,
+  // say), which overwriting entries 0 and 1 used to discard.
+  const inheritedCount = Number.parseInt(process.env.GIT_CONFIG_COUNT ?? '', 10);
+  const first = Number.isInteger(inheritedCount) && inheritedCount > 0 ? inheritedCount : 0;
   return {
     ...process.env,
-    GIT_CONFIG_COUNT: '2',
-    GIT_CONFIG_KEY_0: 'credential.helper',
-    GIT_CONFIG_VALUE_0: '',
-    GIT_CONFIG_KEY_1: GITHUB_TOKEN_CREDENTIAL_SCOPE,
-    GIT_CONFIG_VALUE_1: '!f() { echo username=x-access-token; echo "password=$CLOUDCLI_GITHUB_TOKEN"; }; f',
+    GIT_CONFIG_COUNT: String(first + 2),
+    [`GIT_CONFIG_KEY_${first}`]: 'credential.helper',
+    [`GIT_CONFIG_VALUE_${first}`]: '',
+    [`GIT_CONFIG_KEY_${first + 1}`]: GITHUB_TOKEN_CREDENTIAL_SCOPE,
+    [`GIT_CONFIG_VALUE_${first + 1}`]: '!f() { echo username=x-access-token; echo "password=$CLOUDCLI_GITHUB_TOKEN"; }; f',
     CLOUDCLI_GITHUB_TOKEN: githubToken,
     GIT_TERMINAL_PROMPT: '0',
   };

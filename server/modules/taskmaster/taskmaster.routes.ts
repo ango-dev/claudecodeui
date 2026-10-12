@@ -36,6 +36,16 @@ type TaskmasterRouterDependencies = {
  * business seeing them. `connectedClients` is the `/ws`-only set every other
  * broadcast in the server already uses.
  */
+/**
+ * A PRD file name inside `.taskmaster/docs`: letters, digits, spaces, dots and
+ * dashes ending in .txt or .md, so never a path. Every route that takes one
+ * checks it; reading, parsing or writing a name like `../../.claude.json`
+ * reached any file the server could.
+ */
+function isPrdFileName(value: unknown): value is string {
+    return typeof value === 'string' && /^[\w\-. ]+\.(txt|md)$/.test(value);
+}
+
 function broadcastTaskMasterUpdate(type, projectId, payloadKey, payload) {
     if (!projectId) return;
     const message = JSON.stringify({
@@ -441,7 +451,7 @@ export function createTaskmasterRouter(dependencies: TaskmasterRouterDependencie
             }
 
             // Validate filename
-            if (!fileName.match(/^[\w\-. ]+\.(txt|md)$/)) {
+            if (!isPrdFileName(fileName)) {
                 return res.status(400).json({
                     error: 'Invalid filename',
                     message: 'Filename must end with .txt or .md and contain only alphanumeric characters, spaces, dots, and dashes'
@@ -514,6 +524,13 @@ export function createTaskmasterRouter(dependencies: TaskmasterRouterDependencie
     router.get('/prd/:projectId/:fileName', async (req, res) => {
         try {
             const { projectId, fileName } = req.params;
+
+            if (!isPrdFileName(fileName)) {
+                return res.status(400).json({
+                    error: 'Invalid filename',
+                    message: 'Filename must end with .txt or .md and contain only alphanumeric characters, spaces, dots, and dashes'
+                });
+            }
 
             const projectPath = await resolveProjectPathFromId(projectId);
             if (!projectPath) {
@@ -824,6 +841,13 @@ export function createTaskmasterRouter(dependencies: TaskmasterRouterDependencie
         try {
             const { projectId } = req.params;
             const { fileName = 'prd.txt', numTasks, append = false } = req.body;
+
+            if (!isPrdFileName(fileName)) {
+                return res.status(400).json({
+                    error: 'Invalid filename',
+                    message: 'Filename must end with .txt or .md and contain only alphanumeric characters, spaces, dots, and dashes'
+                });
+            }
 
             const projectPath = await resolveProjectPathFromId(projectId);
             if (!projectPath) {
@@ -1351,6 +1375,13 @@ Description of the business problem, data sources, and expected insights.
             const { projectId } = req.params;
             const { templateId, fileName = 'prd.txt', customizations = {} } = req.body;
 
+            if (!isPrdFileName(fileName)) {
+                return res.status(400).json({
+                    error: 'Invalid filename',
+                    message: 'Filename must end with .txt or .md and contain only alphanumeric characters, spaces, dots, and dashes'
+                });
+            }
+
             if (!templateId) {
                 return res.status(400).json({
                     error: 'Missing required parameter',
@@ -1381,9 +1412,10 @@ Description of the business problem, data sources, and expected insights.
             let content = template.content;
 
             // Replace placeholders with customizations
+            // Literal replacement: a placeholder such as "[Project Name]" is
+            // not a pattern, and a value is not a replacement template.
             for (const [key, value] of Object.entries(customizations)) {
-                const placeholder = `[${key}]`;
-                content = content.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&'), 'g'), value);
+                content = content.split(`[${key}]`).join(String(value));
             }
 
             // Ensure .taskmaster/docs directory exists

@@ -199,3 +199,40 @@ test('TaskMaster broadcasts reach only the tracked chat clients', async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+test('PRD routes refuse a file name that would leave .taskmaster/docs', async () => {
+  const touchedPaths: string[] = [];
+  const recordPath = async (filePath: string) => { touchedPaths.push(filePath); };
+  const router = createTaskmasterRouter({
+    fileSystem: { constants: { R_OK: 4, F_OK: 0 } } as typeof import('node:fs'),
+    fileSystemPromises: {
+      access: recordPath,
+      readFile: async (filePath: string) => { touchedPaths.push(filePath); return 'secret'; },
+      writeFile: recordPath,
+      mkdir: async () => undefined,
+      stat: async () => ({ size: 1, mtime: new Date(), birthtime: new Date() }),
+    } as unknown as typeof import('node:fs/promises'),
+    spawnProcess: (() => { throw new Error('spawn should not run'); }) as unknown as
+      Parameters<typeof createTaskmasterRouter>[0]['spawnProcess'],
+    resolveProjectPathById: () => '/projects/demo',
+    taskmasterService: {} as Parameters<typeof createTaskmasterRouter>[0]['taskmasterService'],
+  });
+  const app = express().use(express.json()).use('/api/taskmaster', router);
+  const server = app.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  try {
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/taskmaster`;
+    const post = (route: string, body: unknown) => fetch(`${base}${route}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    });
+
+    const read = await fetch(`${base}/prd/project-1/..%2F..%2F..%2Froot%2F.claude.json`);
+    const parse = await post('/parse-prd/project-1', { fileName: '../../../etc/passwd' });
+    const apply = await post('/apply-template/project-1', { templateId: 'web-app', fileName: '../../.bashrc' });
+
+    assert.deepEqual([read.status, parse.status, apply.status], [400, 400, 400]);
+    assert.deepEqual(touchedPaths, [], 'no file outside the docs folder was read or written');
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});

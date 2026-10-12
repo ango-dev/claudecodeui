@@ -306,12 +306,14 @@ for (const [label, input, token] of [
     assert.equal(cloneUrl, 'https://github.com/example/repo.git');
     assert.equal(clonePath, path.join('/workspace/root', 'repo'));
 
+    // After whatever env-only config the server itself was started with.
+    const first = Number.parseInt(process.env.GIT_CONFIG_COUNT ?? '0', 10) || 0;
     assert.equal(environment.CLOUDCLI_GITHUB_TOKEN, token);
-    assert.equal(environment.GIT_CONFIG_COUNT, '2');
-    assert.equal(environment.GIT_CONFIG_KEY_0, 'credential.helper');
-    assert.equal(environment.GIT_CONFIG_VALUE_0, '');
-    assert.equal(environment.GIT_CONFIG_KEY_1, 'credential.https://github.com.helper');
-    assert.match(environment.GIT_CONFIG_VALUE_1 ?? '', /\$CLOUDCLI_GITHUB_TOKEN/);
+    assert.equal(environment.GIT_CONFIG_COUNT, String(first + 2));
+    assert.equal(environment[`GIT_CONFIG_KEY_${first}`], 'credential.helper');
+    assert.equal(environment[`GIT_CONFIG_VALUE_${first}`], '');
+    assert.equal(environment[`GIT_CONFIG_KEY_${first + 1}`], 'credential.https://github.com.helper');
+    assert.match(environment[`GIT_CONFIG_VALUE_${first + 1}`] ?? '', /\$CLOUDCLI_GITHUB_TOKEN/);
     assert.equal(environment.GIT_TERMINAL_PROMPT, '0');
 
     // The helper's command line is itself a process argv, so the token must be
@@ -330,8 +332,29 @@ test('startCloneProject leaves the credential helper unset when no token was giv
 
   assert.equal(cloneUrl, 'https://github.com/example/repo.git');
   assert.equal(environment.GIT_TERMINAL_PROMPT, '0');
-  assert.equal(environment.GIT_CONFIG_COUNT, undefined);
+  assert.equal(environment.GIT_CONFIG_COUNT, process.env.GIT_CONFIG_COUNT, 'the inherited config is left as it was');
   assert.equal(environment.CLOUDCLI_GITHUB_TOKEN, undefined);
+});
+
+test('startCloneProject keeps env-only git config the server was started with', async () => {
+  const saved = { ...process.env };
+  process.env.GIT_CONFIG_COUNT = '1';
+  process.env.GIT_CONFIG_KEY_0 = 'http.proxy';
+  process.env.GIT_CONFIG_VALUE_0 = 'http://proxy.internal:3128';
+  try {
+    const { environment } = await captureSpawnCall({ newGithubToken: 'ghp_token' });
+
+    assert.equal(environment.GIT_CONFIG_COUNT, '3');
+    assert.equal(environment.GIT_CONFIG_KEY_0, 'http.proxy');
+    assert.equal(environment.GIT_CONFIG_VALUE_0, 'http://proxy.internal:3128');
+    assert.equal(environment.GIT_CONFIG_KEY_1, 'credential.helper');
+    assert.equal(environment.GIT_CONFIG_KEY_2, 'credential.https://github.com.helper');
+  } finally {
+    for (const key of ['GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0']) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  }
 });
 
 /**
