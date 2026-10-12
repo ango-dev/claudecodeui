@@ -36,6 +36,50 @@ export function scrollDebugLog(message: string): void {
   render?.();
 }
 
+/**
+ * Copies the log. The Clipboard API needs HTTPS, which a self-hosted server
+ * reached over the local network often is not, so the text is also put in a
+ * full-screen box: copied from there where the browser allows it, and
+ * selectable by hand where it does not.
+ */
+function copyLog(text: string): void {
+  const sheet = document.createElement('div');
+  sheet.setAttribute('style', [
+    'position:fixed', 'inset:0', 'z-index:2147483647', 'background:rgba(0,0,0,.9)', 'display:flex',
+    'flex-direction:column', 'gap:8px', 'padding:calc(env(safe-area-inset-top) + 12px) 12px 12px',
+  ].join(';'));
+  const status = document.createElement('div');
+  status.setAttribute('style', 'color:#fff;font:13px system-ui');
+  const box = document.createElement('textarea');
+  box.value = text;
+  box.readOnly = true;
+  box.setAttribute('style', 'flex:1;width:100%;font:11px/1.35 ui-monospace,monospace;color:#000 !important;-webkit-text-fill-color:#000 !important;background:#fff !important;opacity:1 !important;border-radius:6px;padding:6px');
+  const close = document.createElement('button');
+  close.textContent = 'Close';
+  close.setAttribute('style', 'background:#fff;color:#000;border-radius:6px;padding:8px;font:14px system-ui');
+  close.addEventListener('click', () => sheet.remove());
+  sheet.append(status, box, close);
+  document.body.appendChild(sheet);
+
+  box.focus();
+  box.setSelectionRange(0, text.length);
+  let copied = false;
+  try {
+    copied = document.execCommand('copy');
+  } catch {
+    copied = false;
+  }
+  status.textContent = copied
+    ? 'Copied. Paste it into the chat.'
+    : 'Tap and hold in the box, Select All, then Copy.';
+  if (!copied && navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).then(
+      () => { status.textContent = 'Copied. Paste it into the chat.'; },
+      () => { /* keep the manual instructions */ },
+    );
+  }
+}
+
 /** The two frames that called into the scrollTop setter, as file:line:col. */
 function describeCaller(): string {
   const frames = (new Error().stack ?? '').split('\n').map((line) => line.trim()).filter(Boolean);
@@ -104,9 +148,7 @@ export function attachScrollDebug(container: HTMLElement): (() => void) | undefi
     button.addEventListener('click', onClick);
     buttons.appendChild(button);
   };
-  makeButton('Copy log', () => {
-    void navigator.clipboard?.writeText(lines.join('\n')).then(() => scrollDebugLog('(copied)'));
-  });
+  makeButton('Copy log', () => copyLog(lines.join('\n')));
   makeButton('Clear', () => { lines.length = 0; render?.(); });
   makeButton('Off', () => {
     try { window.localStorage.removeItem(STORAGE_KEY); } catch { /* storage unavailable */ }

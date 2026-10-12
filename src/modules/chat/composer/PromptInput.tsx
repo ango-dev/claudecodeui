@@ -157,7 +157,10 @@ export const PromptInputButton = React.forwardRef<HTMLButtonElement, PromptInput
         type="button"
         variant="ghost"
         size="icon"
-        className={cn('h-8 w-8 [&_svg]:size-4', className)}
+        // A colour of its own: an inherited one reaches this deep in the page
+        // only after every ancestor's colour transition has run, so after a
+        // switch to dark mode the icon stayed dark on dark for a moment.
+        className={cn('h-8 w-8 text-foreground [&_svg]:size-4', className)}
         {...props}
       >
         {children}
