@@ -227,20 +227,27 @@ export default function SidebarModals({
                       ?
                     </p>
                     <p className="mt-3 text-xs text-muted-foreground">
-                      {t('deleteConfirmation.archiveSessionsNotice', { count: pendingDeletion.sessionIds.length })}
+                      {pendingDeletion.isArchived
+                        ? t('deleteConfirmation.archivedSessionsNotice', {
+                          count: pendingDeletion.sessionIds.length,
+                          defaultValue: 'These sessions are already archived. Deleting them removes them for good.',
+                        })
+                        : t('deleteConfirmation.archiveSessionsNotice', { count: pendingDeletion.sessionIds.length })}
                     </p>
                   </div>
                 </div>
               </div>
               <div className="flex flex-col gap-2 border-t border-border bg-muted/30 p-4">
-                <Button
-                  variant="outline"
-                  className="w-full justify-start"
-                  onClick={() => onConfirmDeleteSessions(false)}
-                >
-                  <EyeOff className="mr-2 h-4 w-4" />
-                  {t('deleteConfirmation.archiveSessions', { count: pendingDeletion.sessionIds.length })}
-                </Button>
+                {!pendingDeletion.isArchived && (
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start"
+                    onClick={() => onConfirmDeleteSessions(false)}
+                  >
+                    <EyeOff className="mr-2 h-4 w-4" />
+                    {t('deleteConfirmation.archiveSessions', { count: pendingDeletion.sessionIds.length })}
+                  </Button>
+                )}
                 <Button
                   variant="destructive"
                   className="w-full justify-start bg-red-600 text-white hover:bg-red-700"

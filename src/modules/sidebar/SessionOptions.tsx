@@ -39,6 +39,8 @@ type SessionOptionsProps = {
   openAt?: { x: number; y: number } | null;
   /** Keeps the "⋯" button visible on touch screens, which cannot hover to reveal it. */
   showOnTouch?: boolean;
+  /** View only (the Running tab): the menu offers copying the session id and nothing else. */
+  readOnly?: boolean;
   className?: string;
   t: TFunction;
 };
@@ -71,6 +73,7 @@ export default function SessionOptions({
   onArchive,
   openAt,
   showOnTouch = false,
+  readOnly = false,
   className,
   t,
 }: SessionOptionsProps) {
@@ -172,17 +175,17 @@ export default function SessionOptions({
           // Plain, compact items as in Claude Code's menus.
           menuClassName="w-[220px] rounded-xl p-1.5 shadow-xl"
           items={[
-            ...(projectId !== null ? [{
+            ...(projectId !== null && !readOnly ? [{
               key: 'rename',
               label: 'Rename',
               onSelect: () => onStartEditingSession(projectId, sessionId, sessionName),
             }] : []),
-            ...(onSelectForBulk && !isProcessing ? [{
+            ...(onSelectForBulk && !isProcessing && !readOnly ? [{
               key: 'select',
               label: 'Select',
               onSelect: onSelectForBulk,
             }] : []),
-            ...(canFork && onFork ? [{
+            ...(canFork && onFork && !readOnly ? [{
               key: 'fork',
               label: 'Fork',
               onSelect: onFork,
@@ -195,13 +198,13 @@ export default function SessionOptions({
               closeOnSelect: false,
               onSelect: handleCopyAction,
             },
-            ...(onArchive && canDelete && !isProcessing ? [{
+            ...(onArchive && canDelete && !isProcessing && !readOnly ? [{
               key: 'archive',
               label: 'Archive',
               showDividerBefore: true,
               onSelect: onArchive,
             }] : []),
-            ...(canDelete && !isProcessing ? [{
+            ...(canDelete && !isProcessing && !readOnly ? [{
               key: 'delete',
               label: 'Delete',
               isDanger: true,

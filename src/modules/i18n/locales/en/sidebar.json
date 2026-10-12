@@ -124,7 +124,8 @@
     "restoreSessionError": "Error restoring session. Please try again.",
     "forkSessionError": "Could not fork this session. Please try again.",
     "deleteSessionsPartialFailure_one": "{{count}} session out of {{total}} could not be deleted. Please try again.",
-    "deleteSessionsPartialFailure_other": "{{count}} of {{total}} sessions could not be deleted. Please try again."
+    "deleteSessionsPartialFailure_other": "{{count}} of {{total}} sessions could not be deleted. Please try again.",
+    "restoreSessionsPartialFailure": "Could not restore {{count}} of {{total}} sessions. Please try again."
   },
   "version": {
     "updateAvailable": "Update available",
@@ -176,6 +177,7 @@
     "archiveSessions_one": "Archive {{count}} session",
     "archiveSessions_other": "Archive {{count}} sessions",
     "archiveSessionsNotice_one": "Archive keeps the session out of the active list while preserving its history.",
-    "archiveSessionsNotice_other": "Archive keeps the sessions out of the active list while preserving their history."
+    "archiveSessionsNotice_other": "Archive keeps the sessions out of the active list while preserving their history.",
+    "archivedSessionsNotice": "These sessions are already archived. Deleting them removes them for good."
   }
 }

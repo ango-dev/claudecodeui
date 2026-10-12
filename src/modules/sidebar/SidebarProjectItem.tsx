@@ -48,7 +48,9 @@ type SidebarProjectItemProps = {
   onSetSessionSelection: (selection: SidebarSessionSelection) => void;
   onToggleSessionSelected: (projectId: string, sessionId: string) => void;
   onCancelSessionSelection: () => void;
-  onDeleteSelectedSessions: (sessionIds: string[]) => void;
+  onDeleteSelectedSessions: (sessionIds: string[], options?: { isArchived?: boolean }) => void;
+  /** View only (the Running tab): no project menu, New Session or session editing. */
+  readOnly?: boolean;
   /** Archives sessions at once; see SidebarProjectListProps. */
   onArchiveSessions?: (sessionIds: string[]) => void;
   t: TFunction;
@@ -99,6 +101,7 @@ function SidebarProjectItem({
   onToggleSessionSelected,
   onCancelSessionSelection,
   onDeleteSelectedSessions,
+  readOnly = false,
   onArchiveSessions,
   t,
 }: SidebarProjectItemProps) {
@@ -162,7 +165,7 @@ function SidebarProjectItem({
           )}
           onClick={selectAndToggleProject}
           onContextMenu={(event) => {
-            if (isEditing) return;
+            if (isEditing || readOnly) return;
             event.preventDefault();
             setProjectMenuAt({ x: event.clientX, y: event.clientY });
           }}
@@ -244,7 +247,7 @@ function SidebarProjectItem({
             )}
           </div>
         </Button>
-        {!isEditing && (
+        {!isEditing && !readOnly && (
           <ActionMenu
             label={t('tooltips.projectOptions', { defaultValue: 'Project options' })}
             ariaLabel={`${t('tooltips.projectOptions', { defaultValue: 'Project options' })}: ${project.displayName}`}
@@ -313,6 +316,7 @@ function SidebarProjectItem({
         onCancelSessionSelection={onCancelSessionSelection}
         onDeleteSelectedSessions={onDeleteSelectedSessions}
         onArchiveSessions={onArchiveSessions}
+        readOnly={readOnly}
         t={t}
       />
     </div>

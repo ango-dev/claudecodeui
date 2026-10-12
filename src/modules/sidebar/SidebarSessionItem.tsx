@@ -44,6 +44,8 @@ type SidebarSessionItemProps = {
   onArchiveSessions?: (sessionIds: string[]) => void;
   /** Right-click while selecting: opens the list's bulk menu at the pointer. Stable identity. */
   onBulkContextMenu?: (projectId: string, sessionId: string, point: { x: number; y: number }) => void;
+  /** View only (the Running tab): no selecting, and the menu only copies the id. */
+  readOnly?: boolean;
   t: TFunction;
 };
 
@@ -71,6 +73,7 @@ function SidebarSessionItem({
   onModifierSelect,
   onArchiveSessions,
   onBulkContextMenu,
+  readOnly = false,
   t,
 }: SidebarSessionItemProps) {
   const sessionView = createSessionViewModel(session, currentTime, t);
@@ -166,7 +169,7 @@ function SidebarSessionItem({
           // Code. Middle-click still opens the href in a new tab. While
           // selecting, a plain click ticks the row too.
           onClick={(event) => {
-            if (event.shiftKey || event.metaKey || event.ctrlKey) {
+            if (!readOnly && (event.shiftKey || event.metaKey || event.ctrlKey)) {
               event.preventDefault();
               if (!isProcessing) {
                 onModifierSelect(project.projectId, session.id, event.shiftKey ? 'range' : 'toggle');
@@ -247,6 +250,7 @@ function SidebarSessionItem({
             onArchive={onArchiveSessions ? () => onArchiveSessions([session.id]) : undefined}
             openAt={contextMenuAt}
             showOnTouch={isSelected}
+            readOnly={readOnly}
             t={t}
           />
         )}

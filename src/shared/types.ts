@@ -1537,8 +1537,13 @@ export type SidebarProjectListProps = SessionRowActions & {
   onToggleSessionSelected: (projectId: string, sessionId: string) => void;
   /** Leaves bulk-selection mode, discarding the ticked rows. */
   onCancelSessionSelection: () => void;
-  /** Opens the bulk delete confirmation for the ids the list resolved as still deletable. */
-  onDeleteSelectedSessions: (sessionIds: string[]) => void;
+  /** Opens the bulk delete confirmation for the ids the list resolved as still deletable; `isArchived` for the Archive tab's. */
+  onDeleteSelectedSessions: (sessionIds: string[], options?: { isArchived?: boolean }) => void;
+  /**
+   * View only (the Running tab): sessions open and their ids can be copied,
+   * but nothing is renamed, forked, archived, deleted, selected or created.
+   */
+  readOnly?: boolean;
   t: TFunction;
 };
 
@@ -1611,7 +1616,8 @@ export type ActiveSidebarRename =
 export type PendingSidebarDeletion =
   | { kind: 'project'; project: Project; sessionCount: number }
   | { kind: 'session'; sessionId: string; sessionTitle: string; isArchived: boolean }
-  | { kind: 'sessions'; sessionIds: string[] };
+  /** `isArchived`: ticked in the Archive tab, so deleting is the only choice left. */
+  | { kind: 'sessions'; sessionIds: string[]; isArchived?: boolean };
 
 /**
  * The sessions ticked for a bulk action, scoped to the one project whose list

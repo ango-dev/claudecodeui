@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import React from 'react';
 import { beforeEach, test, vi } from 'vitest';
 
@@ -55,9 +55,19 @@ const makeActions = (overrides: Partial<SessionRowActions> = {}): SessionRowActi
   ...overrides,
 });
 
+type BulkSelectionProps = Parameters<typeof SidebarRecentConversations>[0]['bulkSelection'];
+const NO_BULK_SELECTION: BulkSelectionProps = {
+  sessionSelection: null,
+  onSetSessionSelection: noop,
+  onToggleSessionSelected: noop,
+  onCancelSessionSelection: noop,
+  onDeleteSelectedSessions: noop,
+};
+
 const renderList = (
   conversations: RecentConversationListItem[],
   sessionActions: SessionRowActions,
+  bulkSelection: BulkSelectionProps = NO_BULK_SELECTION,
 ) => render(
   <SidebarRecentConversations
     conversations={conversations}
@@ -69,6 +79,7 @@ const renderList = (
     selectedSession={null}
     currentTime={NOW}
     sessionActions={sessionActions}
+    bulkSelection={bulkSelection}
     onConversationSelect={noop}
     onLoadMore={noop}
     onRetry={noop}
@@ -158,4 +169,40 @@ test('a session needing attention gets the amber dot', () => {
   assert.equal(dots.length, 1);
   const rows = container.querySelectorAll('[data-testid="recent-conversation-row"]');
   assert.equal(rows.length, 2);
+});
+
+test('Ctrl/Cmd-click on a Sessions tab row starts a selection in that tab', () => {
+  const onSetSessionSelection = vi.fn();
+  const { container } = renderList(
+    [conversation('s1'), conversation('s2')],
+    makeActions(),
+    { ...NO_BULK_SELECTION, onSetSessionSelection },
+  );
+
+  fireEvent.click(container.querySelector('a[href="/session/s2"]') as HTMLElement, { ctrlKey: true });
+
+  assert.equal(onSetSessionSelection.mock.calls.length, 1);
+  const [selection] = onSetSessionSelection.mock.calls[0];
+  assert.equal(selection.projectId, 'sidebar:recent');
+  assert.deepEqual([...selection.sessionIds], ['s2']);
+});
+
+test('the Sessions tab bulk menu deletes every ticked row, but not a running one', () => {
+  const onDeleteSelectedSessions = vi.fn();
+  const { container } = renderList(
+    [conversation('s1'), conversation('s2'), conversation('s3')],
+    makeActions({ activeSessions: new Set(['s3']) }),
+    {
+      ...NO_BULK_SELECTION,
+      sessionSelection: { projectId: 'sidebar:recent', sessionIds: new Set(['s1', 's2', 's3']) },
+      onDeleteSelectedSessions,
+    },
+  );
+
+  assert.equal(container.querySelectorAll('[role="checkbox"]').length, 3, 'rows act as checkboxes');
+  fireEvent.contextMenu(container.querySelector('a[href="/session/s1"]') as HTMLElement, { clientX: 20, clientY: 30 });
+  const remove = [...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent?.includes('Delete 2'));
+  assert.ok(remove, 'the menu counts only the rows that can be deleted');
+  fireEvent.click(remove as HTMLElement);
+  assert.deepEqual(onDeleteSelectedSessions.mock.calls[0][0], ['s1', 's2']);
 });

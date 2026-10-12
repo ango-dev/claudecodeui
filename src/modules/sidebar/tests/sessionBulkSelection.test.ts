@@ -730,3 +730,20 @@ test('a row menu archives just that session', () => {
   act(() => (s2Options!.onArchive as () => void)());
   assert.deepEqual(onArchiveSessions.mock.calls[0][0], ['s2']);
 });
+
+test('a view-only list (the Running tab) offers no New Session, selection or editing', () => {
+  const onSessionSelect = vi.fn();
+  const onSetSessionSelection = vi.fn();
+  const { container } = render(React.createElement(SidebarProjectSessions, {
+    ...baseProps({ onSessionSelect, onSetSessionSelection }),
+    readOnly: true,
+  }));
+
+  assert.equal(buttonWithText(container, 'sessions.newSession'), null, 'no New Session');
+  assert.ok(recordedOptionsProps.every((props) => props.readOnly === true), 'every row menu only copies the id');
+
+  // Ctrl-click opens the session instead of starting a selection.
+  fireEvent.click(desktopRow(container, 's2'), { ctrlKey: true });
+  assert.equal(onSetSessionSelection.mock.calls.length, 0);
+  assert.equal(onSessionSelect.mock.calls.length, 1);
+});

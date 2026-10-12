@@ -924,12 +924,14 @@ export function useSidebarController({
   // Takes the ids instead of reading `sessionSelection`, so it stays referentially
   // stable: it is handed to every memoized project row, and re-creating it on each
   // tick of the selection would re-render all of them.
-  const showDeleteSelectedSessionsConfirmation = useCallback((sessionIds: string[]) => {
+  const showDeleteSelectedSessionsConfirmation = useCallback((sessionIds: string[], options?: { isArchived?: boolean }) => {
     if (sessionIds.length === 0) {
       return;
     }
 
-    setPendingDeletion({ kind: 'sessions', sessionIds });
+    setPendingDeletion(options?.isArchived
+      ? { kind: 'sessions', sessionIds, isArchived: true }
+      : { kind: 'sessions', sessionIds });
   }, []);
 
   // Archives (or, with hardDelete, permanently deletes) the given sessions:
@@ -1166,6 +1168,34 @@ export function useSidebarController({
     }
   }, [fetchArchivedSessions, onRefresh, t]);
 
+  // The Archive tab's bulk Restore: one request per session, settled together
+  // so one failure does not hide the sessions that did come back.
+  const restoreArchivedSessions = useCallback(async (sessionIds: string[]) => {
+    if (sessionIds.length === 0) {
+      return;
+    }
+    setSessionSelection(null);
+    const outcomes = await Promise.allSettled(sessionIds.map(async (sessionId) => {
+      const response = await api.restoreSession(sessionId);
+      if (!response.ok) {
+        throw new Error(`status ${response.status}: ${await response.text()}`);
+      }
+    }));
+    const failedSessionIds = sessionIds.filter((_, index) => outcomes[index].status === 'rejected');
+    await Promise.all([
+      Promise.resolve(onRefresh()),
+      fetchArchivedSessions(),
+    ]);
+    if (failedSessionIds.length > 0) {
+      console.error('[Sidebar] Failed to restore sessions:', failedSessionIds);
+      alert(t('messages.restoreSessionsPartialFailure', {
+        count: failedSessionIds.length,
+        total: sessionIds.length,
+        defaultValue: 'Could not restore {{count}} of {{total}} sessions. Please try again.',
+      }));
+    }
+  }, [fetchArchivedSessions, onRefresh, t]);
+
   const refreshProjects = useCallback(async () => {
     setIsRefreshing(true);
     try {
@@ -1310,6 +1340,7 @@ export function useSidebarController({
     showDeleteSelectedSessionsConfirmation,
     confirmDeleteSessions,
     archiveSessions,
+    restoreArchivedSessions,
     requestProjectDelete,
     confirmDeleteProject,
     handleProjectSelect,

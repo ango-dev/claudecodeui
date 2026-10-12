@@ -139,6 +139,7 @@ function Sidebar({
     openArchivedSession,
     restoreArchivedProject,
     restoreArchivedSession,
+    restoreArchivedSessions,
     refreshProjects,
     updateSessionSummary,
     forkSession,
@@ -306,6 +307,7 @@ function Sidebar({
             onRetryRecentConversations={reloadRecentConversations}
             onArchivedSessionClick={openArchivedSession}
             onRestoreArchivedSession={restoreArchivedSession}
+            onRestoreArchivedSessions={restoreArchivedSessions}
             onDeleteArchivedSession={(session) => {
               showDeleteSessionConfirmation(
                 session.sessionId,

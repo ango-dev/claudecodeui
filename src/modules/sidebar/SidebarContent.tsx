@@ -1,14 +1,18 @@
 import { type ReactNode } from 'react';
-import { Activity, Archive, Folder, MessageSquare, RotateCcw, Search, Trash2 } from 'lucide-react';
+import { Activity, Archive, CheckSquare, Folder, MessageSquare, RotateCcw, Search, Trash2 } from 'lucide-react';
 import type { TFunction } from 'i18next';
 
 import { LLMProviderLogo, ScrollArea } from '@/shared/ui';
+import { cn } from '@/shared/utils';
 import type { ArchivedProjectListItem, ArchivedSessionListItem, ConversationSearchResults, Project, RecentConversationListItem, ReleaseInfo, SearchProgress, SidebarProjectListProps, SidebarSearchMode } from '@/shared/types';
 import { formatCompactAge, getAllSessions } from '@/modules/sidebar/utils/sidebarProjectFormatting';
 import SidebarFooter from '@/modules/sidebar/SidebarFooter';
 import SidebarHeader from '@/modules/sidebar/SidebarHeader';
 import SidebarProjectList from '@/modules/sidebar/SidebarProjectList';
 import SidebarRecentConversations from '@/modules/sidebar/SidebarRecentConversations';
+import SidebarBulkActions from '@/modules/sidebar/SidebarBulkActions';
+import { useSidebarBulkSelection } from '@/modules/sidebar/hooks/useSidebarBulkSelection';
+import { ARCHIVED_SESSIONS_SELECTION_SCOPE } from '@/modules/sidebar/utils/sidebarSelectionScopes';
 
 function HighlightedSnippet({ snippet, highlights }: { snippet: string; highlights: { start: number; end: number }[] }) {
   const parts: ReactNode[] = [];
@@ -109,6 +113,8 @@ type SidebarContentProps = {
   onRetryRecentConversations: () => void;
   onArchivedSessionClick: (session: ArchivedSessionListItem) => void;
   onRestoreArchivedSession: (sessionId: string) => void;
+  /** The Archive tab's bulk Restore. */
+  onRestoreArchivedSessions: (sessionIds: string[]) => void;
   onDeleteArchivedSession: (session: ArchivedSessionListItem) => void;
   // Conversation result clicks pass back the DB projectId (or null when the
   // server couldn't resolve it). Consumers must handle the null case.
@@ -156,6 +162,7 @@ export default function SidebarContent({
   onRetryRecentConversations,
   onArchivedSessionClick,
   onRestoreArchivedSession,
+  onRestoreArchivedSessions,
   onDeleteArchivedSession,
   onConversationResultClick,
   onRefresh,
@@ -178,6 +185,23 @@ export default function SidebarContent({
   );
   const groupedArchivedSessions = groupArchivedSessionsByProject(archivedSessions);
   const visibleArchivedItemsCount = archivedProjects.length + archivedSessions.length;
+
+  // Bulk selection of archived sessions, in the order they are shown. Archived
+  // workspaces are restored as a whole, so their sessions are not selectable.
+  const { sessionSelection, onCancelSessionSelection } = projectListProps;
+  const archivedSelection = useSidebarBulkSelection({
+    scopeId: ARCHIVED_SESSIONS_SELECTION_SCOPE,
+    selectableIds: groupedArchivedSessions.flatMap((group) => group.sessions.map((session) => session.sessionId)),
+    selectedIds: searchMode === 'archived' && sessionSelection?.projectId === ARCHIVED_SESSIONS_SELECTION_SCOPE
+      ? sessionSelection.sessionIds
+      : null,
+    openSessionId: null,
+    onSetSelection: projectListProps.onSetSessionSelection,
+    onToggleSelected: projectListProps.onToggleSessionSelected,
+    onCancelSelection: onCancelSessionSelection,
+  });
+  const isSelectingArchived = archivedSelection.isSelecting;
+  const archivedSelectedIds = archivedSelection.effectiveSelectedIds;
   const isRenamingOnMobile = isMobile && projectListProps.activeRename !== null;
 
   return (
@@ -381,6 +405,7 @@ export default function SidebarContent({
             selectedSession={projectListProps.selectedSession}
             currentTime={projectListProps.currentTime}
             sessionActions={projectListProps}
+            bulkSelection={projectListProps}
             onConversationSelect={onConversationResultClick}
             onLoadMore={onLoadMoreRecentConversations}
             onRetry={onRetryRecentConversations}
@@ -416,7 +441,9 @@ export default function SidebarContent({
                   {runningSessionsCount}
                 </span>
               </div>
-              <SidebarProjectList {...projectListProps} />
+              {/* View only: running sessions open and their ids copy, but
+                  nothing here renames, deletes or starts a session. */}
+              <SidebarProjectList {...projectListProps} readOnly />
             </div>
           )
         ) : searchMode === 'archived' ? (
@@ -481,17 +508,60 @@ export default function SidebarContent({
                     </p>
                   </div>
                 </div>
-                <span
-                  className="rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-[10px] tabular-nums text-muted-foreground"
-                  title={visibleArchivedItemsCount !== archivedSessionsCount
-                    ? `${visibleArchivedItemsCount} of ${archivedSessionsCount}`
-                    : undefined}
-                >
-                  {visibleArchivedItemsCount !== archivedSessionsCount
-                    ? `${visibleArchivedItemsCount}/${archivedSessionsCount}`
-                    : archivedSessionsCount}
-                </span>
+                <div className="flex items-center gap-1">
+                  {groupedArchivedSessions.length > 0 && !isSelectingArchived && (
+                    <button
+                      type="button"
+                      className="flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                      onClick={archivedSelection.startSelecting}
+                    >
+                      <CheckSquare className="h-3 w-3" />
+                      {t('archived.select', 'Select')}
+                    </button>
+                  )}
+                  <span
+                    className="rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-[10px] tabular-nums text-muted-foreground"
+                    title={visibleArchivedItemsCount !== archivedSessionsCount
+                      ? `${visibleArchivedItemsCount} of ${archivedSessionsCount}`
+                      : undefined}
+                  >
+                    {visibleArchivedItemsCount !== archivedSessionsCount
+                      ? `${visibleArchivedItemsCount}/${archivedSessionsCount}`
+                      : archivedSessionsCount}
+                  </span>
+                </div>
               </div>
+              {/* Started from the Select button (or Ctrl/Cmd/Shift-click), so
+                  the toolbar shows on every screen rather than a right-click menu. */}
+              {isSelectingArchived && (
+                <SidebarBulkActions
+                  isTouchScreen
+                  selectedCount={archivedSelectedIds.length}
+                  actions={[
+                    {
+                      key: 'restore',
+                      label: t('archived.restoreSelected', { count: archivedSelectedIds.length, defaultValue: 'Restore {{count}}' }),
+                      menuLabel: `Restore ${archivedSelectedIds.length}`,
+                      icon: RotateCcw,
+                      onSelect: () => onRestoreArchivedSessions(archivedSelectedIds),
+                    },
+                    {
+                      key: 'delete',
+                      label: t('sessions.deleteSelected', { count: archivedSelectedIds.length }),
+                      menuLabel: `Delete ${archivedSelectedIds.length}`,
+                      icon: Trash2,
+                      isDanger: true,
+                      onSelect: () => projectListProps.onDeleteSelectedSessions(archivedSelectedIds, { isArchived: true }),
+                    },
+                  ]}
+                  selectAllLabel={archivedSelection.allSelected ? t('sessions.clearSelection') : t('sessions.selectAll')}
+                  selectAllDisabled={groupedArchivedSessions.length === 0}
+                  onToggleSelectAll={archivedSelection.toggleSelectAll}
+                  onCancel={onCancelSessionSelection}
+                  bulkMenuAt={null}
+                  t={t}
+                />
+              )}
               {archivedProjects.map((project) => {
                 const projectSessions = getAllSessions(project);
 
@@ -621,14 +691,33 @@ export default function SidebarContent({
                     </div>
                   </div>
                   <div className="border-t border-border/45 bg-muted/[0.08]">
-                    {group.sessions.map((session) => (
+                    {group.sessions.map((session) => {
+                      const isChecked = archivedSelection.checkedIds.has(session.sessionId);
+                      return (
                       <div
                         key={session.sessionId}
-                        className="group/session flex items-center gap-1 border-b border-border/35 px-2.5 py-2 last:border-b-0 hover:bg-accent/35"
+                        className={cn(
+                          'group/session flex items-center gap-1 border-b border-border/35 px-2.5 py-2 last:border-b-0',
+                          isChecked ? 'bg-accent' : 'hover:bg-accent/35',
+                        )}
                       >
                         <button
                           className="flex min-w-0 flex-1 items-center gap-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          onClick={() => onArchivedSessionClick(session)}
+                          role={isSelectingArchived ? 'checkbox' : undefined}
+                          aria-checked={isSelectingArchived ? isChecked : undefined}
+                          onClick={(event) => {
+                            // Ctrl/Cmd-click toggles, Shift-click selects a range,
+                            // and while selecting a plain click ticks the row.
+                            if (event.shiftKey || event.metaKey || event.ctrlKey) {
+                              archivedSelection.handleModifierSelect(session.sessionId, event.shiftKey ? 'range' : 'toggle');
+                              return;
+                            }
+                            if (isSelectingArchived) {
+                              archivedSelection.handleModifierSelect(session.sessionId, 'toggle');
+                              return;
+                            }
+                            onArchivedSessionClick(session);
+                          }}
                         >
                           <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-background/70">
                             <LLMProviderLogo provider={session.provider} className="h-3.5 w-3.5" />
@@ -650,6 +739,7 @@ export default function SidebarContent({
                             </div>
                           </div>
                         </button>
+                        {!isSelectingArchived && (
                         <div className="flex flex-shrink-0 items-center gap-0.5">
                           <button
                             className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-emerald-500/10 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 dark:hover:text-emerald-300"
@@ -668,8 +758,10 @@ export default function SidebarContent({
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </div>
+                        )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </section>
               ))}

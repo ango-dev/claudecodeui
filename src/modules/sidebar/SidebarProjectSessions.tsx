@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Archive, Plus, Trash2, X } from 'lucide-react';
+import { useCallback } from 'react';
+import { Archive, Plus, Trash2 } from 'lucide-react';
 import type { TFunction } from 'i18next';
 
-import { ActionMenu, Button } from '@/shared/ui';
+import { Button } from '@/shared/ui';
 import type { LLMProvider, Project, ProjectSession, SessionWithProvider, SidebarSessionSelection } from '@/shared/types';
 import SidebarSessionItem from '@/modules/sidebar/SidebarSessionItem';
 import { useTouchScreen } from '@/modules/sidebar/hooks/useTouchScreen';
+import { useSidebarBulkSelection } from '@/modules/sidebar/hooks/useSidebarBulkSelection';
+import SidebarBulkActions from '@/modules/sidebar/SidebarBulkActions';
 
 type SidebarProjectSessionsProps = {
   project: Project;
@@ -39,6 +41,8 @@ type SidebarProjectSessionsProps = {
   onDeleteSelectedSessions: (sessionIds: string[]) => void;
   /** Archives sessions at once (the menus' Archive); stable identity. */
   onArchiveSessions?: (sessionIds: string[]) => void;
+  /** View only (the Running tab): no New Session and no selecting; see SidebarProjectListProps. */
+  readOnly?: boolean;
   t: TFunction;
 };
 
@@ -90,84 +94,34 @@ export default function SidebarProjectSessions({
   onCancelSessionSelection,
   onDeleteSelectedSessions,
   onArchiveSessions,
+  readOnly = false,
   t,
 }: SidebarProjectSessionsProps) {
   const isTouchScreen = useTouchScreen();
 
-  const isSelecting = selectedSessionIds !== null;
   // A session with a response in flight cannot be deleted — the same rule the
   // row's options menu applies — so it is not selectable either.
   const isSessionRunning = (session: SessionWithProvider) =>
     activeSessions.has(session.id) && !backgroundSessionIds.has(session.id);
   const selectableSessionIds = sessions.filter((session) => !isSessionRunning(session)).map((session) => session.id);
-
-  // Ctrl/Cmd/Shift-click selection, as in Claude Code. The handler reads the
-  // live list and selection through a ref so its identity never changes: the
-  // memoized rows must not re-render when one row is ticked.
-  const selectionStateRef = useRef({ selectableSessionIds, selectedSessionIds, selectedSessionId: selectedSession?.id ?? null });
-  // Synced after each render, before any click can reach the handler.
-  useLayoutEffect(() => {
-    selectionStateRef.current = { selectableSessionIds, selectedSessionIds, selectedSessionId: selectedSession?.id ?? null };
+  const selection = useSidebarBulkSelection({
+    scopeId: project.projectId,
+    selectableIds: selectableSessionIds,
+    selectedIds: selectedSessionIds,
+    openSessionId: selectedSession?.id ?? null,
+    onSetSelection: onSetSessionSelection,
+    onToggleSelected: onToggleSessionSelected,
+    onCancelSelection: onCancelSessionSelection,
   });
-  // The row a Shift-click range starts from: the last row toggled.
-  const rangeAnchorRef = useRef<string | null>(null);
-  const handleModifierSelect = useCallback(
-    (projectId: string, sessionId: string, mode: 'toggle' | 'range') => {
-      const { selectableSessionIds: order, selectedSessionIds: current, selectedSessionId } = selectionStateRef.current;
-      // A range with no toggled row yet starts at the open session, if it is listed here.
-      const anchor = rangeAnchorRef.current ?? selectedSessionId;
-      const anchorIndex = anchor ? order.indexOf(anchor) : -1;
-      const targetIndex = order.indexOf(sessionId);
-      if (mode === 'range' && anchorIndex !== -1 && targetIndex !== -1) {
-        const [start, end] = anchorIndex < targetIndex ? [anchorIndex, targetIndex] : [targetIndex, anchorIndex];
-        onSetSessionSelection({
-          projectId,
-          sessionIds: new Set([...(current ?? []), ...order.slice(start, end + 1)]),
-        });
-        return;
-      }
-      rangeAnchorRef.current = sessionId;
-      if (current === null) {
-        onSetSessionSelection({ projectId, sessionIds: new Set([sessionId]) });
-      } else {
-        onToggleSessionSelected(projectId, sessionId);
-      }
-    },
-    [onSetSessionSelection, onToggleSessionSelected],
+  const { isSelecting, handleModifierSelect, handleBulkContextMenu } = selection;
+  // The rows report their project with each event; this list is one project.
+  const handleRowModifierSelect = useCallback(
+    (_projectId: string, sessionId: string, mode: 'toggle' | 'range') => handleModifierSelect(sessionId, mode),
+    [handleModifierSelect],
   );
-
-  // Escape clears the selection, unless a field or another layer consumed it.
-  useEffect(() => {
-    if (!isSelecting) {
-      rangeAnchorRef.current = null;
-      return undefined;
-    }
-    const handleKeyDown = (event: KeyboardEvent) => {
-      // The target can be the window or document, which have no closest().
-      const target = event.target instanceof Element ? event.target : null;
-      if (event.key !== 'Escape' || event.defaultPrevented || target?.closest('input, textarea, [contenteditable="true"]')) {
-        return;
-      }
-      onCancelSessionSelection();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isSelecting, onCancelSessionSelection]);
-
-  // Where a selected row was last right-clicked: opens the bulk menu (Archive N,
-  // Delete N) there, as in Claude Code. Null until the first right-click.
-  const [bulkMenuAt, setBulkMenuAt] = useState<{ x: number; y: number } | null>(null);
-  // Right-click on a row while selecting: an unticked row joins the selection
-  // first, then the menu acts on everything ticked. Stable for the memoized rows.
-  const handleBulkContextMenu = useCallback(
-    (projectId: string, sessionId: string, point: { x: number; y: number }) => {
-      const { selectedSessionIds: current } = selectionStateRef.current;
-      if (current && !current.has(sessionId)) {
-        onToggleSessionSelected(projectId, sessionId);
-      }
-      setBulkMenuAt(point);
-    },
-    [onToggleSessionSelected],
+  const handleRowBulkContextMenu = useCallback(
+    (_projectId: string, sessionId: string, point: { x: number; y: number }) => handleBulkContextMenu(sessionId, point),
+    [handleBulkContextMenu],
   );
 
   if (!isExpanded) {
@@ -175,15 +129,7 @@ export default function SidebarProjectSessions({
   }
 
   const hasSessions = sessions.length > 0;
-  // Re-derived from the selectable rows rather than read straight off the
-  // selection, so a row that started running after it was ticked drops out of
-  // the count, the button and the ids the confirmation is opened with.
-  const effectiveSelectedIds = selectedSessionIds
-    ? selectableSessionIds.filter((sessionId) => selectedSessionIds.has(sessionId))
-    : [];
-  const checkedSessionIds = new Set(effectiveSelectedIds);
-  const allLoadedSelected =
-    selectableSessionIds.length > 0 && effectiveSelectedIds.length === selectableSessionIds.length;
+  const { effectiveSelectedIds, checkedIds: checkedSessionIds, allSelected: allLoadedSelected } = selection;
   // With more sessions on the server than on screen, the button only reaches the
   // loaded rows, so it offers "Select all loaded" rather than a "Select all" it
   // could not honour. Once those rows are ticked it flips to "Clear" either way.
@@ -195,90 +141,31 @@ export default function SidebarProjectSessions({
 
   return (
     <div className="ml-2 space-y-0.5 pl-1">
-      <Button
-        variant="ghost"
-        size="sm"
-        className="flex h-8 w-full justify-start gap-2 px-2 text-sm font-normal text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-        onClick={() => onNewSession(project)}
-      >
-        <Plus className="h-3.5 w-3.5" />
-        {t('sessions.newSession')}
-      </Button>
-
-      {/* With a pointer, a selection (Ctrl/Cmd/Shift-click or the row menu's
-          Select) is acted on through the right-click menu below. Touch screens
-          have neither modifier keys nor right-click, so a selection started
-          from the row menu gets this toolbar instead. */}
-      {isTouchScreen && isSelecting && (
-        <div className="space-y-1 px-1">
-          {/* Wraps rather than clips: at the narrowest sidebar width a long
-              translated "Select all loaded" leaves no room for Cancel. */}
-          <div className="flex flex-wrap items-center justify-between gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-              onClick={() =>
-                onSetSessionSelection({
-                  projectId: project.projectId,
-                  sessionIds: new Set(allLoadedSelected ? [] : selectableSessionIds),
-                })
-              }
-              disabled={selectableSessionIds.length === 0}
-            >
-              {selectAllLabel}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-              onClick={onCancelSessionSelection}
-              title="Esc"
-            >
-              <X className="h-3 w-3" />
-              {t('actions.cancel')}
-            </Button>
-          </div>
-          {onArchiveSessions && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 w-full justify-start gap-2 px-2 text-xs font-medium text-muted-foreground hover:text-foreground"
-              onClick={() => {
-                onArchiveSessions(effectiveSelectedIds);
-                onCancelSessionSelection();
-              }}
-              disabled={effectiveSelectedIds.length === 0}
-            >
-              <Archive className="h-3.5 w-3.5" />
-              {t('sessions.archiveSelected', { count: effectiveSelectedIds.length, defaultValue: 'Archive {{count}}' })}
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 w-full justify-start gap-2 px-2 text-xs font-medium text-destructive hover:bg-destructive/10 hover:text-destructive"
-            onClick={() => onDeleteSelectedSessions(effectiveSelectedIds)}
-            disabled={effectiveSelectedIds.length === 0}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            {t('sessions.deleteSelected', { count: effectiveSelectedIds.length })}
-          </Button>
-        </div>
+      {!readOnly && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="flex h-8 w-full justify-start gap-2 px-2 text-sm font-normal text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+          onClick={() => onNewSession(project)}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          {t('sessions.newSession')}
+        </Button>
       )}
 
-      {isSelecting && !isTouchScreen && (
-        <ActionMenu
-          label={t('sessions.selectedActions', { defaultValue: 'Selected sessions' })}
-          hideTrigger
-          portal
-          openAt={bulkMenuAt}
-          menuClassName="w-[220px] rounded-xl p-1.5 shadow-xl"
-          items={[
+      {/* With a pointer, a selection (Ctrl/Cmd/Shift-click or the row menu's
+          Select) is acted on through the right-click menu; a touch screen
+          gets a toolbar instead. */}
+      {isSelecting && (
+        <SidebarBulkActions
+          isTouchScreen={isTouchScreen}
+          selectedCount={effectiveSelectedIds.length}
+          actions={[
             ...(onArchiveSessions ? [{
               key: 'archive',
-              label: `Archive ${effectiveSelectedIds.length}`,
-              disabled: effectiveSelectedIds.length === 0,
+              label: t('sessions.archiveSelected', { count: effectiveSelectedIds.length, defaultValue: 'Archive {{count}}' }),
+              menuLabel: `Archive ${effectiveSelectedIds.length}`,
+              icon: Archive,
               onSelect: () => {
                 onArchiveSessions(effectiveSelectedIds);
                 onCancelSessionSelection();
@@ -286,18 +173,19 @@ export default function SidebarProjectSessions({
             }] : []),
             {
               key: 'delete',
-              label: `Delete ${effectiveSelectedIds.length}`,
+              label: t('sessions.deleteSelected', { count: effectiveSelectedIds.length }),
+              menuLabel: `Delete ${effectiveSelectedIds.length}`,
+              icon: Trash2,
               isDanger: true,
-              disabled: effectiveSelectedIds.length === 0,
               onSelect: () => onDeleteSelectedSessions(effectiveSelectedIds),
             },
-            {
-              key: 'clear',
-              label: t('sessions.clearSelectionMenu'),
-              showDividerBefore: true,
-              onSelect: onCancelSessionSelection,
-            },
           ]}
+          selectAllLabel={selectAllLabel}
+          selectAllDisabled={selectableSessionIds.length === 0}
+          onToggleSelectAll={selection.toggleSelectAll}
+          onCancel={onCancelSessionSelection}
+          bulkMenuAt={selection.bulkMenuAt}
+          t={t}
         />
       )}
 
@@ -333,9 +221,10 @@ export default function SidebarProjectSessions({
               isSelecting={isSelecting}
               isChecked={checkedSessionIds.has(session.id)}
               onToggleSessionSelected={onToggleSessionSelected}
-              onModifierSelect={handleModifierSelect}
+              onModifierSelect={handleRowModifierSelect}
               onArchiveSessions={onArchiveSessions}
-              onBulkContextMenu={handleBulkContextMenu}
+              onBulkContextMenu={handleRowBulkContextMenu}
+              readOnly={readOnly}
               t={t}
             />
           ))}
