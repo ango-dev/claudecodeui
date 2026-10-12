@@ -1,6 +1,27 @@
 import type { NormalizedMessage } from '@/shared/types';
+import { DEFAULT_MESSAGES_PER_PAGE } from '@/shared/constants';
+import { readUserPreference } from '@/shared/userSettings';
 
-export const SESSION_MESSAGES_PAGE_SIZE = 20;
+/**
+ * Default for the "messages loaded at a time" setting: per request, both when
+ * a session opens and for each page of older ones. Enough that scrolling up
+ * rarely reaches the top before the next page is in.
+ */
+export const SESSION_MESSAGES_PAGE_SIZE = DEFAULT_MESSAGES_PER_PAGE;
+
+/** Rows per follow-up request when bridging a gap after the latest page. */
+const BRIDGE_CHUNK_SIZE = 20;
+
+/**
+ * Used by the chat session state and store before each history request, so
+ * a change in Settings applies to the next page without a reload.
+ */
+export function readSessionMessagesPageSize(): number {
+  const stored = readUserPreference<unknown>('messagesPerPage', SESSION_MESSAGES_PAGE_SIZE);
+  return typeof stored === 'number' && Number.isFinite(stored)
+    ? Math.min(500, Math.max(10, Math.round(stored)))
+    : SESSION_MESSAGES_PAGE_SIZE;
+}
 
 export type SessionMessagesRequestOptions = {
   limit?: number | null;
@@ -124,7 +145,7 @@ export function planLatestPageBridge(
   );
   const preferredLimit = bridgeRowsFetched === 0
     ? Math.max(1, predictedMissingRows + 1)
-    : SESSION_MESSAGES_PAGE_SIZE;
+    : BRIDGE_CHUNK_SIZE;
 
   return {
     offset: latestMessages.length + bridgeRowsFetched,

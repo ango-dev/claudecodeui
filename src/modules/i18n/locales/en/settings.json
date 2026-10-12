@@ -213,7 +213,9 @@
       "title": "Layout"
     },
     "chat": {
-      "title": "Chat"
+      "title": "Chat",
+      "messagesPerPage": "Messages loaded at a time",
+      "messagesPerPageDescription": "How many messages load when a session opens, and each time you scroll back for older ones."
     }
   },
   "mcpForm": {

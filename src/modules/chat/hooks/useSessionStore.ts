@@ -18,7 +18,7 @@ import {
   mergeOlderServerPage,
   planLatestPageBridge,
   resolveLatestPagePagination,
-  SESSION_MESSAGES_PAGE_SIZE,
+  readSessionMessagesPageSize,
 } from '@/modules/chat/utils/sessionMessagePagination';
 import type { SessionMessagesRequestOptions } from '@/modules/chat/utils/sessionMessagePagination';
 
@@ -655,7 +655,7 @@ export function useSessionStore() {
           const cachedMessages = slot.serverMessages;
           const expectedTotal = slot.total;
           const data = await requestSessionHistoryPage(sessionId, {
-            limit: opts.limit ?? SESSION_MESSAGES_PAGE_SIZE,
+            limit: opts.limit ?? readSessionMessagesPageSize(),
             offset: slot.offset,
           });
           const olderMerge = mergeOlderServerPage(cachedMessages, data.messages);
@@ -670,7 +670,7 @@ export function useSessionStore() {
             const latestResult = await refreshLatestSlotFromServer(
               sessionId,
               slot,
-              SESSION_MESSAGES_PAGE_SIZE,
+              readSessionMessagesPageSize(),
               canRequest,
             );
             changed = changed || latestResult.changed;
@@ -782,7 +782,7 @@ export function useSessionStore() {
         const result = await refreshLatestSlotFromServer(
           sessionId,
           slot,
-          opts.limit ?? SESSION_MESSAGES_PAGE_SIZE,
+          opts.limit ?? readSessionMessagesPageSize(),
           opts.canRequest,
         );
         if (result.changed) notify(sessionId);

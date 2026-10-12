@@ -1,8 +1,11 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { DEFAULT_MESSAGES_PER_PAGE, MESSAGES_PER_PAGE_OPTIONS } from '@/shared/constants';
 import { useTheme } from '@/shared/context/ThemeContext';
 import { useSetUiPreference, useUiPreferences } from '@/shared/context/UiPreferencesContext';
 import type { CodeEditorSettingsState, PreferenceToggleKey, ProjectSortOrder, ThemeMode } from '@/shared/types';
+import { readUserPreference, writeUserPreference } from '@/shared/userSettings';
 import { LanguageSelector } from '@/modules/i18n';
 import SettingsCard from '@/modules/settings/SettingsCard';
 import SettingsRow from '@/modules/settings/SettingsRow';
@@ -44,6 +47,12 @@ export default function AppearanceSettingsTab({
   const { themeMode, setThemeMode } = useTheme();
   const preferences = useUiPreferences();
   const setPreference = useSetUiPreference();
+  const [messagesPerPage, setMessagesPerPage] = useState(() => {
+    const stored = readUserPreference<unknown>('messagesPerPage', DEFAULT_MESSAGES_PER_PAGE);
+    return MESSAGES_PER_PAGE_OPTIONS.includes(stored as (typeof MESSAGES_PER_PAGE_OPTIONS)[number])
+      ? (stored as number)
+      : DEFAULT_MESSAGES_PER_PAGE;
+  });
 
   return (
     <div className="space-y-8">
@@ -100,6 +109,25 @@ export default function AppearanceSettingsTab({
               />
             </SettingsRow>
           ))}
+          <SettingsRow
+            label={t('appearanceSettings.chat.messagesPerPage')}
+            description={t('appearanceSettings.chat.messagesPerPageDescription')}
+          >
+            <select
+              value={messagesPerPage}
+              onChange={(event) => {
+                const value = Number(event.target.value);
+                setMessagesPerPage(value);
+                writeUserPreference('messagesPerPage', value);
+              }}
+              aria-label={t('appearanceSettings.chat.messagesPerPage')}
+              className="w-36 flex-shrink-0 touch-manipulation rounded-lg border border-input bg-card p-2.5 text-sm text-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+            >
+              {MESSAGES_PER_PAGE_OPTIONS.map((option) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+          </SettingsRow>
         </SettingsCard>
       </SettingsSection>
 

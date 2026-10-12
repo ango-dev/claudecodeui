@@ -207,3 +207,10 @@ export const PROVIDER_PERMISSION_PREFERENCE_KEYS: Record<LLMProvider, UserPrefer
   codex: 'codexPermissions',
   opencode: 'opencodePermissions',
 };
+
+/**
+ * Chat messages fetched per request when a session opens or scrolls back: the
+ * default and the choices offered in Settings (chat history and settings).
+ */
+export const DEFAULT_MESSAGES_PER_PAGE = 50;
+export const MESSAGES_PER_PAGE_OPTIONS = [20, 50, 100, 200] as const;

@@ -4,12 +4,11 @@ import type { MutableRefObject } from 'react';
 import { api } from '@/shared/api';
 import type { MarkSessionIdle, SessionActivityMap,Project,ProjectSession,LLMProvider,NormalizedMessage,ChatMessage,DiffCalculator } from '@/shared/types';
 import type { SessionStore } from '@/modules/chat/hooks/useSessionStore';
-import { SESSION_MESSAGES_PAGE_SIZE } from '@/modules/chat/utils/sessionMessagePagination';
+import { readSessionMessagesPageSize, SESSION_MESSAGES_PAGE_SIZE } from '@/modules/chat/utils/sessionMessagePagination';
 import { createMessageHistoryRefreshCoordinator } from '@/modules/chat/utils/messageHistoryRefreshCoordinator';
 import { createCachedDiffCalculator } from '@/modules/chat/utils/messageTransforms';
 import { normalizedToChatMessages } from '@/modules/chat/hooks/useChatMessages';
 import { usesScrollAnchorFallback, waitForScrollRest } from '@/modules/chat/hooks/useScrollAnchorFallback';
-import { scrollDebugLog } from '@/modules/chat/utils/scrollDebug';
 import { findSearchTargetIndex, resolveSearchWindowSize } from '@/modules/chat/utils/searchTargetLocator';
 import { readSelectedProvider } from '@/shared/selectedProvider';
 import type { SearchTarget } from '@/modules/chat/utils/searchTargetLocator';
@@ -345,7 +344,7 @@ export function useChatSessionState({
   );
   latestRefreshExecutorRef.current = async (sessionId: string) => {
     const result = await sessionStore.refreshLatestFromServer(sessionId, {
-      limit: SESSION_MESSAGES_PAGE_SIZE,
+      limit: readSessionMessagesPageSize(),
       canRequest: () => (
         isActiveRef.current
         && activeSessionIdRef.current === sessionId
@@ -484,7 +483,6 @@ export function useChatSessionState({
 
       isLoadingMoreRef.current = true;
       setIsLoadingMoreMessages(true);
-      scrollDebugLog(`load older start at ${Math.round(container.scrollTop)}`);
       const holdsPagesUntilRest = usesScrollAnchorFallback();
       if (holdsPagesUntilRest) {
         // The window starts wider than the first page, so without this the
@@ -494,7 +492,7 @@ export function useChatSessionState({
 
       try {
         const result = await sessionStore.fetchMore(selectedSession.id, {
-          limit: SESSION_MESSAGES_PAGE_SIZE,
+          limit: readSessionMessagesPageSize(),
           canRequest: () => (
             isActiveRef.current
             && activeSessionIdRef.current === selectedSession.id
@@ -535,13 +533,12 @@ export function useChatSessionState({
         // scrolling while it was in flight, and restoring the older position
         // snapped them back.
         pendingScrollRestoreRef.current = captureScrollRestoreState(container);
-        scrollDebugLog(`page add (${prependedCount}) at ${Math.round(container.scrollTop)}`);
         setVisibleMessageCount((prev) => (
           holdsPagesUntilRest
             // Everything loaded so far, plus the usual headroom so new live
             // messages do not push the oldest rows out of the window.
             ? chatMessagesLengthRef.current + INITIAL_VISIBLE_MESSAGES
-            : prev + SESSION_MESSAGES_PAGE_SIZE
+            : prev + readSessionMessagesPageSize()
         ));
         if (!slot.hasMore) {
           allMessagesLoadedRef.current = true;
@@ -804,7 +801,7 @@ export function useChatSessionState({
     // Fetch from server → store updates → chatMessages re-derives automatically
     setIsLoadingSessionMessages(true);
     sessionStore.fetchFromServer(selectedSessionId, {
-      limit: SESSION_MESSAGES_PAGE_SIZE,
+      limit: readSessionMessagesPageSize(),
       offset: 0,
       canRequest: () => (
         isActiveRef.current
@@ -1064,10 +1061,7 @@ export function useChatSessionState({
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return undefined;
-    const handleReaderIntent = () => {
-      if (pendingInitialScrollRef.current) scrollDebugLog('initial scroll-to-bottom cancelled by reader');
-      pendingInitialScrollRef.current = false;
-    };
+    const handleReaderIntent = () => { pendingInitialScrollRef.current = false; };
     const options = { passive: true } as const;
     container.addEventListener('touchstart', handleReaderIntent, options);
     container.addEventListener('wheel', handleReaderIntent, options);
