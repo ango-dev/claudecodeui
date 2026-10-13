@@ -429,7 +429,14 @@
       "button": "Login",
       "reLoginButton": "Re-login"
     },
-    "error": "Error: {{error}}"
+    "error": "Error: {{error}}",
+    "otherAgents": {
+      "advanced": "Advanced",
+      "label": "Show other agents",
+      "description": "Cursor, Codex and OpenCode.",
+      "warning": "Not tested with this app. They may not work properly.",
+      "saveFailed": "Failed to save."
+    }
   },
   "permissions": {
     "title": "Permission Settings",

@@ -7,6 +7,7 @@ import { ActionMenu, Badge, Button } from '@/shared/ui';
 import { MCP_GLOBAL_SUPPORTED_TRANSPORTS, MCP_PROVIDER_NAMES } from '@/shared/constants';
 import { useMcpServers } from '@/modules/mcp/hooks/useMcpServers';
 import { maskSecret } from '@/modules/mcp/utils/mcpFormatting';
+import { useShowOtherAgents } from '@/shared/agentVisibility';
 import McpServerFormModal from '@/modules/mcp/McpServerFormModal';
 
 type McpServersProps = {
@@ -123,6 +124,8 @@ export default function McpServers({ selectedProvider, currentProjects }: McpSer
     deleteServer,
   } = useMcpServers({ selectedProvider, currentProjects });
 
+  // Adding to every agent means nothing while Claude Code is the only one (agentVisibility).
+  const showOtherAgents = useShowOtherAgents();
   const providerName = MCP_PROVIDER_NAMES[selectedProvider];
   const description = t(`mcpServers.description.${selectedProvider}`, {
     defaultValue: `Model Context Protocol servers provide additional tools and data sources to ${providerName}`,
@@ -149,13 +152,13 @@ export default function McpServers({ selectedProvider, currentProjects }: McpSer
           className="w-full sm:w-auto"
           triggerClassName={`w-full sm:w-auto ${MCP_PROVIDER_BUTTON_CLASSES[selectedProvider]}`}
           items={[
-            {
+            ...(showOtherAgents ? [{
               key: 'global',
               label: globalButtonLabel,
               description: globalAddDescription,
               icon: Globe,
               onSelect: openGlobalForm,
-            },
+            }] : []),
             {
               key: 'provider',
               label: providerButtonLabel,

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import { act, renderHook } from '@testing-library/react';
-import { beforeEach, test } from 'vitest';
+import { beforeEach, test, vi } from 'vitest';
 
 import { useSelectedProvider } from '@/shared/hooks/useSelectedProvider';
 import { writeSelectedProvider } from '@/shared/selectedProvider';
@@ -10,6 +10,15 @@ import {
   subscribeToUserPreferences,
   writeUserPreference,
 } from '@/shared/userSettings';
+
+// These tests cover choosing among all the agents, so the others are shown
+// (this fork hides them by default; see agentVisibility).
+vi.mock('@/shared/agentVisibility', () => ({
+  isAgentVisible: () => true,
+  useShowOtherAgents: () => true,
+  getShowOtherAgents: () => true,
+  loadAgentVisibility: async () => undefined,
+}));
 
 /**
  * The receiving half of the provider-selection contract.

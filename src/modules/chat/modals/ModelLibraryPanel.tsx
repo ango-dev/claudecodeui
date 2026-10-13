@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 
 import { Badge, Button, Input, LLMProviderLogo } from '@/shared/ui';
+import { useShowOtherAgents } from '@/shared/agentVisibility';
 import type {
   CustomProviderModelInput,
   LLMProvider,
@@ -49,6 +50,9 @@ export default function ModelLibraryPanel({
   onDone,
 }: ModelLibraryPanelProps) {
   const { t } = useTranslation();
+  // Agents other than Claude Code are hidden unless turned on (agentVisibility).
+  const showOtherAgents = useShowOtherAgents();
+  const providers = PROVIDERS.filter((provider) => showOtherAgents || provider.id === 'claude');
   const [selectedProvider, setSelectedProvider] = useState(initialProvider);
   const [editing, setEditing] = useState<ProviderModelOption | null>(null);
   const [model, setModel] = useState('');
@@ -225,8 +229,10 @@ export default function ModelLibraryPanel({
         )}
       </div>
 
+      {/* No tabs when Claude Code is the only agent. */}
+      {providers.length > 1 && (
       <div className="scrollbar-thin flex shrink-0 gap-1 overflow-x-auto rounded-xl border border-border/70 bg-muted/25 p-1">
-        {PROVIDERS.map((provider) => {
+        {providers.map((provider) => {
           const selected = provider.id === selectedProvider;
           return (
             <button
@@ -246,6 +252,7 @@ export default function ModelLibraryPanel({
           );
         })}
       </div>
+      )}
 
       <div className="scrollbar-thin grid min-h-0 flex-1 items-start gap-4 overflow-y-auto pr-1 lg:grid-cols-[minmax(16rem,0.8fr)_minmax(20rem,1.2fr)]">
         <form
@@ -258,7 +265,7 @@ export default function ModelLibraryPanel({
                 {editing ? 'Edit custom model' : 'Add a custom model'}
               </p>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                The ID is sent to {PROVIDERS.find((entry) => entry.id === selectedProvider)?.label} exactly as written.
+                The ID is sent to {providers.find((entry) => entry.id === selectedProvider)?.label ?? 'Claude'} exactly as written.
               </p>
             </div>
             {editing && (

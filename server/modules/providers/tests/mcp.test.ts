@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
+import test, { mock } from 'node:test';
 
 import TOML from '@iarna/toml';
 
+import { agentVisibilityService } from '@/modules/providers/services/agent-visibility.service.js';
 import { providerMcpService } from '@/modules/providers/services/mcp.service.js';
 import { AppError } from '@/shared/utils.js';
 
@@ -304,6 +305,8 @@ test('providerMcpService global adder writes to all providers and rejects unsupp
   await fs.mkdir(workspacePath, { recursive: true });
 
   const restoreHomeDir = patchHomeDir(tempRoot);
+  // With the other agents shown; hidden is covered by the next test.
+  const visibility = mock.method(agentVisibilityService, 'isVisible', () => true);
   try {
     const globalResult = await providerMcpService.addMcpServerToAllProviders({
       name: 'global-http',
@@ -342,6 +345,37 @@ test('providerMcpService global adder writes to all providers and rejects unsupp
         error.statusCode === 400,
     );
   } finally {
+    visibility.mock.restore();
+    restoreHomeDir();
+    await fs.rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('providerMcpService global adder writes only to Claude Code while the other agents are hidden', { concurrency: false }, async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'llm-mcp-global-hidden-'));
+  const workspacePath = path.join(tempRoot, 'workspace');
+  await fs.mkdir(workspacePath, { recursive: true });
+
+  const restoreHomeDir = patchHomeDir(tempRoot);
+  const visibility = mock.method(agentVisibilityService, 'isVisible', (provider: string) => provider === 'claude');
+  try {
+    const result = await providerMcpService.addMcpServerToAllProviders({
+      name: 'claude-only',
+      scope: 'project',
+      transport: 'http',
+      url: 'https://claude-only.example.com/mcp',
+      workspacePath,
+    });
+
+    assert.deepEqual(result.map((entry) => entry.provider), ['claude']);
+    const claudeProject = await readJson(path.join(workspacePath, '.mcp.json'));
+    assert.ok((claudeProject.mcpServers as Record<string, unknown>)['claude-only']);
+    // Nothing written for the hidden agents.
+    await assert.rejects(fs.access(path.join(workspacePath, '.codex', 'config.toml')));
+    await assert.rejects(fs.access(path.join(workspacePath, 'opencode.json')));
+    await assert.rejects(fs.access(path.join(workspacePath, '.cursor', 'mcp.json')));
+  } finally {
+    visibility.mock.restore();
     restoreHomeDir();
     await fs.rm(tempRoot, { recursive: true, force: true });
   }

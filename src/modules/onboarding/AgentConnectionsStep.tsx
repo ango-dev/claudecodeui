@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 
 import type { LLMProvider, ProviderAuthStatusMap } from '@/shared/types';
 import AgentConnectionCard from '@/modules/onboarding/AgentConnectionCard';
+import { useShowOtherAgents } from '@/shared/agentVisibility';
 
 type AgentConnectionsStepProps = {
   providerStatuses: ProviderAuthStatusMap;
@@ -45,6 +46,9 @@ export default function AgentConnectionsStep({
   onOpenProviderLogin,
 }: AgentConnectionsStepProps) {
   const { t } = useTranslation('auth');
+  // Only Claude Code unless the other agents are turned on (agentVisibility).
+  const showOtherAgents = useShowOtherAgents();
+  const visibleCards = providerCards.filter((card) => showOtherAgents || card.provider === 'claude');
   return (
     <div className="space-y-4">
       <div className="text-center">
@@ -55,7 +59,7 @@ export default function AgentConnectionsStep({
       </div>
 
       <div className="-mr-1 max-h-[38vh] space-y-2 overflow-y-auto pr-1">
-        {providerCards.map((providerCard) => (
+        {visibleCards.map((providerCard) => (
           <AgentConnectionCard
             key={providerCard.provider}
             provider={providerCard.provider}

@@ -1319,7 +1319,9 @@ export const browserUseService = {
 
   async registerAgentMcp() {
     const { command, args } = getMcpCommand();
-    await Promise.all(LEGACY_MCP_SERVER_NAMES.map((name) => removeMcpServerFromAllProviders(name)));
+    // Old names everywhere; the current one too, so agents hidden since the
+    // last registration keep no entry (it is added back only where shown).
+    await Promise.all([...LEGACY_MCP_SERVER_NAMES, MCP_SERVER_NAME].map((name) => removeMcpServerFromAllProviders(name)));
     const results = await providerMcpService.addMcpServerToAllProviders({
       name: MCP_SERVER_NAME,
       scope: 'user',

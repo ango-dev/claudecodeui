@@ -1,3 +1,4 @@
+import { isAgentVisible } from '@/shared/agentVisibility';
 import type { LLMProvider } from '@/shared/types';
 import { readUserPreference, writeUserPreference } from '@/shared/userSettings';
 
@@ -22,7 +23,8 @@ const DEFAULT_PROVIDER: LLMProvider = 'claude';
 
 export function readSelectedProvider(): LLMProvider {
   const stored = readUserPreference<string | null>('selectedProvider', null);
-  return PROVIDERS.includes(stored as LLMProvider) ? (stored as LLMProvider) : DEFAULT_PROVIDER;
+  // A hidden agent (see agentVisibility) is never the one a new chat starts with.
+  return PROVIDERS.includes(stored as LLMProvider) && isAgentVisible(stored) ? (stored as LLMProvider) : DEFAULT_PROVIDER;
 }
 
 export function writeSelectedProvider(provider: LLMProvider): void {

@@ -3,6 +3,7 @@ import { access } from 'node:fs/promises';
 
 import { scanStateDb, sessionsDb } from '@/modules/database/index.js';
 import { providerRegistry } from '@/modules/providers/provider.registry.js';
+import { agentVisibilityService } from '@/modules/providers/services/agent-visibility.service.js';
 import type { LLMProvider } from '@/shared/types.js';
 
 type SessionSynchronizeResult = {
@@ -88,7 +89,8 @@ async function runSessionSynchronization(): Promise<SessionSynchronizeResult> {
   const failures: string[] = [];
 
   const results = await Promise.allSettled(
-    providerRegistry.listProviders().map(async (provider) => ({
+    // Hidden agents are not scanned; turning them on scans them in full.
+    providerRegistry.listProviders().filter((provider) => agentVisibilityService.isVisible(provider.id)).map(async (provider) => ({
       provider: provider.id,
       processed: await provider.sessionSynchronizer.synchronize(lastScanAt ?? undefined),
     }))
@@ -150,6 +152,9 @@ export const sessionSynchronizerService = {
     provider: LLMProvider,
     filePath: string
   ): Promise<{ provider: LLMProvider; indexed: boolean; sessionId: string | null }> {
+    if (!agentVisibilityService.isVisible(provider)) {
+      return { provider, indexed: false, sessionId: null };
+    }
     const resolvedProvider = providerRegistry.resolveProvider(provider);
     const sessionId = await resolvedProvider.sessionSynchronizer.synchronizeFile(filePath);
     return {

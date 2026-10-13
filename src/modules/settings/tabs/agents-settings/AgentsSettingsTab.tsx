@@ -4,6 +4,8 @@ import type { AgentCategory, AgentContextByProvider, AgentProvider, AgentSetting
 import AgentCategoryContentSection from '@/modules/settings/tabs/agents-settings/sections/AgentCategoryContentSection';
 import AgentCategoryTabsSection from '@/modules/settings/tabs/agents-settings/sections/AgentCategoryTabsSection';
 import AgentSelectorSection from '@/modules/settings/tabs/agents-settings/sections/AgentSelectorSection';
+import OtherAgentsSwitch from '@/modules/settings/tabs/agents-settings/sections/OtherAgentsSwitch';
+import { useShowOtherAgents } from '@/shared/agentVisibility';
 
 type ProviderAuthStatusByProvider = Record<AgentProvider, ProviderAuthStatus>;
 
@@ -31,7 +33,10 @@ export default function AgentsSettingsTab({
   onCodexPermissionModeChange,
   projects,
 }: AgentsSettingsTabProps) {
-  const [selectedAgent, setSelectedAgent] = useState<AgentProvider>('claude');
+  const [chosenAgent, setSelectedAgent] = useState<AgentProvider>('claude');
+  // Agents other than Claude Code are hidden unless turned on (agentVisibility).
+  const showOtherAgents = useShowOtherAgents();
+  const selectedAgent: AgentProvider = showOtherAgents ? chosenAgent : 'claude';
   const [selectedCategory, setSelectedCategory] = useState<AgentCategory>('account');
   const visibleCategories = useMemo<AgentCategory[]>(() => (
     selectedAgent === 'opencode'
@@ -39,9 +44,9 @@ export default function AgentsSettingsTab({
       : ['account', 'permissions', 'mcp', 'skills']
   ), [selectedAgent]);
 
-  const visibleAgents = useMemo<AgentProvider[]>(() => {
-    return ['claude', 'cursor', 'codex', 'opencode'];
-  }, []);
+  const visibleAgents = useMemo<AgentProvider[]>(() => (
+    showOtherAgents ? ['claude', 'cursor', 'codex', 'opencode'] : ['claude']
+  ), [showOtherAgents]);
 
   const agentContextById = useMemo<AgentContextByProvider>(() => ({
     claude: {
@@ -76,12 +81,15 @@ export default function AgentsSettingsTab({
 
   return (
     <div className="-mx-4 -mb-4 -mt-2 flex min-h-[300px] min-w-0 flex-col overflow-hidden md:-mx-6 md:-mb-6 md:-mt-2 md:min-h-[500px]">
-      <AgentSelectorSection
-        agents={visibleAgents}
-        selectedAgent={selectedAgent}
-        onSelectAgent={setSelectedAgent}
-        agentContextById={agentContextById}
-      />
+      {/* No agent to pick between when Claude Code is the only one. */}
+      {visibleAgents.length > 1 && (
+        <AgentSelectorSection
+          agents={visibleAgents}
+          selectedAgent={selectedAgent}
+          onSelectAgent={setSelectedAgent}
+          agentContextById={agentContextById}
+        />
+      )}
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <AgentCategoryTabsSection
@@ -104,6 +112,8 @@ export default function AgentsSettingsTab({
           projects={projects}
         />
       </div>
+
+      <OtherAgentsSwitch />
     </div>
   );
 }

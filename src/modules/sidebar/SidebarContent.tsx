@@ -13,6 +13,7 @@ import SidebarRecentConversations from '@/modules/sidebar/SidebarRecentConversat
 import SidebarBulkActions from '@/modules/sidebar/SidebarBulkActions';
 import { useSidebarBulkSelection } from '@/modules/sidebar/hooks/useSidebarBulkSelection';
 import { ARCHIVED_SESSIONS_SELECTION_SCOPE } from '@/modules/sidebar/utils/sidebarSelectionScopes';
+import { useShowOtherAgents } from '@/shared/agentVisibility';
 
 function HighlightedSnippet({ snippet, highlights }: { snippet: string; highlights: { start: number; end: number }[] }) {
   const parts: ReactNode[] = [];
@@ -178,6 +179,8 @@ export default function SidebarContent({
   projectListProps,
   t,
 }: SidebarContentProps) {
+  // Agent logos only tell agents apart when there is more than one (agentVisibility).
+  const showOtherAgents = useShowOtherAgents();
   const showConversationSearch = searchMode === 'conversations' && searchFilter.trim().length >= 2;
   const hasSearchResults = Boolean(
     conversationResults
@@ -280,9 +283,11 @@ export default function SidebarContent({
                           session.provider,
                         )}
                       >
-                        <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-muted/60">
-                          <LLMProviderLogo provider={session.provider} className="h-3.5 w-3.5" />
-                        </span>
+                        {showOtherAgents && (
+                          <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-muted/60">
+                            <LLMProviderLogo provider={session.provider} className="h-3.5 w-3.5" />
+                          </span>
+                        )}
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-[13px] font-normal leading-4 text-foreground">
                             {session.sessionTitle}
@@ -630,9 +635,11 @@ export default function SidebarContent({
                               isProjectArchived: true,
                             })}
                           >
-                            <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-background/70">
-                              <LLMProviderLogo provider={session.__provider} className="h-3.5 w-3.5" />
-                            </span>
+                            {showOtherAgents && (
+                              <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-background/70">
+                                <LLMProviderLogo provider={session.__provider} className="h-3.5 w-3.5" />
+                              </span>
+                            )}
                             <div className="min-w-0 flex-1">
                               <p className="truncate text-xs text-foreground">
                                 {(typeof session.summary === 'string' && session.summary.trim().length > 0
@@ -719,9 +726,11 @@ export default function SidebarContent({
                             onArchivedSessionClick(session);
                           }}
                         >
-                          <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-background/70">
-                            <LLMProviderLogo provider={session.provider} className="h-3.5 w-3.5" />
-                          </span>
+                          {showOtherAgents && (
+                            <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-background/70">
+                              <LLMProviderLogo provider={session.provider} className="h-3.5 w-3.5" />
+                            </span>
+                          )}
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-xs text-foreground">
                               {session.sessionTitle}

@@ -19,6 +19,8 @@
 
 ---
 
+> **About this fork:** a Claude Code-only build of CloudCLI. Cursor, Codex and OpenCode are hidden and were not tested with this fork's interface; they can be shown again under Settings → Agents → Advanced, but may not work properly. CloudCLI's name, license and credits are kept. The original project is [siteboon/claudecodeui](https://github.com/siteboon/claudecodeui).
+
 ## Screenshots
 
 <div align="center">

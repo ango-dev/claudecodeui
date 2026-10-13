@@ -5,6 +5,7 @@ import type { AppTab, Project, ProjectSession } from '@/shared/types';
 import { usePlugins } from '@/modules/plugins';
 import { getSessionTitle } from '@/shared/utils';
 import { useSessionTitleRename } from '@/modules/project-workspace/hooks/useSessionTitleRename';
+import { useShowOtherAgents } from '@/shared/agentVisibility';
 
 type WorkspaceTitleProps = {
   activeTab: AppTab;
@@ -52,6 +53,8 @@ export default function WorkspaceTitle({
   onRenameSession,
 }: WorkspaceTitleProps) {
   const { t } = useTranslation();
+  // Agent logos only tell agents apart when there is more than one (agentVisibility).
+  const showOtherAgents = useShowOtherAgents();
   const { plugins } = usePlugins();
 
   const pluginDisplayName = activeTab.startsWith('plugin:')
@@ -79,7 +82,7 @@ export default function WorkspaceTitle({
 
   return (
     <div className="scrollbar-hide flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
-      {showSessionIcon && (
+      {showSessionIcon && showOtherAgents && (
         <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center">
           <LLMProviderLogo provider={selectedSession?.__provider} className="h-4 w-4" />
         </div>

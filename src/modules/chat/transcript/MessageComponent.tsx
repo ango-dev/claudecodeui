@@ -18,6 +18,7 @@ import MessageModelLabel from '@/modules/chat/transcript/MessageModelLabel';
 import MessageSpeakControl from '@/modules/chat/transcript/MessageSpeakControl';
 import { useIsExportingTranscript } from '@/modules/chat/context/TranscriptRenderContext';
 import { MemoryCitations } from '@/modules/chat/transcript/MemoryCitations';
+import { useShowOtherAgents } from '@/shared/agentVisibility';
 
 type MessageComponentProps = {
   message: ChatMessage;
@@ -51,6 +52,9 @@ const COPY_HIDDEN_TOOL_NAMES = new Set(['Bash', 'Edit', 'Write', 'ApplyPatch']);
  */
 const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, showRawParameters, showThinking, selectedProject, provider, onEditMessage, onForkFromMessage }: MessageComponentProps) => {
   const { t } = useTranslation('chat');
+  // The agent's logo and name head a reply only when there is more than one
+  // agent to tell apart (agentVisibility); with Claude Code alone they repeat.
+  const showOtherAgents = useShowOtherAgents();
   const isGrouped = prevMessage && prevMessage.type === message.type &&
     ((prevMessage.type === 'assistant') ||
       (prevMessage.type === 'user') ||
@@ -214,11 +218,6 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
               </div>
             )}
           </div>
-          {!isGrouped && (
-            <div className="hidden h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-brand text-sm text-brand-foreground sm:flex">
-              U
-            </div>
-          )}
         </div>
       ) : message.compact ? (
         /* A compaction: one row, its numbers, and its summary folded into it */
@@ -261,7 +260,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
       ) : (
         /* Claude/Error/Tool messages on the left */
         <div className="w-full">
-          {!isGrouped && (
+          {!isGrouped && (message.type === 'error' || message.type === 'tool' || showOtherAgents) && (
             <div className="mb-2 flex items-center space-x-3">
               {message.type === 'error' ? (
                 <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-red-600 text-sm text-white">

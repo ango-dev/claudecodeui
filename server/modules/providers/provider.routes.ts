@@ -1,5 +1,6 @@
 import express, { type Request, type Response } from 'express';
 
+import { agentVisibilityService } from '@/modules/providers/services/agent-visibility.service.js';
 import { providerAuthService } from '@/modules/providers/services/provider-auth.service.js';
 import { claudeSettingsPermissionsService } from '@/modules/providers/services/claude-settings-permissions.service.js';
 import { providerCapabilitiesService } from '@/modules/providers/services/provider-capabilities.service.js';
@@ -607,6 +608,24 @@ const parseCustomProviderModelPayload = (payload: unknown): CustomProviderModelI
   const effort = parseCustomProviderModelEffort(body.effort);
   return effort === undefined ? { model, id } : { model, id, effort };
 };
+
+router.get(
+  '/visibility',
+  asyncHandler(async (_req: Request, res: Response) => {
+    res.json(createApiSuccessResponse({ showOtherAgents: agentVisibilityService.showOtherAgents() }));
+  }),
+);
+
+router.put(
+  '/visibility',
+  asyncHandler(async (req: Request, res: Response) => {
+    const show = req.body?.showOtherAgents;
+    if (typeof show !== 'boolean') {
+      throw new AppError('showOtherAgents must be true or false.', { code: 'INVALID_AGENT_VISIBILITY', statusCode: 400 });
+    }
+    res.json(createApiSuccessResponse({ showOtherAgents: await agentVisibilityService.setShowOtherAgents(show) }));
+  }),
+);
 
 router.get(
   '/:provider/auth/status',

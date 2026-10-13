@@ -1,4 +1,5 @@
 import { providerRegistry } from '@/modules/providers/provider.registry.js';
+import { agentVisibilityService } from '@/modules/providers/services/agent-visibility.service.js';
 import type { LLMProvider, McpScope, ProviderMcpServer, UpsertProviderMcpServerInput } from '@/shared/types.js';
 import { AppError } from '@/shared/utils.js';
 
@@ -64,7 +65,8 @@ export const providerMcpService = {
 
     const scope = input.scope ?? 'project';
     const results: Array<{ provider: LLMProvider; created: boolean; error?: string }> = [];
-    const providers = providerRegistry.listProviders();
+    // Hidden agents (see agentVisibilityService) get nothing written to their config.
+    const providers = providerRegistry.listProviders().filter((provider) => agentVisibilityService.isVisible(provider.id));
     for (const provider of providers) {
       try {
         await provider.mcp.upsertServer({ ...input, scope });

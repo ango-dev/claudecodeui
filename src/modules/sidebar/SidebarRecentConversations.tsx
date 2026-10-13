@@ -12,6 +12,7 @@ import SidebarBulkActions from '@/modules/sidebar/SidebarBulkActions';
 import { useSidebarBulkSelection } from '@/modules/sidebar/hooks/useSidebarBulkSelection';
 import { useTouchScreen } from '@/modules/sidebar/hooks/useTouchScreen';
 import { RECENT_SESSIONS_SELECTION_SCOPE } from '@/modules/sidebar/utils/sidebarSelectionScopes';
+import { useShowOtherAgents } from '@/shared/agentVisibility';
 
 type SidebarRecentConversationsProps = {
   conversations: RecentConversationListItem[];
@@ -75,6 +76,8 @@ export default function SidebarRecentConversations({
   onRetry,
   t,
 }: SidebarRecentConversationsProps) {
+  // Agent logos only tell agents apart when there is more than one (agentVisibility).
+  const showOtherAgents = useShowOtherAgents();
   // The row last right-clicked and where: its options menu opens at that point.
   const [contextMenu, setContextMenu] = useState<{ sessionId: string; point: { x: number; y: number } } | null>(null);
   const isTouchScreen = useTouchScreen();
@@ -281,7 +284,7 @@ export default function SidebarRecentConversations({
                     : 'text-foreground hover:bg-accent/60',
                 )}
               >
-                <LLMProviderLogo provider={conversation.provider} className="h-3.5 w-3.5 flex-shrink-0" />
+                {showOtherAgents && <LLMProviderLogo provider={conversation.provider} className="h-3.5 w-3.5 flex-shrink-0" />}
 
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13px] font-normal leading-4">

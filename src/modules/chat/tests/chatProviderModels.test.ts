@@ -5,6 +5,15 @@ import { afterEach, beforeEach, test, vi } from 'vitest';
 
 import { resetUserPreferences, writeUserPreference } from '@/shared/userSettings';
 
+// These tests cover choosing among all the agents, so the others are shown
+// (this fork hides them by default; see agentVisibility).
+vi.mock('@/shared/agentVisibility', () => ({
+  isAgentVisible: () => true,
+  useShowOtherAgents: () => true,
+  getShowOtherAgents: () => true,
+  loadAgentVisibility: async () => undefined,
+}));
+
 /**
  * The four per-provider default models used to be four useState slots with four
  * copy-pasted reconciliation effects and a four-branch setter. They are now one

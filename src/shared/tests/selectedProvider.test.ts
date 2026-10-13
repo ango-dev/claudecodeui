@@ -1,9 +1,18 @@
 import assert from 'node:assert/strict';
 
-import { beforeEach, test } from 'vitest';
+import { beforeEach, test, vi } from 'vitest';
 
 import { readSelectedProvider, writeSelectedProvider } from '@/shared/selectedProvider';
 import { subscribeToUserPreferences, writeUserPreference, resetUserPreferences } from '@/shared/userSettings';
+
+// These tests cover choosing among all the agents, so the others are shown
+// (this fork hides them by default; see agentVisibility).
+vi.mock('@/shared/agentVisibility', () => ({
+  isAgentVisible: () => true,
+  useShowOtherAgents: () => true,
+  getShowOtherAgents: () => true,
+  loadAgentVisibility: async () => undefined,
+}));
 
 /**
  * The provider selection was read in six places by four different hand-rolled

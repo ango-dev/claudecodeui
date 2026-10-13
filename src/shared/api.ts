@@ -405,6 +405,8 @@ export const api = {
   // Provider (coding agent) endpoints — models, capabilities, sessions, MCP, skills.
   providers: {
     capabilities: () => get('/api/providers/capabilities'),
+    visibility: () => get('/api/providers/visibility'),
+    setVisibility: (showOtherAgents: boolean) => put('/api/providers/visibility', { showOtherAgents }),
     authStatus: (provider: string) =>
       get(`/api/providers/${encodeURIComponent(provider)}/auth/status`),
     claudeSettingsPermissions: () => get('/api/providers/claude/settings-permissions'),
