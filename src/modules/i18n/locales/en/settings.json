@@ -805,7 +805,6 @@
     "playwrightLabel": "Playwright",
     "chromiumLabel": "Chromium",
     "chromeLabel": "Google Chrome",
-    "xvfbLabel": "Xvfb",
     "engineLabel": "Browser engine",
     "engineDescription": "Stealth is harder for sites to detect as a bot. Changing this closes open sessions.",
     "engines": {
@@ -824,14 +823,6 @@
       "headless": "Headless (no window)",
       "virtualScreen": "Real window on a virtual screen",
       "window": "Real window (opens on the server's desktop)"
-    },
-    "virtualScreen": {
-      "missingTitle": "Xvfb is not installed",
-      "missingDescription": "Real window mode needs Xvfb. Install it, or choose Headless.",
-      "manualCommand": "Needs admin rights. If the button fails, run:",
-      "install": "Install Xvfb",
-      "installing": "Installing Xvfb...",
-      "installFailed": "Failed to install Xvfb."
     },
     "engineList": {
       "title": "Installed engines",
@@ -898,6 +889,36 @@
       "turnOn": "Set GPU to \"use when available\" and check again.",
       "driverUnsupported": "The GPU driver may not support this. Run vulkaninfo --summary on the server to see why.",
       "otherPlatform": "Update this computer's graphics drivers, then check again."
+    },
+    "desktop": {
+      "label": "Desktop",
+      "description": "A taskbar and window frames make the screen look like a real computer.",
+      "plain": "Plain screen",
+      "taskbar": "Taskbar and window frames"
+    },
+    "timezone": {
+      "label": "Time zone",
+      "description": "Sites check it against your internet location. Pick where your server's internet is.",
+      "server": "Server's ({{zone}})",
+      "useDevice": "Use this device's ({{zone}})"
+    },
+    "audio": {
+      "label": "Audio devices",
+      "description": "Real computers have a speaker and mic. Sites can spot a browser without them.",
+      "none": "None",
+      "virtual": "Virtual speaker and mic (silent)"
+    },
+    "helpers": {
+      "missingTitle": "{{label}} is not installed",
+      "why": {
+        "xvfb": "Real window mode needs it. Install it, or choose Headless.",
+        "pulseaudio": "The virtual speaker and mic need it. Install it, or choose None.",
+        "fluxbox": "The taskbar needs it. Install it, or choose Plain screen."
+      },
+      "manualCommand": "Needs admin rights. If the button fails, run:",
+      "install": "Install {{label}}",
+      "installing": "Installing {{label}}...",
+      "installFailed": "Failed to install {{label}}."
     }
   },
   "mcpServersAdd": {

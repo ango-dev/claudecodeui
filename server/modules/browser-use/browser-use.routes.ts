@@ -159,20 +159,25 @@ router.post('/graphics/check', async (_req, res) => {
   }
 });
 
-router.post('/virtual-screen/install', async (_req, res) => {
+router.post('/system-helper/install', async (req, res) => {
+  const helper = req.body?.helper;
+  if (helper !== 'xvfb' && helper !== 'pulseaudio' && helper !== 'fluxbox') {
+    sendError(res, 400, BROWSER_USE_ERROR_CODES.VIRTUAL_SCREEN_INSTALL_FAILED, 'Choose xvfb, pulseaudio or fluxbox to install.');
+    return;
+  }
   try {
-    const result = await browserUseService.installVirtualScreen();
+    const result = await browserUseService.installSystemHelper(helper);
     if (result.success) {
       res.json({ success: true, data: result });
       return;
     }
-    sendError(res, 500, BROWSER_USE_ERROR_CODES.VIRTUAL_SCREEN_INSTALL_FAILED, 'Failed to install Xvfb.', result.message);
+    sendError(res, 500, BROWSER_USE_ERROR_CODES.VIRTUAL_SCREEN_INSTALL_FAILED, 'Failed to install.', result.message);
   } catch (error) {
     sendError(
       res,
       500,
       BROWSER_USE_ERROR_CODES.VIRTUAL_SCREEN_INSTALL_FAILED,
-      'Failed to install Xvfb.',
+      'Failed to install.',
       error instanceof Error ? error.message : undefined,
     );
   }

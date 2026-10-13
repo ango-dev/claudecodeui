@@ -13,7 +13,9 @@ import type { BrowserEngineChoice } from '@/modules/settings/tabs/browser-use-se
 import BrowserGraphicsCheck from '@/modules/settings/tabs/browser-use-settings/BrowserGraphicsCheck';
 import type { BrowserGpuStatus } from '@/modules/settings/tabs/browser-use-settings/BrowserGraphicsCheck';
 import BrowserInstalledEngines from '@/modules/settings/tabs/browser-use-settings/BrowserInstalledEngines';
-import BrowserVirtualScreenNotice from '@/modules/settings/tabs/browser-use-settings/BrowserVirtualScreenNotice';
+import BrowserMissingHelperNotice from '@/modules/settings/tabs/browser-use-settings/BrowserMissingHelperNotice';
+import type { BrowserSystemHelper } from '@/modules/settings/tabs/browser-use-settings/BrowserMissingHelperNotice';
+import BrowserTimezoneSetting from '@/modules/settings/tabs/browser-use-settings/BrowserTimezoneSetting';
 
 type BrowserUseEngine = 'playwright' | 'patchright';
 type BrowserUseBrowser = 'chromium' | 'chrome';
@@ -29,6 +31,12 @@ type BrowserUseSettings = {
   display: BrowserUseDisplay;
   /** Whether the browser may use the server's GPU (Vulkan on Linux). */
   gpu: BrowserGpuStatus['setting'];
+  /** The browser's time zone, or null for the server's. */
+  timezone: string | null;
+  /** A silent speaker and mic (PulseAudio), or no audio devices. Linux. */
+  audio: 'none' | 'virtual';
+  /** A taskbar and window frames on the virtual screen (Fluxbox), or a plain screen. */
+  desktop: 'plain' | 'taskbar';
 };
 
 type BrowserUseStatus = {
@@ -41,10 +49,9 @@ type BrowserUseStatus = {
   /** The engine's CLI by full path, for the admin commands shown to run by hand. */
   engineCommand: string;
   display: BrowserUseDisplay;
-  /** The real-window mode is chosen on Linux, where it needs Xvfb. */
-  virtualScreenRequired: boolean;
-  xvfbInstalled: boolean;
-  xvfbInstallCommand: string | null;
+  serverTimezone: string;
+  /** Programs the settings can need on the server (Xvfb, PulseAudio, Fluxbox). */
+  helpers: BrowserSystemHelper[];
   /** The server's GPU as the browser can use it; see BrowserGraphicsCheck. */
   gpu: BrowserGpuStatus;
   /** Both engines and their Chromium builds, as installed. */
@@ -159,6 +166,8 @@ export default function BrowserUseSettingsTab() {
   const engineChoice: BrowserEngineChoice = `${settings?.engine ?? 'playwright'}-${settings?.browser ?? 'chromium'}`;
   const usesChrome = settings?.browser === 'chrome';
   const engineLabel = settings?.engine === 'patchright' ? 'Patchright' : 'Playwright';
+  // Audio devices and the virtual desktop only exist on a Linux server.
+  const isLinux = status?.platform === 'linux';
   const reloadStatus = async () => {
     setIsStatusLoading(true);
     try {
@@ -259,7 +268,6 @@ export default function BrowserUseSettingsTab() {
               </div>
             )}
 
-            {/* Only while something is missing: once installed there is nothing left to run. */}
             <div>
               <label htmlFor="browser-use-display" className="text-sm font-medium text-foreground">
                 {t('browserUseSettings.displayLabel')}
@@ -281,6 +289,65 @@ export default function BrowserUseSettingsTab() {
               </option>
             </select>
 
+            {isLinux && settings?.display === 'window' && (
+              <>
+                <div>
+                  <label htmlFor="browser-use-desktop" className="text-sm font-medium text-foreground">
+                    {t('browserUseSettings.desktop.label')}
+                  </label>
+                  <p className="mt-0.5 text-sm text-muted-foreground">{t('browserUseSettings.desktop.description')}</p>
+                </div>
+                <select
+                  id="browser-use-desktop"
+                  value={settings.desktop}
+                  disabled={isSaving}
+                  onChange={(event) => void updateSettings({ desktop: event.target.value as BrowserUseSettings['desktop'] })}
+                  className="w-full max-w-md touch-manipulation rounded-lg border border-input bg-card p-2.5 pr-8 text-sm text-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                >
+                  <option value="plain">{t('browserUseSettings.desktop.plain')}</option>
+                  <option value="taskbar">{t('browserUseSettings.desktop.taskbar')}</option>
+                </select>
+              </>
+            )}
+
+            {settings && status && (
+              <BrowserTimezoneSetting
+                timezone={settings.timezone}
+                serverTimezone={status.serverTimezone}
+                disabled={isSaving}
+                onChange={(timezone) => void updateSettings({ timezone })}
+                t={t}
+              />
+            )}
+
+            {isLinux && settings && (
+              <>
+                <div>
+                  <label htmlFor="browser-use-audio" className="text-sm font-medium text-foreground">
+                    {t('browserUseSettings.audio.label')}
+                  </label>
+                  <p className="mt-0.5 text-sm text-muted-foreground">{t('browserUseSettings.audio.description')}</p>
+                </div>
+                <select
+                  id="browser-use-audio"
+                  value={settings.audio}
+                  disabled={isSaving}
+                  onChange={(event) => void updateSettings({ audio: event.target.value as BrowserUseSettings['audio'] })}
+                  className="w-full max-w-md touch-manipulation rounded-lg border border-input bg-card p-2.5 pr-8 text-sm text-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                >
+                  <option value="none">{t('browserUseSettings.audio.none')}</option>
+                  <option value="virtual">{t('browserUseSettings.audio.virtual')}</option>
+                </select>
+              </>
+            )}
+
+            {/* Only while something is missing: once installed there is nothing left to run. */}
+            {statusMatchesSettings && status?.helpers
+              ?.filter((helper) => helper.required && !helper.installed)
+              .map((helper) => (
+                <BrowserMissingHelperNotice key={helper.id} helper={helper} onInstalled={reloadStatus} t={t} />
+              ))}
+
             {status?.gpu && settings && (
               <BrowserGraphicsCheck
                 gpu={status.gpu}
@@ -289,10 +356,6 @@ export default function BrowserUseSettingsTab() {
                 onGpuChange={(gpu) => void updateSettings({ gpu })}
                 t={t}
               />
-            )}
-
-            {statusMatchesSettings && status?.virtualScreenRequired && !status.xvfbInstalled && (
-              <BrowserVirtualScreenNotice installCommand={status.xvfbInstallCommand} onInstalled={reloadStatus} t={t} />
             )}
 
             {statusMatchesSettings && status && !(status.playwrightInstalled && status.chromiumInstalled) && (
@@ -314,11 +377,11 @@ export default function BrowserUseSettingsTab() {
               <span className="rounded-md border border-border px-2 py-1">
                 {usesChrome ? t('browserUseSettings.chromeLabel') : t('browserUseSettings.chromiumLabel')}: {runtimeLabel(status?.chromiumInstalled)}
               </span>
-              {status?.virtualScreenRequired && (
-                <span className="rounded-md border border-border px-2 py-1">
-                  {t('browserUseSettings.xvfbLabel')}: {runtimeLabel(status.xvfbInstalled)}
+              {status?.helpers?.filter((helper) => helper.required).map((helper) => (
+                <span key={helper.id} className="rounded-md border border-border px-2 py-1">
+                  {helper.label}: {runtimeLabel(helper.installed)}
                 </span>
-              )}
+              ))}
               <span className="rounded-md border border-border px-2 py-1">
                 {t('browserUseSettings.statusPrefix')}: {isStatusLoading && !status
                   ? t('browserUseSettings.checking')

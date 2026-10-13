@@ -11,7 +11,7 @@ import { appConfigDb } from '@/modules/database/index.js';
 import { providerMcpService } from '@/modules/providers/index.js';
 import { findApplicationRoot, getModuleDirectory } from '@/shared/utils.js';
 
-import { findXvfb, getVirtualDisplay, stopVirtualDisplay } from './browser-use-display.js';
+import { findPulseAudio, findWindowManager, findXvfb, getAudioServer, getVirtualDisplay, stopVirtualDisplay } from './browser-use-display.js';
 import { getBrowserUseRuntime } from './browser-use-runtime.js';
 
 const require = createRequire(import.meta.url);
@@ -93,6 +93,20 @@ type BrowserUseDisplay = 'headless' | 'window';
  */
 type BrowserUseGpu = 'auto' | 'off';
 
+/**
+ * Audio devices the browser shows pages: none (no sound system on a server),
+ * or a silent speaker and microphone from CloudCLI's own PulseAudio. Every
+ * desktop has some, so none at all stands out. Linux only.
+ */
+type BrowserUseAudio = 'none' | 'virtual';
+
+/**
+ * The virtual screen as pages see it: plain (no window manager, so the
+ * window sits at 0,0 and the usable area is the whole screen), or a desktop
+ * with a taskbar and window frames (Fluxbox). Real-window mode on Linux only.
+ */
+type BrowserUseDesktop = 'plain' | 'taskbar';
+
 type BrowserUseSettings = {
   enabled: boolean;
   engine: BrowserUseEngine;
@@ -101,6 +115,14 @@ type BrowserUseSettings = {
   chromePath: string | null;
   display: BrowserUseDisplay;
   gpu: BrowserUseGpu;
+  /**
+   * The browser's time zone (IANA, e.g. America/Los_Angeles), or null for the
+   * server's. Sites compare it with the IP's location; a server's UTC next to
+   * a home IP is a classic bot sign.
+   */
+  timezone: string | null;
+  audio: BrowserUseAudio;
+  desktop: BrowserUseDesktop;
 };
 
 const BROWSER_USE_ENGINES: readonly BrowserUseEngine[] = ['playwright', 'patchright'];
@@ -114,6 +136,70 @@ const readBrowser = (value: unknown): BrowserUseBrowser => (value === 'chrome' ?
 const readDisplay = (value: unknown): BrowserUseDisplay => (value === 'window' ? 'window' : 'headless');
 
 const readGpu = (value: unknown): BrowserUseGpu => (value === 'off' ? 'off' : 'auto');
+
+const readAudio = (value: unknown): BrowserUseAudio => (value === 'virtual' ? 'virtual' : 'none');
+
+const readDesktop = (value: unknown): BrowserUseDesktop => (value === 'taskbar' ? 'taskbar' : 'plain');
+
+/** A time zone Node (and so Chrome's ICU) knows, else null for the server's own. */
+const readTimezone = (value: unknown): string | null => {
+  const zone = typeof value === 'string' ? value.trim() : '';
+  if (!zone || zone.length > 64) {
+    return null;
+  }
+  try {
+    return new Intl.DateTimeFormat('en-US', { timeZone: zone }).resolvedOptions().timeZone;
+  } catch {
+    return null;
+  }
+};
+
+/** The server's own time zone, which the browser has unless one is set. */
+const serverTimezone = (): string => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
+const needsAudioServer = (settings: BrowserUseSettings): boolean => (
+  settings.audio === 'virtual' && process.platform === 'linux'
+);
+
+const needsWindowManager = (settings: BrowserUseSettings): boolean => (
+  settings.desktop === 'taskbar' && needsVirtualScreen(settings)
+);
+
+/** A program the chosen settings need on the server, installed with the system's package manager. */
+type SystemHelper = 'xvfb' | 'pulseaudio' | 'fluxbox';
+
+const SYSTEM_HELPERS: Record<SystemHelper, {
+  label: string;
+  find: () => string | null;
+  needed: (settings: BrowserUseSettings) => boolean;
+  packages: { apt: string; dnf: string; pacman: string; zypper: string };
+}> = {
+  xvfb: {
+    label: 'Xvfb',
+    find: findXvfb,
+    needed: (settings) => needsVirtualScreen(settings),
+    packages: { apt: 'xvfb', dnf: 'xorg-x11-server-Xvfb', pacman: 'xorg-server-xvfb', zypper: 'xorg-x11-server-Xvfb' },
+  },
+  pulseaudio: {
+    label: 'PulseAudio',
+    find: findPulseAudio,
+    needed: needsAudioServer,
+    packages: { apt: 'pulseaudio', dnf: 'pulseaudio', pacman: 'pulseaudio', zypper: 'pulseaudio' },
+  },
+  fluxbox: {
+    label: 'Fluxbox',
+    find: findWindowManager,
+    needed: needsWindowManager,
+    packages: { apt: 'fluxbox', dnf: 'fluxbox', pacman: 'fluxbox', zypper: 'fluxbox' },
+  },
+};
+
+const SYSTEM_HELPER_IDS = Object.keys(SYSTEM_HELPERS) as SystemHelper[];
+
+/** The helpers these settings need that are not installed. */
+const missingHelpers = (settings: BrowserUseSettings): SystemHelper[] => (
+  SYSTEM_HELPER_IDS.filter((id) => SYSTEM_HELPERS[id].needed(settings) && !SYSTEM_HELPERS[id].find())
+);
 
 /** A real window needs a virtual screen only on Linux; elsewhere the desktop is there. */
 const needsVirtualScreen = (settings: BrowserUseSettings): boolean => (
@@ -159,8 +245,9 @@ type RuntimeReadiness = {
   engine: BrowserUseEngine;
   browser: BrowserUseBrowser;
   display: BrowserUseDisplay;
-  /** False only while the real-window mode waits on Xvfb (Linux). */
+  /** False while the settings wait on a program the server lacks (Xvfb, PulseAudio, Fluxbox). */
   virtualScreenReady: boolean;
+  missingHelpers: SystemHelper[];
   /** The selected engine's module (Playwright's API either way). */
   playwright: any | null;
   playwrightInstalled: boolean;
@@ -185,6 +272,9 @@ const DEFAULT_SETTINGS: BrowserUseSettings = {
   chromePath: null,
   display: 'headless',
   gpu: 'auto',
+  timezone: null,
+  audio: 'none',
+  desktop: 'plain',
 };
 // Browsers being launched: their sessions have no handle yet, but may be on the virtual screen.
 let launchesInProgress = 0;
@@ -219,6 +309,9 @@ function readSettings(): BrowserUseSettings {
       chromePath: readChromePath(parsed.chromePath),
       display: readDisplay(parsed.display),
       gpu: readGpu(parsed.gpu),
+      timezone: readTimezone(parsed.timezone),
+      audio: readAudio(parsed.audio),
+      desktop: readDesktop(parsed.desktop),
     };
   } catch (error: any) {
     console.warn('[Browser] Failed to read settings:', error?.message || error);
@@ -234,6 +327,9 @@ function writeSettings(settings: BrowserUseSettings): BrowserUseSettings {
     chromePath: readChromePath(settings.chromePath),
     display: readDisplay(settings.display),
     gpu: readGpu(settings.gpu),
+    timezone: readTimezone(settings.timezone),
+    audio: readAudio(settings.audio),
+    desktop: readDesktop(settings.desktop),
   };
 
   appConfigDb.set(BROWSER_USE_SETTINGS_KEY, JSON.stringify(normalized));
@@ -261,7 +357,9 @@ function getSetupMessage(settings: BrowserUseSettings, readiness: RuntimeReadine
   }
 
   if (!readiness.virtualScreenReady) {
-    return `Real window mode needs Xvfb. Install it in Settings -> Browser, or run \`${xvfbInstallCommand()}\`.`;
+    const labels = readiness.missingHelpers.map((id) => SYSTEM_HELPERS[id].label).join(' and ');
+    const command = readiness.missingHelpers.map((id) => helperInstallCommand(id)).join(' && ');
+    return `Needs ${labels}. Install in Settings -> Browser, or run \`${command}\`.`;
   }
 
   if (!readiness.chromiumInstalled) {
@@ -368,7 +466,8 @@ function probeRuntime(settings: BrowserUseSettings): RuntimeProbe {
     engine,
     browser,
     display,
-    virtualScreenReady: !needsVirtualScreen(settings) || Boolean(findXvfb()),
+    virtualScreenReady: missingHelpers(settings).length === 0,
+    missingHelpers: missingHelpers(settings),
     playwright,
     playwrightInstalled: Boolean(playwright),
     chromiumInstalled: false,
@@ -402,6 +501,7 @@ function getRuntimeReadiness(options: { force?: boolean } = {}): RuntimeReadines
     && cachedProbe.value.engine === settings.engine
     && cachedProbe.value.browser === settings.browser
     && cachedProbe.value.display === settings.display
+    && cachedProbe.value.missingHelpers.join() === missingHelpers(settings).join()
     && now - cachedProbe.updatedAt < RUNTIME_READINESS_CACHE_TTL_MS;
   const probe = canUseCache ? cachedProbe.value : probeRuntime(settings);
 
@@ -578,8 +678,9 @@ function packageInstallCommand(names: { apt: string; dnf: string; pacman: string
   return ['apt-get', 'install', '-y', ...names.apt.split(' ')];
 }
 
-function xvfbPackageCommand(): string[] {
-  return packageInstallCommand({ apt: 'xvfb', dnf: 'xorg-x11-server-Xvfb', pacman: 'xorg-server-xvfb', zypper: 'xorg-x11-server-Xvfb' });
+/** The command that installs a helper, as shown to run by hand (with sudo). */
+function helperInstallCommand(helper: SystemHelper): string {
+  return `sudo ${packageInstallCommand(SYSTEM_HELPERS[helper].packages).join(' ')}`;
 }
 
 //----------------- GPU ------------
@@ -700,23 +801,21 @@ function classifyWebgl(result: { renderer?: string; vendor?: string; webgl2?: bo
 
 // ---------------------------
 
-function xvfbInstallCommand(): string {
-  return `sudo ${xvfbPackageCommand().join(' ')}`;
-}
 
 /**
  * Installs Xvfb for the real-window mode: directly when CloudCLI runs as
  * root, else through sudo only where it needs no password (-n never waits
  * for one). Without either it fails with the command to run by hand.
  */
-async function installXvfb(): Promise<{ success: boolean; message: string }> {
+async function installSystemHelper(helper: SystemHelper): Promise<{ success: boolean; message: string }> {
+  const { label, find, packages } = SYSTEM_HELPERS[helper];
   if (process.platform !== 'linux') {
-    return { success: true, message: 'A real window needs no virtual screen on this system.' };
+    return { success: true, message: `${label} is only needed on Linux.` };
   }
-  if (findXvfb()) {
-    return { success: true, message: 'Xvfb is already installed.' };
+  if (find()) {
+    return { success: true, message: `${label} is already installed.` };
   }
-  const [manager, ...args] = xvfbPackageCommand();
+  const [manager, ...args] = packageInstallCommand(packages);
   const run = (command: string, commandArgs: string[]) => (
     isAdministrator() ? runCommand(command, commandArgs) : runCommand('sudo', ['-n', command, ...commandArgs])
   );
@@ -738,15 +837,15 @@ async function installXvfb(): Promise<{ success: boolean; message: string }> {
     return {
       success: false,
       message: lacksRights
-        ? `Needs admin rights. Run \`${xvfbInstallCommand()}\` on the server.`
-        : `Install failed${detail ? `: ${detail}` : ''}. Run \`${xvfbInstallCommand()}\` on the server to see why.`,
+        ? `Needs admin rights. Run \`${helperInstallCommand(helper)}\` on the server.`
+        : `Install failed${detail ? `: ${detail}` : ''}. Run \`${helperInstallCommand(helper)}\` on the server to see why.`,
     };
   } finally {
     runtimeProbeCache = null;
   }
-  return findXvfb()
-    ? { success: true, message: 'Xvfb installed.' }
-    : { success: false, message: `Xvfb was installed but not found. Run \`${xvfbInstallCommand()}\` on the server.` };
+  return find()
+    ? { success: true, message: `${label} installed.` }
+    : { success: false, message: `${label} was installed but not found. Run \`${helperInstallCommand(helper)}\` on the server.` };
 }
 
 /**
@@ -890,11 +989,30 @@ function ownerSessions(ownerId: string): BrowserUseSession[] {
  */
 async function buildLaunchOptions(settings: BrowserUseSettings, readiness: RuntimeReadiness) {
   const withWindow = settings.display === 'window';
+  const withTaskbar = needsWindowManager(settings);
+  const env: Record<string, string> = {};
+  // On Linux the window goes on CloudCLI's Xvfb, never on a desktop.
+  if (needsVirtualScreen(settings)) {
+    const { display, xauthority } = await getVirtualDisplay({ windowManager: withTaskbar });
+    env.DISPLAY = display;
+    env.XAUTHORITY = xauthority;
+  }
+  if (needsAudioServer(settings)) {
+    env.PULSE_SERVER = await getAudioServer();
+  }
+  // The process's own time zone: Date and Intl read it natively. Chrome on
+  // macOS and Windows ignores TZ, so there the page is told instead.
+  if (settings.timezone) {
+    env.TZ = settings.timezone;
+  }
   const launchOptions = {
     headless: !withWindow,
     args: [
       '--disable-dev-shm-usage',
-      ...(withWindow
+      // With a taskbar the window opens maximized, as most desktop windows
+      // are; without a window manager there is nothing to maximize into.
+      ...(withWindow && withTaskbar ? ['--start-maximized'] : []),
+      ...(withWindow && !withTaskbar
         ? [`--window-size=${BROWSER_WINDOW_SIZE.width},${BROWSER_WINDOW_SIZE.height}`, '--window-position=0,0']
         : []),
       ...(shouldUseGpu(settings, readGpuAccess()) ? GPU_ARGS : []),
@@ -904,18 +1022,14 @@ async function buildLaunchOptions(settings: BrowserUseSettings, readiness: Runti
     ...(settings.browser === 'chrome' && readiness.chromiumExecutablePath
       ? { executablePath: readiness.chromiumExecutablePath }
       : {}),
-    // On Linux the window goes on CloudCLI's Xvfb, never on a desktop.
-    ...(needsVirtualScreen(settings)
-      ? await getVirtualDisplay().then(({ display, xauthority }) => ({
-        env: { ...process.env, DISPLAY: display, XAUTHORITY: xauthority },
-      }))
-      : {}),
+    ...(Object.keys(env).length > 0 ? { env: { ...process.env, ...env } } : {}),
   };
   const contextOptions = {
     // A real window keeps its own size: an emulated viewport inside it
     // would differ from the window, which pages can notice.
     viewport: withWindow ? null : { width: 1440, height: 900 },
     serviceWorkers: 'block',
+    ...(settings.timezone && process.platform !== 'linux' ? { timezoneId: settings.timezone } : {}),
   };
   return { launchOptions, contextOptions };
 }
@@ -1097,6 +1211,9 @@ export const browserUseService = {
       chromePath: settings.chromePath === undefined ? current.chromePath : readChromePath(settings.chromePath),
       display: settings.display === undefined ? current.display : readDisplay(settings.display),
       gpu: settings.gpu === undefined ? current.gpu : readGpu(settings.gpu),
+      timezone: settings.timezone === undefined ? current.timezone : readTimezone(settings.timezone),
+      audio: settings.audio === undefined ? current.audio : readAudio(settings.audio),
+      desktop: settings.desktop === undefined ? current.desktop : readDesktop(settings.desktop),
     };
 
     const next = writeSettings(nextSettings);
@@ -1106,6 +1223,9 @@ export const browserUseService = {
       || next.chromePath !== current.chromePath
       || next.display !== current.display
       || next.gpu !== current.gpu
+      || next.timezone !== current.timezone
+      || next.audio !== current.audio
+      || next.desktop !== current.desktop
     ) {
       // Open sessions run under the old engine; they end rather than mix.
       runtimeProbeCache = null;
@@ -1137,9 +1257,18 @@ export const browserUseService = {
       platform: process.platform,
       engineCommand: engineCommand(settings.engine),
       display: settings.display,
-      virtualScreenRequired: needsVirtualScreen(settings),
-      xvfbInstalled: Boolean(findXvfb()),
-      xvfbInstallCommand: process.platform === 'linux' ? xvfbInstallCommand() : null,
+      timezone: settings.timezone,
+      serverTimezone: serverTimezone(),
+      audio: settings.audio,
+      desktop: settings.desktop,
+      // The programs the settings can need, for Settings' install notices and chips.
+      helpers: SYSTEM_HELPER_IDS.map((id) => ({
+        id,
+        label: SYSTEM_HELPERS[id].label,
+        required: SYSTEM_HELPERS[id].needed(settings),
+        installed: Boolean(SYSTEM_HELPERS[id].find()),
+        installCommand: process.platform === 'linux' ? helperInstallCommand(id) : null,
+      })),
       gpu: (() => {
         const access = readGpuAccess();
         return {
@@ -1212,8 +1341,10 @@ export const browserUseService = {
     return probeWebgl(settings, readiness);
   },
 
-  async installVirtualScreen() {
-    const result = await installXvfb();
+  async installSystemHelper(helper: string) {
+    const result = SYSTEM_HELPER_IDS.includes(helper as SystemHelper)
+      ? await installSystemHelper(helper as SystemHelper)
+      : { success: false, message: 'Unknown program.' };
     return { ...result, status: await this.getStatus() };
   },
 

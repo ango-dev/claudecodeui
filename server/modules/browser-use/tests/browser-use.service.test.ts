@@ -45,6 +45,9 @@ test('browser settings default to Playwright with Chromium', async () => {
       chromePath: null,
       display: 'headless',
       gpu: 'auto',
+      timezone: null,
+      audio: 'none',
+      desktop: 'plain',
     });
   });
 });
@@ -59,11 +62,17 @@ test('browser settings keep a stealth Chrome choice and drop unknown values', as
       chromePath: '~/chrome/opt/google/chrome/chrome',
       display: 'headless',
       gpu: 'auto',
+      timezone: null,
+      audio: 'none',
+      desktop: 'plain',
     });
 
     // Only the fields given change; anything unrecognised falls back to the default.
-    const reset = await browserUseService.updateSettings({ engine: 'puppeteer', browser: 'firefox', chromePath: '', display: 'kiosk', gpu: 'maybe' } as never);
-    assert.deepEqual(reset, { enabled: false, engine: 'playwright', browser: 'chromium', chromePath: null, display: 'headless', gpu: 'auto' });
+    const reset = await browserUseService.updateSettings({ engine: 'puppeteer', browser: 'firefox', chromePath: '', display: 'kiosk', gpu: 'maybe', timezone: 'Mars/Olympus', audio: 'loud', desktop: 'fancy' } as never);
+    assert.deepEqual(reset, {
+      enabled: false, engine: 'playwright', browser: 'chromium', chromePath: null,
+      display: 'headless', gpu: 'auto', timezone: null, audio: 'none', desktop: 'plain',
+    });
     assert.deepEqual(await browserUseService.getSettings(), reset);
   });
 });
@@ -95,8 +104,9 @@ test('the real-window choice applies to any engine and asks for Xvfb only on Lin
 
     const status = await browserUseService.getStatus();
     assert.equal(status.display, 'window');
-    assert.equal(status.virtualScreenRequired, process.platform === 'linux');
-    assert.equal(typeof status.xvfbInstalled, 'boolean');
+    const xvfb = status.helpers.find((helper) => helper.id === 'xvfb');
+    assert.equal(xvfb?.required, process.platform === 'linux');
+    assert.equal(typeof xvfb?.installed, 'boolean');
     // Both engines are listed, to switch between and remove.
     assert.deepEqual(status.engines.map((item) => item.engine), ['playwright', 'patchright']);
   });
@@ -120,5 +130,28 @@ test('the GPU can be turned off, and status says why it is or is not used', asyn
     assert.ok(Array.isArray(status.gpu.renderNodes));
     // The group command names the user CloudCLI runs as.
     assert.match(status.gpu.groupCommand, /^sudo usermod -aG \S+ \S+$/);
+  });
+});
+
+test('time zone, audio and desktop settings, and the programs they need', async () => {
+  await withDatabase(async () => {
+    const saved = await browserUseService.updateSettings({
+      display: 'window', timezone: '  America/Los_Angeles ', audio: 'virtual', desktop: 'taskbar',
+    });
+    assert.equal(saved.timezone, 'America/Los_Angeles');
+    assert.equal(saved.audio, 'virtual');
+    assert.equal(saved.desktop, 'taskbar');
+
+    const status = await browserUseService.getStatus();
+    assert.equal(status.timezone, 'America/Los_Angeles');
+    assert.equal(typeof status.serverTimezone, 'string');
+    const required = status.helpers.filter((helper) => helper.required).map((helper) => helper.id);
+    // On Linux: Xvfb for the window, PulseAudio for audio, Fluxbox for the taskbar.
+    assert.deepEqual(required, process.platform === 'linux' ? ['xvfb', 'pulseaudio', 'fluxbox'] : []);
+
+    // The taskbar only applies to a real window.
+    await browserUseService.updateSettings({ display: 'headless' });
+    const headless = await browserUseService.getStatus();
+    assert.equal(headless.helpers.find((helper) => helper.id === 'fluxbox')?.required, false);
   });
 });
