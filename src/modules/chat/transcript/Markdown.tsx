@@ -230,9 +230,23 @@ const markdownComponents = {
   ul: ({ children }: { children?: React.ReactNode }) => (
     <ul className="mb-2 list-outside list-disc space-y-1 pl-5 marker:text-current last:mb-0">{children}</ul>
   ),
-  ol: ({ children }: { children?: React.ReactNode }) => (
-    <ol className="mb-2 list-outside list-decimal space-y-1 pl-5 marker:text-current last:mb-0">{children}</ol>
-  ),
+  ol: ({ children, start }: { children?: React.ReactNode; start?: number }) => {
+    // The numbers sit in the list's left padding, and the message clips what
+    // spills past its edge: a fixed padding cut "10." to "0." (and "1." at
+    // larger text sizes). The padding fits the widest number instead, in
+    // units of the text size: digits are about 1ch wide, plus room for the
+    // dot and the gap.
+    const itemCount = React.Children.toArray(children).filter(React.isValidElement).length;
+    const widestNumber = String(Math.max(1, (start ?? 1) + itemCount - 1)).length;
+    return (
+      <ol
+        className="mb-2 list-outside list-decimal space-y-1 marker:text-current last:mb-0"
+        style={{ paddingLeft: `calc(${widestNumber}ch + 1em)` }}
+      >
+        {children}
+      </ol>
+    );
+  },
   li: ({ children }: { children?: React.ReactNode }) => <li className="[&>div:last-child]:mb-0 [&>div]:mb-1">{children}</li>,
   table: ({ children }: { children?: React.ReactNode }) => (
     <div className="my-3 overflow-x-auto rounded-lg border border-border">
