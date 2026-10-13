@@ -15,6 +15,12 @@ import type { SearchTarget } from '@/modules/chat/utils/searchTargetLocator';
 
 const INITIAL_VISIBLE_MESSAGES = 100;
 /**
+ * The longest "Loading older messages" stays up. A page still in flight then
+ * lands in the store quietly and shows on the next scroll up, instead of the
+ * indicator spinning until a refresh.
+ */
+const OLDER_PAGE_TIMEOUT_MS = 15_000;
+/**
  * The window a session opens with: at least a full first page, so a larger
  * "messages loaded at a time" setting is not loaded and then kept hidden.
  */
@@ -520,13 +526,18 @@ export function useChatSessionState({
       }
 
       try {
-        const result = await sessionStore.fetchMore(selectedSession.id, {
-          limit: readSessionMessagesPageSize(),
-          canRequest: () => (
-            isActiveRef.current
-            && activeSessionIdRef.current === selectedSession.id
-          ),
-        });
+        let timeout: ReturnType<typeof setTimeout> | undefined;
+        const result = await Promise.race([
+          sessionStore.fetchMore(selectedSession.id, {
+            limit: readSessionMessagesPageSize(),
+            canRequest: () => (
+              isActiveRef.current
+              && activeSessionIdRef.current === selectedSession.id
+            ),
+          }),
+          new Promise<null>((resolve) => { timeout = setTimeout(() => resolve(null), OLDER_PAGE_TIMEOUT_MS); }),
+        ]).finally(() => clearTimeout(timeout));
+        if (!result) return false;
         const { slot, prependedCount } = result;
         setHasMoreMessages(slot.hasMore);
         setTotalMessages(slot.total);
