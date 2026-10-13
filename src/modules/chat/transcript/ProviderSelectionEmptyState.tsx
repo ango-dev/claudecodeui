@@ -22,11 +22,13 @@ import {
   Button,
   LLMProviderLogo,
 } from "@/shared/ui";
-import ModelGroupList, { type ModelGroup } from "@/modules/chat/composer/ModelGroupList";
+import ModelGroupList, {
+  type ModelGroup,
+} from "@/modules/chat/composer/ModelGroupList";
 import ModelLibraryPanel from "@/modules/chat/modals/ModelLibraryPanel";
-import { writeSelectedProvider } from '@/shared/selectedProvider';
-import { formatShortcut } from '@/shared/utils';
-import { useShowOtherAgents } from '@/shared/agentVisibility';
+import { writeSelectedProvider } from "@/shared/selectedProvider";
+import { formatShortcut } from "@/shared/utils";
+import { useShowOtherAgents } from "@/shared/agentVisibility";
 
 const PROVIDER_META: { id: LLMProvider; name: string }[] = [
   { id: "claude", name: "Anthropic" },
@@ -124,12 +126,15 @@ export default function ProviderSelectionEmptyState({
   // Agents other than Claude Code are hidden unless turned on (agentVisibility).
   const showOtherAgents = useShowOtherAgents();
   const visibleProviderGroups = useMemo<ModelGroup[]>(
-    () => PROVIDER_META.filter((meta) => showOtherAgents || meta.id === 'claude').map((meta) => ({
-      key: meta.id,
-      provider: meta.id,
-      name: meta.name,
-      models: providerModelCatalog[meta.id]?.OPTIONS ?? [],
-    })),
+    () =>
+      PROVIDER_META.filter(
+        (meta) => showOtherAgents || meta.id === "claude",
+      ).map((meta) => ({
+        key: meta.id,
+        provider: meta.id,
+        name: meta.name,
+        models: providerModelCatalog[meta.id]?.OPTIONS ?? [],
+      })),
     [providerModelCatalog, showOtherAgents],
   );
 
@@ -173,11 +178,20 @@ export default function ProviderSelectionEmptyState({
       <div className="flex h-full items-center justify-center px-4">
         <div className="w-full max-w-[34.25rem]">
           <div className="mb-8 text-center">
+            {/* With Claude Code the only agent there is no provider to choose, only a model. */}
             <h2 className="text-lg font-semibold tracking-tight text-foreground sm:text-xl">
-              {t("providerSelection.title")}
+              {showOtherAgents
+                ? t("providerSelection.title")
+                : t("providerSelection.titleClaudeOnly", {
+                    defaultValue: "New session",
+                  })}
             </h2>
             <p className="mt-1 text-[13px] text-muted-foreground">
-              {t("providerSelection.description")}
+              {showOtherAgents
+                ? t("providerSelection.description")
+                : t("providerSelection.descriptionClaudeOnly", {
+                    defaultValue: "Pick a model, then type your message below.",
+                  })}
             </p>
           </div>
 
@@ -203,7 +217,9 @@ export default function ProviderSelectionEmptyState({
                           <span className="text-xs font-semibold text-foreground">
                             {getProviderDisplayName(provider)}
                           </span>
-                          <span className="text-xs text-muted-foreground">·</span>
+                          <span className="text-xs text-muted-foreground">
+                            ·
+                          </span>
                         </>
                       )}
                       <span className="truncate text-xs text-foreground">
@@ -244,7 +260,9 @@ export default function ProviderSelectionEmptyState({
                   className="h-8 shrink-0 rounded-lg px-2.5 text-xs"
                 >
                   <Plus className="h-3.5 w-3.5" />
-                  {t("providerSelection.addModel", { defaultValue: "Add model" })}
+                  {t("providerSelection.addModel", {
+                    defaultValue: "Add model",
+                  })}
                 </Button>
               </div>
               <Command filter={modelSearchFilter}>
@@ -267,6 +285,7 @@ export default function ProviderSelectionEmptyState({
                     currentModel={currentModel}
                     loading={providerModelsLoading}
                     searching={modelSearch.trim().length > 0}
+                    showHeadings={showOtherAgents}
                     onSelect={handleModelSelect}
                     loadingLabel={t("providerSelection.loadingModels", {
                       defaultValue: "Loading models…",
@@ -302,25 +321,27 @@ export default function ProviderSelectionEmptyState({
             </DialogContent>
           </Dialog>
 
-          <p className="mt-4 text-center text-sm text-muted-foreground/70">
-            {
+          {showOtherAgents && (
+            <p className="mt-4 text-center text-sm text-muted-foreground/70">
               {
-                claude: t("providerSelection.readyPrompt.claude", {
-                  model: providerModels.claude,
-                }),
-                cursor: t("providerSelection.readyPrompt.cursor", {
-                  model: providerModels.cursor,
-                }),
-                codex: t("providerSelection.readyPrompt.codex", {
-                  model: providerModels.codex,
-                }),
-                opencode: t("providerSelection.readyPrompt.opencode", {
-                  model: providerModels.opencode,
-                  defaultValue: "Ready with OpenCode {{model}}",
-                }),
-              }[provider]
-            }
-          </p>
+                {
+                  claude: t("providerSelection.readyPrompt.claude", {
+                    model: providerModels.claude,
+                  }),
+                  cursor: t("providerSelection.readyPrompt.cursor", {
+                    model: providerModels.cursor,
+                  }),
+                  codex: t("providerSelection.readyPrompt.codex", {
+                    model: providerModels.codex,
+                  }),
+                  opencode: t("providerSelection.readyPrompt.opencode", {
+                    model: providerModels.opencode,
+                    defaultValue: "Ready with OpenCode {{model}}",
+                  }),
+                }[provider]
+              }
+            </p>
+          )}
 
           {/* A keyboard hint: left out on touch screens, which have no keyboard to press it on. */}
           <p className="mt-3 flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground/60 touch:hidden">

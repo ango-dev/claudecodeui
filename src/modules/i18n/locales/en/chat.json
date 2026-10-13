@@ -184,6 +184,8 @@
   "providerSelection": {
     "title": "Choose Your AI Assistant",
     "description": "Select a provider to start a new session",
+    "titleClaudeOnly": "New session",
+    "descriptionClaudeOnly": "Pick a model, then type your message below.",
     "selectModel": "Select Model",
     "providerInfo": {
       "anthropic": "by Anthropic",

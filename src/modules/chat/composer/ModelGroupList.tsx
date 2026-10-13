@@ -3,6 +3,7 @@ import { Check, ChevronDown, ChevronRight } from "lucide-react";
 
 import type { LLMProvider, ProviderModelOption } from "@/shared/types";
 import { Badge, CommandGroup, CommandItem, LLMProviderLogo } from "@/shared/ui";
+import { cn } from "@/shared/utils";
 
 /**
  * One branch of the model picker.
@@ -26,6 +27,11 @@ type ModelGroupListProps = {
   searching: boolean;
   onSelect: (provider: LLMProvider, model: string) => void;
   loadingLabel: string;
+  /**
+   * False lists the models flat, with no branch heading or indent: with one
+   * agent shown (agentVisibility) its heading only repeats what the picker is for.
+   */
+  showHeadings?: boolean;
 };
 
 const STORAGE_KEY = "model-groups-collapsed";
@@ -34,7 +40,9 @@ function readCollapsed(): string[] {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     const parsed = stored ? JSON.parse(stored) : [];
-    return Array.isArray(parsed) ? parsed.filter((key) => typeof key === "string") : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((key) => typeof key === "string")
+      : [];
   } catch {
     return [];
   }
@@ -48,14 +56,17 @@ export default function ModelGroupList({
   searching,
   onSelect,
   loadingLabel,
+  showHeadings = true,
 }: ModelGroupListProps) {
   const [collapsedKeys, setCollapsedKeys] = useState<string[]>(readCollapsed);
   const collapsed = useMemo(() => new Set(collapsedKeys), [collapsedKeys]);
 
   const toggle = useCallback((key: string) => {
-    setCollapsedKeys((previous) => (previous.includes(key)
-      ? previous.filter((entry) => entry !== key)
-      : [...previous, key]));
+    setCollapsedKeys((previous) =>
+      previous.includes(key)
+        ? previous.filter((entry) => entry !== key)
+        : [...previous, key],
+    );
   }, []);
 
   // Persisted from an effect, not from the updater: React may run an updater
@@ -72,7 +83,11 @@ export default function ModelGroupList({
   return (
     <>
       {groups.map((group, index) => {
-        const isCollapsed = collapsed.has(group.key) && !searching;
+        const isCollapsed =
+          showHeadings && collapsed.has(group.key) && !searching;
+        const itemIndent = showHeadings
+          ? "ml-4 border-l border-border/40 pl-4"
+          : "";
 
         return (
           <CommandGroup
@@ -83,27 +98,35 @@ export default function ModelGroupList({
                 : "[&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider"
             }
             heading={
-              <button
-                type="button"
-                onClick={() => toggle(group.key)}
-                className="flex w-full items-center gap-1.5 text-left hover:text-foreground"
-                aria-expanded={!isCollapsed}
-              >
-                {isCollapsed ? (
-                  <ChevronRight className="h-3 w-3 shrink-0" />
-                ) : (
-                  <ChevronDown className="h-3 w-3 shrink-0" />
-                )}
-                <LLMProviderLogo provider={group.provider} className="h-3.5 w-3.5 shrink-0" />
-                {group.name}
-                <span className="ml-auto text-[10px] font-normal normal-case tracking-normal text-muted-foreground">
-                  {group.models.length}
-                </span>
-              </button>
+              showHeadings ? (
+                <button
+                  type="button"
+                  onClick={() => toggle(group.key)}
+                  className="flex w-full items-center gap-1.5 text-left hover:text-foreground"
+                  aria-expanded={!isCollapsed}
+                >
+                  {isCollapsed ? (
+                    <ChevronRight className="h-3 w-3 shrink-0" />
+                  ) : (
+                    <ChevronDown className="h-3 w-3 shrink-0" />
+                  )}
+                  <LLMProviderLogo
+                    provider={group.provider}
+                    className="h-3.5 w-3.5 shrink-0"
+                  />
+                  {group.name}
+                  <span className="ml-auto text-[10px] font-normal normal-case tracking-normal text-muted-foreground">
+                    {group.models.length}
+                  </span>
+                </button>
+              ) : undefined
             }
           >
             {group.models.length === 0 && loading ? (
-              <CommandItem disabled className="ml-4 border-l border-border/40 pl-4 text-muted-foreground">
+              <CommandItem
+                disabled
+                className={cn(itemIndent, "text-muted-foreground")}
+              >
                 {loadingLabel}
               </CommandItem>
             ) : null}
@@ -123,33 +146,39 @@ export default function ModelGroupList({
               </CommandItem>
             ) : null}
 
-            {!isCollapsed && group.models.map((model) => {
-              const isSelected = provider === group.provider && currentModel === model.value;
+            {!isCollapsed &&
+              group.models.map((model) => {
+                const isSelected =
+                  provider === group.provider && currentModel === model.value;
 
-              return (
-                <CommandItem
-                  key={`${group.key}-${model.value}`}
-                  value={`${group.name} ${model.label} ${model.description || ""}`}
-                  onSelect={() => onSelect(group.provider, model.value)}
-                  className="ml-4 border-l border-border/40 pl-4"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className="truncate">{model.label}</span>
-                      {model.isCustom && (
-                        <Badge className="h-4 shrink-0 rounded-full px-1.5 text-[8px]">Custom</Badge>
+                return (
+                  <CommandItem
+                    key={`${group.key}-${model.value}`}
+                    value={`${group.name} ${model.label} ${model.description || ""}`}
+                    onSelect={() => onSelect(group.provider, model.value)}
+                    className={itemIndent}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="truncate">{model.label}</span>
+                        {model.isCustom && (
+                          <Badge className="h-4 shrink-0 rounded-full px-1.5 text-[8px]">
+                            Custom
+                          </Badge>
+                        )}
+                      </div>
+                      {model.label !== model.value && (
+                        <div className="truncate font-mono text-[10px] text-muted-foreground">
+                          {model.value}
+                        </div>
                       )}
                     </div>
-                    {model.label !== model.value && (
-                      <div className="truncate font-mono text-[10px] text-muted-foreground">
-                        {model.value}
-                      </div>
+                    {isSelected && (
+                      <Check className="ml-auto h-4 w-4 shrink-0 text-primary" />
                     )}
-                  </div>
-                  {isSelected && <Check className="ml-auto h-4 w-4 shrink-0 text-primary" />}
-                </CommandItem>
-              );
-            })}
+                  </CommandItem>
+                );
+              })}
           </CommandGroup>
         );
       })}
