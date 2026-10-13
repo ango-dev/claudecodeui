@@ -1,5 +1,7 @@
 import { useMemo } from 'react';
 
+import { formatShortcut } from '@/shared/utils';
+
 type PrdEditorFooterProps = {
   content: string;
 };
@@ -31,7 +33,9 @@ export default function PrdEditorFooter({ content }: PrdEditorFooterProps) {
         <span>Format: Markdown</span>
       </div>
 
-      <div className="text-sm text-gray-500 dark:text-gray-400">Press Ctrl+S to save and Esc to close</div>
+      <div className="text-sm text-gray-500 touch:hidden dark:text-gray-400">
+        Press {formatShortcut('Mod', 'S')} to save and {formatShortcut('Esc')} to close
+      </div>
     </div>
   );
 }

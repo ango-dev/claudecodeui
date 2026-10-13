@@ -30,7 +30,7 @@
   "footer": {
     "lines": "Řádky:",
     "characters": "Znaky:",
-    "shortcuts": "Stiskněte Ctrl+S pro uložení • Esc pro zavření"
+    "shortcuts": "Stiskněte {{save}} pro uložení • Esc pro zavření"
   },
   "binaryFile": {
     "title": "Binární soubor",

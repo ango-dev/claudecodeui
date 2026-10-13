@@ -59,8 +59,8 @@
     "darkMode": "Mode sombre",
     "showRawParameters": "Afficher les paramètres bruts",
     "showThinking": "Afficher la réflexion",
-    "sendByCtrlEnter": "Envoyer avec Ctrl+Entrée",
-    "sendByCtrlEnterDescription": "Lorsqu'activé, appuyer sur Ctrl+Entrée envoie le message au lieu de simplement Entrée. Utile pour les utilisateurs IME pour éviter les envois accidentels.",
+    "sendByCtrlEnter": "Envoyer avec {{shortcut}}",
+    "sendByCtrlEnterDescription": "Lorsqu'activé, appuyer sur {{shortcut}} envoie le message au lieu de simplement Entrée. Utile pour les utilisateurs IME pour éviter les envois accidentels.",
     "dragHandle": {
       "dragging": "Glissement en cours",
       "closePanel": "Fermer le panneau de paramètres",

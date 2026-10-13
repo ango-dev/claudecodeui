@@ -29,7 +29,7 @@
   "footer": {
     "lines": "Baris:",
     "characters": "Karakter:",
-    "shortcuts": "Tekan Ctrl+S untuk menyimpan • Esc untuk menutup"
+    "shortcuts": "Tekan {{save}} untuk menyimpan • Esc untuk menutup"
   },
   "binaryFile": {
     "title": "File Biner",

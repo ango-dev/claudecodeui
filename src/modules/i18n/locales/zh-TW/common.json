@@ -119,8 +119,8 @@
     "minAgo": "{{count}} 分鐘前",
     "hoursAgo": "{{count}} 小時前",
     "daysAgo": "{{count}} 天前",
-    "newFile": "新增檔案 (Cmd+N)",
-    "newFolder": "新增資料夾 (Cmd+Shift+N)",
+    "newFile": "新增檔案",
+    "newFolder": "新增資料夾",
     "refresh": "重新整理",
     "collapseAll": "全部收合",
     "context": {

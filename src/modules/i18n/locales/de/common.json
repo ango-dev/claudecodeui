@@ -119,8 +119,8 @@
     "minAgo": "vor {{count}} Min.",
     "hoursAgo": "vor {{count}} Std.",
     "daysAgo": "vor {{count}} Tagen",
-    "newFile": "Neue Datei (Cmd+N)",
-    "newFolder": "Neuer Ordner (Cmd+Shift+N)",
+    "newFile": "Neue Datei",
+    "newFolder": "Neuer Ordner",
     "refresh": "Aktualisieren",
     "collapseAll": "Alle einklappen",
     "context": {

@@ -30,7 +30,7 @@
   "footer": {
     "lines": "שורות:",
     "characters": "תווים:",
-    "shortcuts": "Ctrl+S לשמירה • Esc לסגירה"
+    "shortcuts": "{{save}} לשמירה • Esc לסגירה"
   },
   "binaryFile": {
     "title": "קובץ בינארי",

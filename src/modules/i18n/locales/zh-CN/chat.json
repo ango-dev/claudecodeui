@@ -129,8 +129,8 @@
     "send": "发送",
     "stop": "停止",
     "hintText": {
-      "ctrlEnter": "Ctrl+Enter 发送 • Shift+Enter 换行 • Tab 切换模式 • / 斜杠命令",
-      "enter": "Enter 发送 • Shift+Enter 换行 • Tab 切换模式 • / 斜杠命令",
+      "ctrlEnter": "{{send}} 发送 • {{newLine}} 换行 • Tab 切换模式 • / 斜杠命令",
+      "enter": "Enter 发送 • {{newLine}} 换行 • Tab 切换模式 • / 斜杠命令",
       "queue": "Enter 排队发送下一条消息",
       "updateQueued": "Enter 更新排队消息"
     },

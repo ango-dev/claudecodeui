@@ -46,7 +46,7 @@
     "viewEnvironments": "Просмотр окружений",
     "hideSidebar": "Скрыть боковую панель",
     "createProject": "Создать новый проект",
-    "refresh": "Обновить проекты и сеансы (Ctrl+R)",
+    "refresh": "Обновить проекты и сеансы",
     "renameProject": "Переименовать проект (F2)",
     "deleteProject": "Убрать проект из боковой панели (Delete)",
     "addToFavorites": "Добавить в избранное",

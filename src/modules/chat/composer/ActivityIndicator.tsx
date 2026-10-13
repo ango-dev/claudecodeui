@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 
 import { Shimmer } from '@/shared/ui';
+import { formatShortcut } from '@/shared/utils';
 import type { BackgroundTaskSummary, SessionActivity } from '@/shared/types';
 import { describeBackgroundTask, ownBackgroundTasks } from '@/modules/chat/utils/backgroundTasks';
 
@@ -132,8 +133,8 @@ export default function ActivityIndicator({ activity, onAbort, isInputFocused = 
               <rect x="5" y="5" width="14" height="14" rx="2" />
             </svg>
             <span>{t('claudeStatus.stop', { defaultValue: 'Stop' })}</span>
-            <kbd className="hidden rounded border border-border/60 px-1 text-[10px] text-muted-foreground/70 sm:inline-block">
-              esc
+            <kbd className="hidden rounded border border-border/60 px-1 text-[10px] text-muted-foreground/70 touch:!hidden sm:inline-block">
+              {formatShortcut('Esc')}
             </kbd>
           </button>
         )}

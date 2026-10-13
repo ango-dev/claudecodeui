@@ -29,7 +29,7 @@
   "footer": {
     "lines": "Строк:",
     "characters": "Символов:",
-    "shortcuts": "Нажмите Ctrl+S для сохранения • Esc для закрытия"
+    "shortcuts": "Нажмите {{save}} для сохранения • Esc для закрытия"
   },
   "binaryFile": {
     "title": "Бинарный файл",

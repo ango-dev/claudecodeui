@@ -119,8 +119,8 @@
     "minAgo": "{{count}} dakika önce",
     "hoursAgo": "{{count}} saat önce",
     "daysAgo": "{{count}} gün önce",
-    "newFile": "Yeni Dosya (Cmd+N)",
-    "newFolder": "Yeni Klasör (Cmd+Shift+N)",
+    "newFile": "Yeni Dosya",
+    "newFolder": "Yeni Klasör",
     "refresh": "Yenile",
     "collapseAll": "Tümünü Daralt",
     "context": {

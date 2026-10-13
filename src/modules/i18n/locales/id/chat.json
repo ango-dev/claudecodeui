@@ -136,8 +136,8 @@
     "send": "Kirim",
     "stop": "Hentikan",
     "hintText": {
-      "ctrlEnter": "Ctrl+Enter untuk mengirim • Shift+Enter untuk baris baru • Tab untuk mengganti mode • / untuk slash command",
-      "enter": "Enter untuk mengirim • Shift+Enter untuk baris baru • Tab untuk mengganti mode • / untuk slash command",
+      "ctrlEnter": "{{send}} untuk mengirim • {{newLine}} untuk baris baru • Tab untuk mengganti mode • / untuk slash command",
+      "enter": "Enter untuk mengirim • {{newLine}} untuk baris baru • Tab untuk mengganti mode • / untuk slash command",
       "queue": "Enter untuk mengantrekan pesan berikutnya",
       "updateQueued": "Enter untuk memperbarui pesan yang diantrekan"
     },

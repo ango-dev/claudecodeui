@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronsUpDown, FileText } from 'lucide-react';
 
@@ -14,6 +14,7 @@ import {
   CollapsibleContent,
   Shimmer,
 } from '@/shared/ui';
+import { formatShortcut } from '@/shared/utils';
 import { usePermission } from '@/modules/chat/context/PermissionContext';
 import { MarkdownContent } from '@/modules/chat/tools/ContentRenderers/MarkdownContent';
 
@@ -53,6 +54,31 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
       permissionCtx.handlePermissionDecision(pendingRequest.requestId, { allow: true });
     }
   };
+
+  // ⌘↩ (Ctrl+Enter elsewhere) builds, as the button's hint says. In a text
+  // field it builds only when the field is empty: with text typed, the same
+  // keys send that text (the composer's own Ctrl/⌘+Enter), e.g. to revise.
+  useEffect(() => {
+    if (!pendingRequest) return undefined;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Every plan card on screen sees the event; the first one acts.
+      if (event.defaultPrevented || event.key !== 'Enter' || !(event.metaKey || event.ctrlKey) || event.shiftKey || event.altKey) {
+        return;
+      }
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      const field = target?.closest('input, textarea, [contenteditable="true"]') as HTMLInputElement | HTMLTextAreaElement | HTMLElement | null;
+      const fieldText = field && 'value' in field ? field.value : field?.textContent;
+      if (field && fieldText?.trim()) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      permissionCtx?.handlePermissionDecision(pendingRequest.requestId, { allow: true });
+    };
+    // Capture phase: ahead of the composer, which would otherwise take the keys.
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [pendingRequest, permissionCtx]);
 
   const handleRevise = () => {
     if (pendingRequest && permissionCtx) {
@@ -130,8 +156,8 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
             </Button>
             <Button size="sm" onClick={handleBuild}>
               Build{' '}
-              <kbd className="ml-1 rounded bg-primary-foreground/20 px-1 py-0.5 font-mono text-[10px]">
-                ⌘↩
+              <kbd className="ml-1 rounded bg-primary-foreground/20 px-1 py-0.5 font-mono text-[10px] touch:hidden">
+                {formatShortcut('Mod', 'Enter')}
               </kbd>
             </Button>
           </CardFooter>

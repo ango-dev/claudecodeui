@@ -6,6 +6,7 @@ import { useTheme } from '@/shared/context/ThemeContext';
 import { useSetUiPreference, useUiPreferences } from '@/shared/context/UiPreferencesContext';
 import type { CodeEditorSettingsState, PreferenceToggleKey, ProjectSortOrder, ThemeMode } from '@/shared/types';
 import { readUserPreference, writeUserPreference } from '@/shared/userSettings';
+import { formatShortcut } from '@/shared/utils';
 import { LanguageSelector } from '@/modules/i18n';
 import SettingsCard from '@/modules/settings/SettingsCard';
 import SettingsRow from '@/modules/settings/SettingsRow';
@@ -32,6 +33,9 @@ type AppearanceSettingsTabProps = {
   onCodeEditorLineNumbersChange: (value: boolean) => void;
   onCodeEditorFontSizeChange: (value: string) => void;
 };
+
+/** The send shortcut named in the "Send by" toggle, as this client writes it (⌘↩ or Ctrl+Enter). */
+const shortcutValues = { shortcut: formatShortcut('Mod', 'Enter') };
 
 /** Rendered by Settings for the "appearance" tab, covering theme, layout, chat display, project sorting and code editor preferences. */
 export default function AppearanceSettingsTab({
@@ -99,13 +103,13 @@ export default function AppearanceSettingsTab({
           {CHAT_TOGGLES.map(({ key, labelKey, descriptionKey }) => (
             <SettingsRow
               key={key}
-              label={t(labelKey)}
-              description={descriptionKey ? t(descriptionKey) : undefined}
+              label={t(labelKey, shortcutValues)}
+              description={descriptionKey ? t(descriptionKey, shortcutValues) : undefined}
             >
               <SettingsToggle
                 checked={preferences[key]}
                 onChange={(value) => setPreference(key, value)}
-                ariaLabel={t(labelKey)}
+                ariaLabel={t(labelKey, shortcutValues)}
               />
             </SettingsRow>
           ))}

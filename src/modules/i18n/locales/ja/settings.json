@@ -59,8 +59,8 @@
     "darkMode": "ダークモード",
     "showRawParameters": "生パラメータを表示",
     "showThinking": "思考を表示",
-    "sendByCtrlEnter": "Ctrl+Enterで送信",
-    "sendByCtrlEnterDescription": "有効にすると、Enterではなく Ctrl+Enter でメッセージを送信します。IMEユーザーの誤送信防止に便利です。",
+    "sendByCtrlEnter": "{{shortcut}}で送信",
+    "sendByCtrlEnterDescription": "有効にすると、Enterではなく {{shortcut}} でメッセージを送信します。IMEユーザーの誤送信防止に便利です。",
     "dragHandle": {
       "dragging": "ドラッグ中",
       "closePanel": "設定パネルを閉じる",

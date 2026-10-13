@@ -44,7 +44,7 @@
     "viewEnvironments": "Voir les environnements",
     "hideSidebar": "Masquer la barre latérale",
     "createProject": "Créer un nouveau projet",
-    "refresh": "Actualiser les projets et sessions (Ctrl+R)",
+    "refresh": "Actualiser les projets et sessions",
     "renameProject": "Renommer le projet (F2)",
     "deleteProject": "Retirer le projet de la barre latérale (Suppr)",
     "addToFavorites": "Ajouter aux favoris",

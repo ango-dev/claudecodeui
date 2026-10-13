@@ -119,8 +119,8 @@
     "minAgo": "il y a {{count}} min",
     "hoursAgo": "il y a {{count}} h",
     "daysAgo": "il y a {{count}} j",
-    "newFile": "Nouveau fichier (Cmd+N)",
-    "newFolder": "Nouveau dossier (Cmd+Maj+N)",
+    "newFile": "Nouveau fichier",
+    "newFolder": "Nouveau dossier",
     "refresh": "Actualiser",
     "collapseAll": "Tout réduire",
     "context": {

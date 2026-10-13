@@ -43,7 +43,7 @@
     "viewEnvironments": "環境を表示",
     "hideSidebar": "サイドバーを隠す",
     "createProject": "新しいプロジェクトを作成",
-    "refresh": "プロジェクトとセッションを更新 (Ctrl+R)",
+    "refresh": "プロジェクトとセッションを更新",
     "renameProject": "プロジェクト名を変更 (F2)",
     "deleteProject": "サイドバーからプロジェクトを除去 (Delete)",
     "addToFavorites": "お気に入りに追加",

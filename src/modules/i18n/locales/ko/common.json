@@ -119,8 +119,8 @@
     "minAgo": "{{count}}분 전",
     "hoursAgo": "{{count}}시간 전",
     "daysAgo": "{{count}}일 전",
-    "newFile": "새 파일 (Cmd+N)",
-    "newFolder": "새 폴더 (Cmd+Shift+N)",
+    "newFile": "새 파일",
+    "newFolder": "새 폴더",
     "refresh": "새로고침",
     "collapseAll": "모두 접기",
     "context": {

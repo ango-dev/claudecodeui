@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { ConfirmationRequest } from '@/shared/types';
+import { formatShortcut, hasKeyboardShortcutHints } from '@/shared/utils';
 
 // Persists commit messages across unmount/remount, keyed by project path
 const commitMessageCache = new Map<string, string>();
@@ -107,7 +108,9 @@ export default function CommitComposer({
           <textarea
             value={commitMessage}
             onChange={(event) => setCommitMessage(event.target.value)}
-            placeholder={t('git:composer.placeholder')}
+            placeholder={hasKeyboardShortcutHints()
+              ? t('git:composer.placeholder', { shortcut: formatShortcut('Mod', 'Enter') })
+              : t('git:composer.placeholderNoKeyboard')}
             className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary/30 focus:outline-none focus:ring-2 focus:ring-primary/20"
             rows={3}
             onKeyDown={(event) => {

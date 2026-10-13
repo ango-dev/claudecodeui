@@ -143,8 +143,8 @@
     "send": "Send",
     "stop": "Stop",
     "hintText": {
-      "ctrlEnter": "Ctrl+Enter to send • Shift+Enter for new line • Tab to change modes • / for slash commands",
-      "enter": "Enter to send • Shift+Enter for new line • Tab to change modes • / for slash commands",
+      "ctrlEnter": "{{send}} to send • {{newLine}} for new line • Tab to change modes • / for slash commands",
+      "enter": "Enter to send • {{newLine}} for new line • Tab to change modes • / for slash commands",
       "queue": "Enter to queue your next message",
       "updateQueued": "Enter to update queued message"
     },

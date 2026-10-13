@@ -44,7 +44,7 @@
     "viewEnvironments": "查看環境",
     "hideSidebar": "隱藏側邊欄",
     "createProject": "建立新專案",
-    "refresh": "重新整理專案和工作階段 (Ctrl+R)",
+    "refresh": "重新整理專案和工作階段",
     "renameProject": "重新命名專案 (F2)",
     "deleteProject": "從側邊欄移除專案 (Delete)",
     "addToFavorites": "加入收藏",

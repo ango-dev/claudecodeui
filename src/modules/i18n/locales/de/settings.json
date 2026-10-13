@@ -59,8 +59,8 @@
     "darkMode": "Darkmode",
     "showRawParameters": "Rohe Parameter anzeigen",
     "showThinking": "Denken anzeigen",
-    "sendByCtrlEnter": "Mit Strg+Enter senden",
-    "sendByCtrlEnterDescription": "Wenn aktiviert, sendet Strg+Enter die Nachricht anstelle von Enter. Dies ist nützlich für IME-Benutzer:innen, um versehentliches Senden zu vermeiden.",
+    "sendByCtrlEnter": "Mit {{shortcut}} senden",
+    "sendByCtrlEnterDescription": "Wenn aktiviert, sendet {{shortcut}} die Nachricht anstelle von Enter. Dies ist nützlich für IME-Benutzer:innen, um versehentliches Senden zu vermeiden.",
     "dragHandle": {
       "dragging": "Handle wird gezogen",
       "closePanel": "Einstellungspanel schließen",

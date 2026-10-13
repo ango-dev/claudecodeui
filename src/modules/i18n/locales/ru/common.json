@@ -119,8 +119,8 @@
     "minAgo": "{{count}} мин. назад",
     "hoursAgo": "{{count}} ч. назад",
     "daysAgo": "{{count}} дн. назад",
-    "newFile": "Новый файл (Cmd+N)",
-    "newFolder": "Новая папка (Cmd+Shift+N)",
+    "newFile": "Новый файл",
+    "newFolder": "Новая папка",
     "refresh": "Обновить",
     "collapseAll": "Свернуть все",
     "context": {

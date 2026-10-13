@@ -29,7 +29,7 @@
   "footer": {
     "lines": "줄:",
     "characters": "문자:",
-    "shortcuts": "Ctrl+S로 저장 • Esc로 닫기"
+    "shortcuts": "{{save}}로 저장 • Esc로 닫기"
   },
   "binaryFile": {
     "title": "바이너리 파일",

@@ -75,9 +75,9 @@
     "darkMode": "מצב כהה",
     "showRawParameters": "הצגת פרמטרים גולמיים",
     "showThinking": "הצגת חשיבה",
-    "sendByCtrlEnter": "שליחה ב-Ctrl+Enter",
+    "sendByCtrlEnter": "שליחה ב-{{shortcut}}",
     "voiceEnabled": "קול (מיקרופון + הקראה)",
-    "sendByCtrlEnterDescription": "כשהאפשרות מופעלת, הודעה נשלחת ב-Ctrl+Enter במקום ב-Enter בלבד. שימושי למשתמשי IME כדי למנוע שליחה בטעות.",
+    "sendByCtrlEnterDescription": "כשהאפשרות מופעלת, הודעה נשלחת ב-{{shortcut}} במקום ב-Enter בלבד. שימושי למשתמשי IME כדי למנוע שליחה בטעות.",
     "dragHandle": {
       "dragging": "גרירת הידית",
       "closePanel": "סגירת לוח ההגדרות",

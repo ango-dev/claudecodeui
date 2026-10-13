@@ -10,6 +10,7 @@ import { useCodeEditorDocument } from '@/modules/code-editor/hooks/useCodeEditor
 import { useCodeEditorSettings } from '@/modules/code-editor/hooks/useCodeEditorSettings';
 import { useEditorKeyboardShortcuts } from '@/modules/code-editor/hooks/useEditorKeyboardShortcuts';
 import type { CodeEditorFile, CodeEditorGotoTarget } from '@/shared/types';
+import { formatShortcut } from '@/shared/utils';
 import { createMinimapExtension, createScrollToFirstChunkExtension, getLanguageExtensions } from '@/modules/code-editor/utils/editorExtensions';
 import { getEditorStyles } from '@/modules/code-editor/utils/editorStyles';
 import { createEditorToolbarPanelExtension } from '@/modules/code-editor/utils/editorToolbarPanel';
@@ -351,7 +352,7 @@ export default function CodeEditor({
             content={content}
             linesLabel={t('footer.lines')}
             charactersLabel={t('footer.characters')}
-            shortcutsLabel={t('footer.shortcuts')}
+            shortcutsLabel={t('footer.shortcuts', { save: formatShortcut('Mod', 'S') })}
           />
         </div>
       </div>

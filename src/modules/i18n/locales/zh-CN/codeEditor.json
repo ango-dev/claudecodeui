@@ -29,7 +29,7 @@
   "footer": {
     "lines": "行数：",
     "characters": "字符数：",
-    "shortcuts": "按 Ctrl+S 保存 • Esc 关闭"
+    "shortcuts": "按 {{save}} 保存 • Esc 关闭"
   },
   "binaryFile": {
     "title": "二进制文件",

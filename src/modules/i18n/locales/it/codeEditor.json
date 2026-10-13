@@ -29,7 +29,7 @@
   "footer": {
     "lines": "Righe:",
     "characters": "Caratteri:",
-    "shortcuts": "Premi Ctrl+S per salvare • Esc per chiudere"
+    "shortcuts": "Premi {{save}} per salvare • Esc per chiudere"
   },
   "binaryFile": {
     "title": "File binario",

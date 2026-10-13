@@ -126,8 +126,8 @@
     "send": "שליחה",
     "stop": "עצירה",
     "hintText": {
-      "ctrlEnter": "Ctrl+Enter לשליחה • Shift+Enter לשורה חדשה • Tab להחלפת מצב • / לפקודות סלאש",
-      "enter": "Enter לשליחה • Shift+Enter לשורה חדשה • Tab להחלפת מצב • / לפקודות סלאש",
+      "ctrlEnter": "{{send}} לשליחה • {{newLine}} לשורה חדשה • Tab להחלפת מצב • / לפקודות סלאש",
+      "enter": "Enter לשליחה • {{newLine}} לשורה חדשה • Tab להחלפת מצב • / לפקודות סלאש",
       "queue": "Enter להוספת ההודעה הבאה לתור",
       "updateQueued": "Enter לעדכון ההודעה שבתור"
     },

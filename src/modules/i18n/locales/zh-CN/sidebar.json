@@ -44,7 +44,7 @@
     "viewEnvironments": "查看环境",
     "hideSidebar": "隐藏侧边栏",
     "createProject": "创建新项目",
-    "refresh": "刷新项目和会话 (Ctrl+R)",
+    "refresh": "刷新项目和会话",
     "renameProject": "重命名项目 (F2)",
     "deleteProject": "从侧边栏移除项目 (Delete)",
     "addToFavorites": "添加到收藏",

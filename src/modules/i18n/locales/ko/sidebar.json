@@ -44,7 +44,7 @@
     "viewEnvironments": "환경 보기",
     "hideSidebar": "사이드바 숨기기",
     "createProject": "새 프로젝트 생성",
-    "refresh": "프로젝트 및 세션 새로고침 (Ctrl+R)",
+    "refresh": "프로젝트 및 세션 새로고침",
     "renameProject": "프로젝트 이름 변경 (F2)",
     "deleteProject": "사이드바에서 프로젝트 제거 (Delete)",
     "addToFavorites": "즐겨찾기에 추가",

@@ -122,8 +122,8 @@
     "minAgo": "{{count}} min ago",
     "hoursAgo": "{{count}} hours ago",
     "daysAgo": "{{count}} days ago",
-    "newFile": "New File (Cmd+N)",
-    "newFolder": "New Folder (Cmd+Shift+N)",
+    "newFile": "New File",
+    "newFolder": "New Folder",
     "refresh": "Refresh",
     "collapseAll": "Collapse All",
     "context": {

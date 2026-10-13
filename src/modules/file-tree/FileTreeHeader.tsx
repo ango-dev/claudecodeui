@@ -110,8 +110,8 @@ export default function FileTreeHeader({
               size="sm"
               className="h-7 w-7 p-0"
               onClick={onNewFile}
-              title={t('fileTree.newFile', 'New File (Cmd+N)')}
-              aria-label={t('fileTree.newFile', 'New File (Cmd+N)')}
+              title={t('fileTree.newFile', 'New File')}
+              aria-label={t('fileTree.newFile', 'New File')}
               disabled={operationLoading}
             >
               <FileText className="h-3.5 w-3.5" />
@@ -123,8 +123,8 @@ export default function FileTreeHeader({
               size="sm"
               className="h-7 w-7 p-0"
               onClick={onNewFolder}
-              title={t('fileTree.newFolder', 'New Folder (Cmd+Shift+N)')}
-              aria-label={t('fileTree.newFolder', 'New Folder (Cmd+Shift+N)')}
+              title={t('fileTree.newFolder', 'New Folder')}
+              aria-label={t('fileTree.newFolder', 'New Folder')}
               disabled={operationLoading}
             >
               <FolderPlus className="h-3.5 w-3.5" />

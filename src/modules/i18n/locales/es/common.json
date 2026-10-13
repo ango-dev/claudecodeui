@@ -119,8 +119,8 @@
     "minAgo": "hace {{count}} min",
     "hoursAgo": "hace {{count}} horas",
     "daysAgo": "hace {{count}} días",
-    "newFile": "Archivo nuevo (Cmd+N)",
-    "newFolder": "Carpeta nueva (Cmd+Shift+N)",
+    "newFile": "Archivo nuevo",
+    "newFolder": "Carpeta nueva",
     "refresh": "Actualizar",
     "collapseAll": "Contraer todo",
     "context": {

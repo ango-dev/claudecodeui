@@ -59,8 +59,8 @@
     "darkMode": "Koyu Mod",
     "showRawParameters": "Ham parametreleri göster",
     "showThinking": "Düşünmeyi göster",
-    "sendByCtrlEnter": "Ctrl+Enter ile gönder",
-    "sendByCtrlEnterDescription": "Etkinleştirildiğinde, Ctrl+Enter'a basmak yalnız Enter yerine mesajı gönderir. IME (girdi metot düzenleyici) kullananlar için yanlışlıkla göndermeyi önler.",
+    "sendByCtrlEnter": "{{shortcut}} ile gönder",
+    "sendByCtrlEnterDescription": "Etkinleştirildiğinde, {{shortcut}}'a basmak yalnız Enter yerine mesajı gönderir. IME (girdi metot düzenleyici) kullananlar için yanlışlıkla göndermeyi önler.",
     "dragHandle": {
       "dragging": "Tutamaç sürükleniyor",
       "closePanel": "Ayarlar panelini kapat",

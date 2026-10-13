@@ -75,9 +75,9 @@
     "darkMode": "Mode Gelap",
     "showRawParameters": "Tampilkan parameter mentah",
     "showThinking": "Tampilkan proses berpikir",
-    "sendByCtrlEnter": "Kirim dengan Ctrl+Enter",
+    "sendByCtrlEnter": "Kirim dengan {{shortcut}}",
     "voiceEnabled": "Suara (mikrofon + bacakan)",
-    "sendByCtrlEnterDescription": "Jika diaktifkan, Ctrl+Enter akan mengirim pesan, bukan Enter saja. Berguna bagi pengguna IME untuk mencegah pengiriman tidak disengaja.",
+    "sendByCtrlEnterDescription": "Jika diaktifkan, {{shortcut}} akan mengirim pesan, bukan Enter saja. Berguna bagi pengguna IME untuk mencegah pengiriman tidak disengaja.",
     "dragHandle": {
       "dragging": "Menyeret handle",
       "closePanel": "Tutup panel pengaturan",

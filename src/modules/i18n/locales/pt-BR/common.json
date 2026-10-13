@@ -122,8 +122,8 @@
     "minAgo": "{{count}} min atrás",
     "hoursAgo": "{{count}} horas atrás",
     "daysAgo": "{{count}} dias atrás",
-    "newFile": "Novo arquivo (Cmd+N)",
-    "newFolder": "Nova pasta (Cmd+Shift+N)",
+    "newFile": "Novo arquivo",
+    "newFolder": "Nova pasta",
     "refresh": "Atualizar",
     "collapseAll": "Recolher tudo",
     "context": {

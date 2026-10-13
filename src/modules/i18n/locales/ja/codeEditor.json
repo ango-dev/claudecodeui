@@ -27,7 +27,7 @@
   "footer": {
     "lines": "行数:",
     "characters": "文字数:",
-    "shortcuts": "Ctrl+Sで保存 • Escで閉じる"
+    "shortcuts": "{{save}}で保存 • Escで閉じる"
   },
   "binaryFile": {
     "title": "バイナリファイル",

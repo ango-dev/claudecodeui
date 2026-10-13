@@ -279,3 +279,51 @@ export const isPromptCommand = (command: SlashCommand): boolean =>
 
 // ---------------------------
 
+
+//----------------- KEYBOARD SHORTCUT LABELS ------------
+
+/**
+ * Whether this client is an Apple device (macOS, iOS, iPadOS), where the
+ * shortcut modifier is ⌘ rather than Ctrl. iPadOS reports itself as a Mac,
+ * which is right here: an iPad keyboard has ⌘ too. Handlers accept either
+ * modifier (`event.metaKey || event.ctrlKey`); this only decides the label.
+ */
+export const isApplePlatform = (): boolean => {
+  if (typeof navigator === 'undefined') return false;
+  const platform = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform
+    || navigator.platform
+    || '';
+  return /mac|iphone|ipad|ipod/i.test(platform);
+};
+
+/**
+ * Whether the client has a pointer that hovers (a mouse or trackpad), the
+ * same test as the `touch:` Tailwind variant. Phones and tablets without one
+ * usually have no keyboard either, so shortcut hints are left out there. Use
+ * `touch:hidden` in markup; this is for text that has no element to hide,
+ * such as a placeholder.
+ */
+export const hasKeyboardShortcutHints = (): boolean => (
+  typeof window === 'undefined' || !window.matchMedia?.('(hover: none)').matches
+);
+
+/** A key in a shortcut: "Mod" is ⌘ on Apple devices and Ctrl elsewhere; others are named as on the key. */
+export type ShortcutKey = 'Mod' | 'Shift' | 'Alt' | 'Enter' | 'Tab' | 'Esc' | string;
+
+const APPLE_KEY_LABELS: Record<string, string> = { Mod: '⌘', Shift: '⇧', Alt: '⌥', Enter: '↩', Esc: 'esc' };
+const OTHER_KEY_LABELS: Record<string, string> = { Mod: 'Ctrl', Esc: 'Esc' };
+
+/**
+ * A shortcut as this client writes it: Apple's symbols run together ("⌘↩",
+ * "⌘K", "⇧Tab"), elsewhere names joined by "+" ("Ctrl+Enter", "Ctrl+K").
+ * Used for every shortcut shown in the interface, so none is hard-coded to
+ * one platform.
+ */
+export const formatShortcut = (...keys: ShortcutKey[]): string => {
+  if (isApplePlatform()) {
+    return keys.map((key) => APPLE_KEY_LABELS[key] ?? key).join('');
+  }
+  return keys.map((key) => OTHER_KEY_LABELS[key] ?? key).join('+');
+};
+
+// ---------------------------

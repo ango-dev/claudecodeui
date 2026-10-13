@@ -27,7 +27,7 @@
   "footer": {
     "lines": "行數：",
     "characters": "字元數：",
-    "shortcuts": "按 Ctrl+S 儲存 • Esc 關閉"
+    "shortcuts": "按 {{save}} 儲存 • Esc 關閉"
   },
   "binaryFile": {
     "title": "二進位檔案",

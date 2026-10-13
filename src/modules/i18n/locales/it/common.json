@@ -119,8 +119,8 @@
     "minAgo": "{{count}} min fa",
     "hoursAgo": "{{count}} ore fa",
     "daysAgo": "{{count}} giorni fa",
-    "newFile": "Nuovo file (Cmd+N)",
-    "newFolder": "Nuova cartella (Cmd+Shift+N)",
+    "newFile": "Nuovo file",
+    "newFolder": "Nuova cartella",
     "refresh": "Aggiorna",
     "collapseAll": "Comprimi tutto",
     "context": {

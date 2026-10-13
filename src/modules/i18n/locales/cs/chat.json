@@ -162,8 +162,8 @@
     "send": "Odeslat",
     "stop": "Zastavit",
     "hintText": {
-      "ctrlEnter": "Ctrl+Enter pro odeslání • Shift+Enter pro nový řádek • Tab pro změnu režimu • / pro příkazy s lomítkem",
-      "enter": "Enter pro odeslání • Shift+Enter pro nový řádek • Tab pro změnu režimu • / pro příkazy s lomítkem",
+      "ctrlEnter": "{{send}} pro odeslání • {{newLine}} pro nový řádek • Tab pro změnu režimu • / pro příkazy s lomítkem",
+      "enter": "Enter pro odeslání • {{newLine}} pro nový řádek • Tab pro změnu režimu • / pro příkazy s lomítkem",
       "queue": "Enter pro zařazení další zprávy do fronty",
       "updateQueued": "Enter pro aktualizaci zprávy ve frontě"
     },

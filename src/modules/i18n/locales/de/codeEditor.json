@@ -29,7 +29,7 @@
   "footer": {
     "lines": "Zeilen:",
     "characters": "Zeichen:",
-    "shortcuts": "Strg+S zum Speichern • Esc zum Schließen"
+    "shortcuts": "{{save}} zum Speichern • Esc zum Schließen"
   },
   "binaryFile": {
     "title": "Binärdatei",

@@ -25,6 +25,7 @@ import {
 import ModelGroupList, { type ModelGroup } from "@/modules/chat/composer/ModelGroupList";
 import ModelLibraryPanel from "@/modules/chat/modals/ModelLibraryPanel";
 import { writeSelectedProvider } from '@/shared/selectedProvider';
+import { formatShortcut } from '@/shared/utils';
 
 const PROVIDER_META: { id: LLMProvider; name: string }[] = [
   { id: "claude", name: "Anthropic" },
@@ -32,9 +33,6 @@ const PROVIDER_META: { id: LLMProvider; name: string }[] = [
   { id: "cursor", name: "Cursor" },
   { id: "opencode", name: "OpenCode" },
 ];
-
-const MOD_KEY =
-  typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
 
 // cmdk's default filter is fuzzy (loose character-subsequence scoring), which
 // surfaces unrelated models — e.g. searching "chatgpt" also matched "Fable".
@@ -314,11 +312,12 @@ export default function ProviderSelectionEmptyState({
             }
           </p>
 
-          <p className="mt-3 flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground/60">
+          {/* A keyboard hint: left out on touch screens, which have no keyboard to press it on. */}
+          <p className="mt-3 flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground/60 touch:hidden">
             <Trans
               ns="chat"
               i18nKey="providerSelection.pressToSearch"
-              values={{ shortcut: MOD_KEY === "⌘" ? "⌘+K" : "Ctrl+K" }}
+              values={{ shortcut: formatShortcut("Mod", "K") }}
               components={{
                 kbd: (
                   <kbd className="inline-flex items-center gap-0.5 rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]" />

@@ -75,9 +75,9 @@
     "darkMode": "Tmavý režim",
     "showRawParameters": "Zobrazit surové parametry",
     "showThinking": "Zobrazit přemýšlení",
-    "sendByCtrlEnter": "Odesílat pomocí Ctrl+Enter",
+    "sendByCtrlEnter": "Odesílat pomocí {{shortcut}}",
     "voiceEnabled": "Hlas (mikrofon + předčítání)",
-    "sendByCtrlEnterDescription": "Po zapnutí se zpráva odesílá klávesami Ctrl+Enter místo samotného Enter. Hodí se uživatelům IME, aby zprávy neodesílali omylem.",
+    "sendByCtrlEnterDescription": "Po zapnutí se zpráva odesílá klávesami {{shortcut}} místo samotného Enter. Hodí se uživatelům IME, aby zprávy neodesílali omylem.",
     "dragHandle": {
       "dragging": "Přetahování úchytu",
       "closePanel": "Zavřít panel nastavení",

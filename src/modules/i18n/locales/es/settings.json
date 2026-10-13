@@ -75,9 +75,9 @@
     "darkMode": "Modo oscuro",
     "showRawParameters": "Mostrar parámetros sin procesar",
     "showThinking": "Mostrar razonamiento",
-    "sendByCtrlEnter": "Enviar con Ctrl+Enter",
+    "sendByCtrlEnter": "Enviar con {{shortcut}}",
     "voiceEnabled": "Voz (micro + lectura en voz alta)",
-    "sendByCtrlEnterDescription": "Si está activado, Ctrl+Enter envía el mensaje en lugar de solo Enter. Útil para usuarios de IME y evitar envíos accidentales.",
+    "sendByCtrlEnterDescription": "Si está activado, {{shortcut}} envía el mensaje en lugar de solo Enter. Útil para usuarios de IME y evitar envíos accidentales.",
     "dragHandle": {
       "dragging": "Arrastrando el control",
       "closePanel": "Cerrar panel de ajustes",

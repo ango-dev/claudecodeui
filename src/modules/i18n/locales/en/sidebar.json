@@ -45,7 +45,7 @@
     "viewEnvironments": "View Environments",
     "hideSidebar": "Hide sidebar",
     "createProject": "Create new project",
-    "refresh": "Refresh projects and sessions (Ctrl+R)",
+    "refresh": "Refresh projects and sessions",
     "renameProject": "Rename project (F2)",
     "deleteProject": "Remove project from sidebar (Delete)",
     "addToFavorites": "Add to favorites",

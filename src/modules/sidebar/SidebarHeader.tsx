@@ -3,13 +3,10 @@ import type { TFunction } from 'i18next';
 
 import { Button, Input } from '@/shared/ui';
 import { CLOUDCLI_WORDMARK_FONT_FAMILY } from '@/shared/constants';
-import { IS_PLATFORM } from '@/shared/utils';
+import { IS_PLATFORM, formatShortcut } from '@/shared/utils';
 import type { SidebarSearchMode } from '@/shared/types';
 import GitHubStarBadge from '@/modules/sidebar/GitHubStarBadge';
 import SidebarModeTabs from '@/modules/sidebar/SidebarModeTabs';
-
-const MOD_KEY =
-  typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl';
 
 type SidebarHeaderProps = {
   isMobile: boolean;
@@ -168,8 +165,7 @@ export default function SidebarHeader({
                   title={t('tooltips.openCommandPalette')}
                   className="pointer-events-none absolute right-2.5 top-1/2 inline-flex -translate-y-1/2 items-center gap-0.5 rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground touch:hidden"
                 >
-                  {/* Same label as the new-session hint: "⌘+K" on Mac, "Ctrl+K" elsewhere. */}
-                  {MOD_KEY === '⌘' ? '⌘+K' : 'Ctrl+K'}
+                  {formatShortcut('Mod', 'K')}
                 </kbd>
               )}
             </div>

@@ -29,7 +29,7 @@
   "footer": {
     "lines": "Lignes :",
     "characters": "Caractères :",
-    "shortcuts": "Ctrl+S pour enregistrer • Échap pour fermer"
+    "shortcuts": "{{save}} pour enregistrer • Échap pour fermer"
   },
   "binaryFile": {
     "title": "Fichier binaire",

@@ -15,6 +15,7 @@ import { PlusIcon, Loader2, ArrowUpIcon, PencilIcon } from 'lucide-react';
 import { useVoiceInput } from '@/modules/chat/hooks/useVoiceInput';
 import { useVoiceAvailable } from '@/modules/chat/hooks/useVoiceAvailable';
 import type { QueuedDraft, ScheduledMessage, SlashCommand,SessionActivity,PendingPermissionRequest,PermissionMode,ProviderModelOption } from '@/shared/types';
+import { formatShortcut } from '@/shared/utils';
 import {
   PromptInput,
   PromptInputHeader,
@@ -254,8 +255,8 @@ export default function ChatComposer({
       ? t('input.hintText.updateQueued', { defaultValue: 'Enter to update queued message' })
       : t('input.hintText.queue', { defaultValue: 'Enter to queue your next message' })
     : sendByCtrlEnter
-      ? t('input.hintText.ctrlEnter')
-      : t('input.hintText.enter');
+      ? t('input.hintText.ctrlEnter', { send: formatShortcut('Mod', 'Enter'), newLine: formatShortcut('Shift', 'Enter') })
+      : t('input.hintText.enter', { newLine: formatShortcut('Shift', 'Enter') });
   const submitAriaLabel = canQueueDraft
     ? hasQueuedDraft
       ? t('input.queue.update', { defaultValue: 'Update queued message' })
@@ -523,7 +524,7 @@ export default function ChatComposer({
           {/* The keyboard-help line is hidden in this fork; only the queue
               hint shown while a reply is running remains. */}
           {canQueueDraft && (
-            <div className="order-last hidden basis-full px-2 text-center text-xs leading-4 text-muted-foreground/50 lg:block">
+            <div className="order-last hidden basis-full px-2 text-center text-xs leading-4 text-muted-foreground/50 touch:!hidden lg:block">
               {submitHint}
             </div>
           )}

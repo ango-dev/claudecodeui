@@ -120,8 +120,8 @@
     "minAgo": "{{count}} menit lalu",
     "hoursAgo": "{{count}} jam lalu",
     "daysAgo": "{{count}} hari lalu",
-    "newFile": "File Baru (Cmd+N)",
-    "newFolder": "Folder Baru (Cmd+Shift+N)",
+    "newFile": "File Baru",
+    "newFolder": "Folder Baru",
     "refresh": "Segarkan",
     "collapseAll": "Ciutkan Semua",
     "context": {
