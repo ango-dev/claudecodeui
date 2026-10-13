@@ -11,9 +11,18 @@ import type { ProviderRuntimeGateway } from '@/modules/websocket/index.js';
  * would buy precision nobody asked for.
  */
 const POLL_INTERVAL_MS = 30_000;
+/**
+ * How long after a run ends its session's queued message is sent. The run's
+ * CLI process is still exiting when its `complete` arrives; a moment's grace
+ * lets it finish before the next turn resumes the same conversation.
+ */
+const AFTER_RUN_DELAY_MS = 1_000;
 
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let dispatchInFlight = false;
+// A pass was asked for while one ran; it runs again when that one ends.
+let dispatchRequested = false;
+let unsubscribeRunCompleted: (() => void) | null = null;
 
 type StoredQueuedMessage = {
   content: string;
@@ -184,11 +193,14 @@ export function initializeScheduledMessageDispatcher(runtime: ProviderRuntimeGat
 
   const poll = () => {
     // A pass that overruns the interval must not be started again underneath
-    // itself; the claim is transactional but the runs are not.
+    // itself; the claim is transactional but the runs are not. One asked for
+    // meanwhile (a run just ended) runs once this one is done.
     if (dispatchInFlight) {
+      dispatchRequested = true;
       return;
     }
     dispatchInFlight = true;
+    dispatchRequested = false;
     void dispatchDueScheduledMessages(runtime)
       .then(() => dispatchQueuedMessages(runtime))
       .catch((error: unknown) => {
@@ -197,12 +209,22 @@ export function initializeScheduledMessageDispatcher(runtime: ProviderRuntimeGat
       })
       .finally(() => {
         dispatchInFlight = false;
+        if (dispatchRequested) {
+          poll();
+        }
       });
   };
 
   pollTimer = setInterval(poll, POLL_INTERVAL_MS);
   // Never keep the process alive just to poll for scheduled messages.
   pollTimer.unref?.();
+
+  // A message queued behind a reply goes when that reply ends, not up to a
+  // poll interval later. The poll still covers a session that stays busy
+  // with background work after its run ends.
+  unsubscribeRunCompleted = chatRunRegistry.onRunCompleted(() => {
+    setTimeout(poll, AFTER_RUN_DELAY_MS).unref?.();
+  });
 
   // Catch up on anything that came due while the server was not running.
   poll();
@@ -213,4 +235,6 @@ export function closeScheduledMessageDispatcher(): void {
     clearInterval(pollTimer);
     pollTimer = null;
   }
+  unsubscribeRunCompleted?.();
+  unsubscribeRunCompleted = null;
 }

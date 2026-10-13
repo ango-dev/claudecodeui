@@ -5,7 +5,12 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { closeConnection, initializeDatabase, scheduledMessagesDb, sessionDraftsDb, sessionsDb, userDb } from '@/modules/database/index.js';
-import { dispatchDueScheduledMessages, dispatchQueuedMessages } from '@/modules/scheduled-messages/services/scheduled-message-dispatcher.service.js';
+import {
+  closeScheduledMessageDispatcher,
+  dispatchDueScheduledMessages,
+  dispatchQueuedMessages,
+  initializeScheduledMessageDispatcher,
+} from '@/modules/scheduled-messages/services/scheduled-message-dispatcher.service.js';
 import { scheduledMessagesService } from '@/modules/scheduled-messages/services/scheduled-messages.service.js';
 import { chatRunRegistry } from '@/modules/websocket/index.js';
 
@@ -120,6 +125,39 @@ test('a queued message stays pending while its session is busy', async () => {
     assert.deepEqual(sessionDraftsDb.getDrafts(userId)[0]?.queuedMessage, {
       content: 'send after this run',
     });
+  });
+});
+
+test('a queued message goes as soon as the reply it waited on ends, not on the next poll', async () => {
+  await withIsolatedDatabase(async (userId) => {
+    sessionDraftsDb.saveDraft(userId, SESSION_ID, {
+      text: '',
+      queuedMessage: { content: 'and then this' },
+    });
+    chatRunRegistry.startRun({
+      appSessionId: SESSION_ID,
+      provider: 'claude',
+      providerSessionId: null,
+      connection: null,
+      userId,
+    });
+
+    const runs: RunCall[] = [];
+    initializeScheduledMessageDispatcher(createRuntime(runs));
+    try {
+      // The first pass finds the session busy.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      assert.equal(runs.length, 0);
+
+      chatRunRegistry.completeRun(SESSION_ID, { exitCode: 0 });
+      // Well inside the 30s poll interval.
+      await new Promise((resolve) => setTimeout(resolve, 1_600));
+      assert.equal(runs.length, 1);
+      assert.equal(runs[0].command, 'and then this');
+      assert.equal(sessionDraftsDb.getDrafts(userId)[0]?.queuedMessage ?? null, null);
+    } finally {
+      closeScheduledMessageDispatcher();
+    }
   });
 });
 

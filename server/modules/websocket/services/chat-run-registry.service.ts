@@ -68,6 +68,9 @@ const runs = new Map<string, ChatRun>();
  */
 let retainCompletedRun: (appSessionId: string) => boolean = () => false;
 
+/** Told the app session id each time a run ends; see `onRunCompleted`. */
+const completionListeners = new Set<(appSessionId: string) => void>();
+
 /**
  * Schedules one run's eviction. The timer is bound to the run it was armed
  * for: a later run can take the session's slot while this one's retention —
@@ -124,6 +127,16 @@ function decorateAndRecordEvent(run: ChatRun, message: NormalizedMessage): Norma
     run.status = 'completed';
     run.completedAt = Date.now();
     evictRunLater(run);
+    for (const listener of completionListeners) {
+      try {
+        listener(run.appSessionId);
+      } catch (error) {
+        console.error('[ChatRunRegistry] Run completion listener failed', {
+          appSessionId: run.appSessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
   }
 
   run.events.push(outbound);
@@ -179,6 +192,18 @@ function recordProviderSessionId(run: ChatRun, providerSessionId: string): void 
  * regardless of which provider runtime produced them.
  */
 export const chatRunRegistry = {
+  /**
+   * Calls `listener` with the session id whenever a run ends, so work waiting
+   * on an idle session (a queued message) can go at once instead of on the
+   * next poll. Returns the unsubscribe function.
+   */
+  onRunCompleted(listener: (appSessionId: string) => void): () => void {
+    completionListeners.add(listener);
+    return () => {
+      completionListeners.delete(listener);
+    };
+  },
+
   /** Installs the check that keeps a completed run registered while its session still has background work. */
   setRetentionGuard(guard: (appSessionId: string) => boolean): void {
     retainCompletedRun = guard;
