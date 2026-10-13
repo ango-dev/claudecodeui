@@ -18,6 +18,8 @@ export const BROWSER_USE_ERROR_CODES = {
   SETTINGS_LOAD_FAILED: 'BROWSER_USE_SETTINGS_LOAD_FAILED',
   SETTINGS_SAVE_FAILED: 'BROWSER_USE_SETTINGS_SAVE_FAILED',
   RUNTIME_INSTALL_FAILED: 'BROWSER_USE_RUNTIME_INSTALL_FAILED',
+  RUNTIME_REMOVE_FAILED: 'BROWSER_USE_RUNTIME_REMOVE_FAILED',
+  VIRTUAL_SCREEN_INSTALL_FAILED: 'BROWSER_USE_VIRTUAL_SCREEN_INSTALL_FAILED',
   SESSIONS_LOAD_FAILED: 'BROWSER_USE_SESSIONS_LOAD_FAILED',
   SESSION_STOP_FAILED: 'BROWSER_USE_SESSION_STOP_FAILED',
   SESSION_DELETE_FAILED: 'BROWSER_USE_SESSION_DELETE_FAILED',
@@ -107,6 +109,55 @@ router.post('/runtime/install', async (_req, res) => {
       500,
       BROWSER_USE_ERROR_CODES.RUNTIME_INSTALL_FAILED,
       'Failed to install Browser runtime.',
+      error instanceof Error ? error.message : undefined,
+    );
+  }
+});
+
+router.post('/runtime/remove', async (req, res) => {
+  const engine = req.body?.engine;
+  const part = req.body?.part;
+  if ((engine !== 'playwright' && engine !== 'patchright') || (part !== 'engine' && part !== 'chromium')) {
+    sendError(
+      res,
+      400,
+      BROWSER_USE_ERROR_CODES.RUNTIME_REMOVE_FAILED,
+      'Choose an engine (playwright or patchright) and a part (engine or chromium) to remove.',
+    );
+    return;
+  }
+  try {
+    const result = await browserUseService.removeRuntime(engine, part);
+    if (result.success) {
+      res.json({ success: true, data: result });
+      return;
+    }
+    sendError(res, 500, BROWSER_USE_ERROR_CODES.RUNTIME_REMOVE_FAILED, 'Failed to remove from the Browser runtime.', result.message);
+  } catch (error) {
+    sendError(
+      res,
+      500,
+      BROWSER_USE_ERROR_CODES.RUNTIME_REMOVE_FAILED,
+      'Failed to remove from the Browser runtime.',
+      error instanceof Error ? error.message : undefined,
+    );
+  }
+});
+
+router.post('/virtual-screen/install', async (_req, res) => {
+  try {
+    const result = await browserUseService.installVirtualScreen();
+    if (result.success) {
+      res.json({ success: true, data: result });
+      return;
+    }
+    sendError(res, 500, BROWSER_USE_ERROR_CODES.VIRTUAL_SCREEN_INSTALL_FAILED, 'Failed to install Xvfb.', result.message);
+  } catch (error) {
+    sendError(
+      res,
+      500,
+      BROWSER_USE_ERROR_CODES.VIRTUAL_SCREEN_INSTALL_FAILED,
+      'Failed to install Xvfb.',
       error instanceof Error ? error.message : undefined,
     );
   }

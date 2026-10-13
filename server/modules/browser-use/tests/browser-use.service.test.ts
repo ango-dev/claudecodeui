@@ -43,6 +43,7 @@ test('browser settings default to Playwright with Chromium', async () => {
       engine: 'playwright',
       browser: 'chromium',
       chromePath: null,
+      display: 'headless',
     });
   });
 });
@@ -55,11 +56,12 @@ test('browser settings keep a stealth Chrome choice and drop unknown values', as
       engine: 'patchright',
       browser: 'chrome',
       chromePath: '~/chrome/opt/google/chrome/chrome',
+      display: 'headless',
     });
 
     // Only the fields given change; anything unrecognised falls back to the default.
-    const reset = await browserUseService.updateSettings({ engine: 'puppeteer', browser: 'firefox', chromePath: '' } as never);
-    assert.deepEqual(reset, { enabled: false, engine: 'playwright', browser: 'chromium', chromePath: null });
+    const reset = await browserUseService.updateSettings({ engine: 'puppeteer', browser: 'firefox', chromePath: '', display: 'kiosk' } as never);
+    assert.deepEqual(reset, { enabled: false, engine: 'playwright', browser: 'chromium', chromePath: null, display: 'headless' });
     assert.deepEqual(await browserUseService.getSettings(), reset);
   });
 });
@@ -79,5 +81,21 @@ test('browser status names the chosen engine and where the server runs', async (
     assert.ok(status.engineCommand.includes(process.execPath));
     assert.match(status.engineCommand, /patchright[\\/]cli\.js'?"?$/);
     assert.doesNotMatch(status.engineCommand, /npx/);
+  });
+});
+
+test('the real-window choice applies to any engine and asks for Xvfb only on Linux', async () => {
+  await withDatabase(async () => {
+    const saved = await browserUseService.updateSettings({ engine: 'patchright', browser: 'chromium', display: 'window' });
+    assert.equal(saved.display, 'window');
+    // Changing engine or browser keeps the window choice.
+    assert.equal((await browserUseService.updateSettings({ engine: 'playwright', browser: 'chrome' })).display, 'window');
+
+    const status = await browserUseService.getStatus();
+    assert.equal(status.display, 'window');
+    assert.equal(status.virtualScreenRequired, process.platform === 'linux');
+    assert.equal(typeof status.xvfbInstalled, 'boolean');
+    // Both engines are listed, to switch between and remove.
+    assert.deepEqual(status.engines.map((item) => item.engine), ['playwright', 'patchright']);
   });
 });

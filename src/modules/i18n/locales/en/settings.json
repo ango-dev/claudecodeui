@@ -805,6 +805,7 @@
     "playwrightLabel": "Playwright",
     "chromiumLabel": "Chromium",
     "chromeLabel": "Google Chrome",
+    "xvfbLabel": "Xvfb",
     "engineLabel": "Browser engine",
     "engineDescription": "Stealth uses Patchright, a Playwright fork that hides the signs of automation many sites block; Standard uses Playwright. Changing it closes open browser sessions.",
     "engines": {
@@ -817,6 +818,32 @@
     "chromePathDescription": "Leave empty to use Chrome where its installer puts it. Set it for a Chrome you unpacked yourself.",
     "chromePathPlaceholder": "Found automatically",
     "chromeFoundAt": "Using {{path}}",
+    "displayLabel": "Browser window",
+    "displayDescription": "Headless browsers tell pages they are headless (\"HeadlessChrome\"), which some sites block. A real window looks like a desktop browser; on Linux it runs on Xvfb, an invisible virtual screen. Changing it closes open browser sessions.",
+    "displays": {
+      "headless": "Headless (no window)",
+      "virtualScreen": "Real window on a virtual screen",
+      "window": "Real window (opens on the server's desktop)"
+    },
+    "virtualScreen": {
+      "missingTitle": "Xvfb is not installed",
+      "missingDescription": "The real window needs Xvfb, a virtual screen for servers. Browser sessions cannot start until it is installed, or choose Headless.",
+      "manualCommand": "Installing it needs administrator rights. The button works when CloudCLI has them; otherwise run this on the server:",
+      "install": "Install Xvfb",
+      "installing": "Installing Xvfb...",
+      "installFailed": "Failed to install Xvfb."
+    },
+    "engineList": {
+      "title": "Installed engines",
+      "description": "Install Runtime adds the chosen engine beside the other, so you can switch between all four choices. Remove what you no longer use; Google Chrome is a system app and is not removed here.",
+      "active": "in use",
+      "withChromium": "Engine and its Chromium",
+      "withoutChromium": "Engine only (no Chromium downloaded)",
+      "removeChromium": "Remove Chromium",
+      "removeEngine": "Remove",
+      "inUse": "In use by the current choice",
+      "removeFailed": "Failed to remove."
+    },
     "admin": {
       "title": "Some setup steps need administrator rights",
       "summaryChrome": "Install Runtime downloads the engine without admin rights, but installing Google Chrome for the whole computer needs them. If Chrome is already installed, nothing else is needed.",

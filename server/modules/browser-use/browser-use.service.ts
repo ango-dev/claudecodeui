@@ -11,6 +11,7 @@ import { appConfigDb } from '@/modules/database/index.js';
 import { providerMcpService } from '@/modules/providers/index.js';
 import { findApplicationRoot, getModuleDirectory } from '@/shared/utils.js';
 
+import { findXvfb, getVirtualDisplay, stopVirtualDisplay } from './browser-use-display.js';
 import { getBrowserUseRuntime } from './browser-use-runtime.js';
 
 const require = createRequire(import.meta.url);
@@ -74,12 +75,21 @@ type BrowserUseEngine = 'playwright' | 'patchright';
  */
 type BrowserUseBrowser = 'chromium' | 'chrome';
 
+/**
+ * How the browser shows: headless (no window; pages can read "HeadlessChrome"
+ * in its user agent), or a real window, which looks like a desktop browser.
+ * On Linux the window goes on CloudCLI's own Xvfb virtual screen; on macOS
+ * and Windows it opens on the server's desktop.
+ */
+type BrowserUseDisplay = 'headless' | 'window';
+
 type BrowserUseSettings = {
   enabled: boolean;
   engine: BrowserUseEngine;
   browser: BrowserUseBrowser;
   /** Where Chrome is, when it is not in its standard place (e.g. unpacked into a home folder without admin rights). */
   chromePath: string | null;
+  display: BrowserUseDisplay;
 };
 
 const BROWSER_USE_ENGINES: readonly BrowserUseEngine[] = ['playwright', 'patchright'];
@@ -89,6 +99,16 @@ const readEngine = (value: unknown): BrowserUseEngine => (
 );
 
 const readBrowser = (value: unknown): BrowserUseBrowser => (value === 'chrome' ? 'chrome' : 'chromium');
+
+const readDisplay = (value: unknown): BrowserUseDisplay => (value === 'window' ? 'window' : 'headless');
+
+/** A real window needs a virtual screen only on Linux; elsewhere the desktop is there. */
+const needsVirtualScreen = (settings: BrowserUseSettings): boolean => (
+  settings.display === 'window' && process.platform === 'linux'
+);
+
+/** The real window's size: about the old 1440x900 page once Chrome's toolbars are taken off. */
+const BROWSER_WINDOW_SIZE = { width: 1440, height: 1000 };
 
 const readChromePath = (value: unknown): string | null => {
   const trimmed = typeof value === 'string' ? value.trim() : '';
@@ -125,6 +145,9 @@ function findGoogleChrome(): string | null {
 type RuntimeReadiness = {
   engine: BrowserUseEngine;
   browser: BrowserUseBrowser;
+  display: BrowserUseDisplay;
+  /** False only while the real-window mode waits on Xvfb (Linux). */
+  virtualScreenReady: boolean;
   /** The selected engine's module (Playwright's API either way). */
   playwright: any | null;
   playwrightInstalled: boolean;
@@ -147,17 +170,19 @@ const DEFAULT_SETTINGS: BrowserUseSettings = {
   engine: 'playwright',
   browser: 'chromium',
   chromePath: null,
+  display: 'headless',
 };
+// Browsers being launched: their sessions have no handle yet, but may be on the virtual screen.
+let launchesInProgress = 0;
 const AGENT_OWNER_ID = 'agent';
 const PROFILE_ROOT = path.join(os.homedir(), '.cloudcli', 'browser-use', 'profiles');
 /**
- * Where Install Runtime puts the engine package, with a package.json of its
- * own naming only the chosen engine. In CloudCLI's own folder npm removed it
- * again on the next install (a CloudCLI update, or the other engine), as
- * packages installed with --no-save are pruned.
+ * Where Install Runtime puts the engine packages, with a package.json of its
+ * own naming each engine installed, so both can be kept to switch between.
+ * In CloudCLI's own folder npm removed them again on its next install (a
+ * CloudCLI update, or the other engine), as --no-save packages are pruned.
  */
 const ENGINE_ROOT = path.join(os.homedir(), '.cloudcli', 'browser-use', 'runtime');
-const requireFromEngineRoot = createRequire(path.join(ENGINE_ROOT, 'package.json'));
 const MCP_SERVER_NAME = 'cloudcli-browser';
 const LEGACY_MCP_SERVER_NAMES = ['cloudcli-browser-use'];
 const RUNTIME_READINESS_CACHE_TTL_MS = 30_000;
@@ -175,6 +200,7 @@ function readSettings(): BrowserUseSettings {
       engine: readEngine(parsed.engine),
       browser: readBrowser(parsed.browser),
       chromePath: readChromePath(parsed.chromePath),
+      display: readDisplay(parsed.display),
     };
   } catch (error: any) {
     console.warn('[Browser] Failed to read settings:', error?.message || error);
@@ -188,6 +214,7 @@ function writeSettings(settings: BrowserUseSettings): BrowserUseSettings {
     engine: readEngine(settings.engine),
     browser: readBrowser(settings.browser),
     chromePath: readChromePath(settings.chromePath),
+    display: readDisplay(settings.display),
   };
 
   appConfigDb.set(BROWSER_USE_SETTINGS_KEY, JSON.stringify(normalized));
@@ -214,6 +241,10 @@ function getSetupMessage(settings: BrowserUseSettings, readiness: RuntimeReadine
     return `Install ${engineName} and ${readiness.browser === 'chrome' ? 'Google Chrome' : 'Chromium'} to use browser sessions.`;
   }
 
+  if (!readiness.virtualScreenReady) {
+    return `The real-window mode needs Xvfb, a virtual screen for servers. Install it from Settings -> Browser, or run \`${xvfbInstallCommand()}\`. Or choose Headless.`;
+  }
+
   if (!readiness.chromiumInstalled) {
     return readiness.browser === 'chrome'
       ? `${engineName} is installed, but Google Chrome was not found. Install Chrome (this needs administrator rights), or set where it is.`
@@ -225,14 +256,21 @@ function getSetupMessage(settings: BrowserUseSettings, readiness: RuntimeReadine
 
 /** The engine's package folder: Install Runtime's, else one beside CloudCLI from before it had its own. */
 function resolveEnginePackage(engine: BrowserUseEngine): string | null {
-  for (const resolve of [requireFromEngineRoot.resolve, require.resolve]) {
-    try {
-      return path.dirname(resolve(`${engine}/package.json`));
-    } catch {
-      // Not installed there.
-    }
+  // Once Install Runtime has its own folder, a copy left beside CloudCLI is
+  // ignored, so an engine removed in Settings stays removed.
+  if (fs.existsSync(path.join(ENGINE_ROOT, 'package.json'))) {
+    // Looked up directly: resolving from ENGINE_ROOT would also search
+    // NODE_PATH and parent folders, and find copies Settings cannot remove.
+    const directory = path.join(ENGINE_ROOT, 'node_modules', engine);
+    return fs.existsSync(path.join(directory, 'package.json')) ? directory : null;
   }
-  return null;
+  try {
+    const directory = path.dirname(require.resolve(`${engine}/package.json`));
+    // Node caches resolved paths, so a removed package can still resolve.
+    return fs.existsSync(path.join(directory, 'package.json')) ? directory : null;
+  } catch {
+    return null;
+  }
 }
 
 function loadEngine(engine: BrowserUseEngine): any | null {
@@ -294,12 +332,24 @@ function getProfilePath(profileName: string): string {
   return path.join(PROFILE_ROOT, safeName);
 }
 
+/** The engine's own Chromium build, if downloaded (Install Runtime with Chromium chosen). */
+function findEngineChromium(playwright: any): string | null {
+  try {
+    const executablePath = playwright.chromium.executablePath();
+    return executablePath && fs.existsSync(executablePath) ? executablePath : null;
+  } catch {
+    return null;
+  }
+}
+
 function probeRuntime(settings: BrowserUseSettings): RuntimeProbe {
-  const { engine, browser } = settings;
+  const { engine, browser, display } = settings;
   const playwright = loadEngine(engine);
   const readiness: RuntimeProbe = {
     engine,
     browser,
+    display,
+    virtualScreenReady: !needsVirtualScreen(settings) || Boolean(findXvfb()),
     playwright,
     playwrightInstalled: Boolean(playwright),
     chromiumInstalled: false,
@@ -318,14 +368,8 @@ function probeRuntime(settings: BrowserUseSettings): RuntimeProbe {
     return readiness;
   }
 
-  try {
-    const executablePath = playwright.chromium.executablePath();
-    readiness.chromiumExecutablePath = executablePath;
-    readiness.chromiumInstalled = Boolean(executablePath && fs.existsSync(executablePath));
-  } catch {
-    readiness.chromiumInstalled = false;
-  }
-
+  readiness.chromiumExecutablePath = findEngineChromium(playwright);
+  readiness.chromiumInstalled = Boolean(readiness.chromiumExecutablePath);
   return readiness;
 }
 
@@ -338,6 +382,7 @@ function getRuntimeReadiness(options: { force?: boolean } = {}): RuntimeReadines
     && cachedProbe
     && cachedProbe.value.engine === settings.engine
     && cachedProbe.value.browser === settings.browser
+    && cachedProbe.value.display === settings.display
     && now - cachedProbe.updatedAt < RUNTIME_READINESS_CACHE_TTL_MS;
   const probe = canUseCache ? cachedProbe.value : probeRuntime(settings);
 
@@ -429,18 +474,21 @@ function engineCliPath(engine: BrowserUseEngine): string {
   return path.join(resolveEnginePackage(engine) ?? path.join(ENGINE_ROOT, 'node_modules', engine), 'cli.js');
 }
 
-/**
- * Installs the engine into ENGINE_ROOT as its only package: npm removes the
- * other engine, and the next browser install or uninstall then deletes the
- * Chromium build only that engine used, so switching leaves nothing behind.
- */
-async function installEnginePackage(engine: BrowserUseEngine): Promise<void> {
+const NPM_QUIET_FLAGS = ['--no-package-lock', '--no-audit', '--no-fund', '--prefix', ENGINE_ROOT];
+
+/** Adds the engine to ENGINE_ROOT (npm records it in that folder's package.json), beside any other. */
+async function addEnginePackage(engine: BrowserUseEngine): Promise<void> {
   await fs.promises.mkdir(ENGINE_ROOT, { recursive: true });
-  await fs.promises.writeFile(
-    path.join(ENGINE_ROOT, 'package.json'),
-    `${JSON.stringify({ name: 'cloudcli-browser-runtime', private: true, dependencies: { [engine]: 'latest' } }, null, 2)}\n`,
-  );
-  await runNpm(['install', '--no-package-lock', '--no-audit', '--no-fund', '--prefix', ENGINE_ROOT]);
+  const manifestPath = path.join(ENGINE_ROOT, 'package.json');
+  if (!fs.existsSync(manifestPath)) {
+    await fs.promises.writeFile(manifestPath, `${JSON.stringify({ name: 'cloudcli-browser-runtime', private: true }, null, 2)}\n`);
+  }
+  await runNpm(['install', ...NPM_QUIET_FLAGS, `${engine}@latest`]);
+}
+
+/** Removes the engine's package (and what only it needed) from ENGINE_ROOT. */
+async function removeEnginePackage(engine: BrowserUseEngine): Promise<void> {
+  await runNpm(['uninstall', ...NPM_QUIET_FLAGS, engine]);
 }
 
 function runEngineCli(engine: BrowserUseEngine, args: string[]): Promise<void> {
@@ -493,6 +541,91 @@ function adminInstructions(engine: BrowserUseEngine, browser: BrowserUseBrowser)
   return `Chromium is installed, but Linux may need its system libraries, which only an administrator can add: \`sudo ${engineCommand(engine)} install-deps chromium\`.`;
 }
 
+/**
+ * The command that installs Xvfb with the system's package manager, whose
+ * package names differ (Debian and Ubuntu: xvfb). Installing system packages
+ * needs administrator rights.
+ */
+function xvfbPackageCommand(): string[] {
+  const has = (binary: string) => ['/usr/bin', '/bin', '/usr/sbin', '/sbin'].some((directory) => fs.existsSync(path.join(directory, binary)));
+  if (has('dnf')) return ['dnf', 'install', '-y', 'xorg-x11-server-Xvfb'];
+  if (has('yum')) return ['yum', 'install', '-y', 'xorg-x11-server-Xvfb'];
+  if (has('pacman')) return ['pacman', '-S', '--noconfirm', 'xorg-server-xvfb'];
+  if (has('zypper')) return ['zypper', '--non-interactive', 'install', 'xorg-x11-server-Xvfb'];
+  return ['apt-get', 'install', '-y', 'xvfb'];
+}
+
+function xvfbInstallCommand(): string {
+  return `sudo ${xvfbPackageCommand().join(' ')}`;
+}
+
+/**
+ * Installs Xvfb for the real-window mode: directly when CloudCLI runs as
+ * root, else through sudo only where it needs no password (-n never waits
+ * for one). Without either it fails with the command to run by hand.
+ */
+async function installXvfb(): Promise<{ success: boolean; message: string }> {
+  if (process.platform !== 'linux') {
+    return { success: true, message: 'A real window needs no virtual screen on this system.' };
+  }
+  if (findXvfb()) {
+    return { success: true, message: 'Xvfb is already installed.' };
+  }
+  const [manager, ...args] = xvfbPackageCommand();
+  const run = (command: string, commandArgs: string[]) => (
+    isAdministrator() ? runCommand(command, commandArgs) : runCommand('sudo', ['-n', command, ...commandArgs])
+  );
+  try {
+    try {
+      await run(manager, args);
+    } catch (error) {
+      // A fresh apt system may not know the package until its lists are fetched.
+      if (manager !== 'apt-get') throw error;
+      await run('apt-get', ['update']);
+      await run(manager, args);
+    }
+  } catch (error) {
+    const detail = error instanceof Error ? error.message.split('\n').filter(Boolean).pop() : '';
+    return {
+      success: false,
+      message: `Installing Xvfb needs administrator rights, which CloudCLI does not have. Run \`${xvfbInstallCommand()}\` on the server, then check again.${detail ? ` (${detail})` : ''}`,
+    };
+  } finally {
+    runtimeProbeCache = null;
+  }
+  return findXvfb()
+    ? { success: true, message: 'Xvfb installed.' }
+    : { success: false, message: `Xvfb was installed but not found. Run \`${xvfbInstallCommand()}\` on the server.` };
+}
+
+/**
+ * Removes an engine's Chromium build, or the engine with it. The engine's
+ * own uninstall deletes the builds no other installed engine or project
+ * uses; the package then goes from ENGINE_ROOT.
+ */
+async function removeRuntime(engine: BrowserUseEngine, part: 'engine' | 'chromium'): Promise<{ success: boolean; message: string }> {
+  if (installPromise) {
+    return { success: false, message: 'An install is running; try again when it finishes.' };
+  }
+  const engineName = engine === 'patchright' ? 'Patchright' : 'Playwright';
+  try {
+    if (resolveEnginePackage(engine)) {
+      await runEngineCli(engine, ['uninstall']);
+    }
+    if (part === 'engine') {
+      await removeEnginePackage(engine);
+    }
+  } catch (error) {
+    return { success: false, message: error instanceof Error ? error.message : String(error) };
+  } finally {
+    runtimeProbeCache = null;
+  }
+  return {
+    success: true,
+    message: part === 'engine' ? `${engineName} and its Chromium removed.` : `${engineName}'s Chromium removed.`,
+  };
+}
+
 async function installRuntime(settings: BrowserUseSettings): Promise<{ success: boolean; message: string }> {
   if (installPromise) {
     return installPromise;
@@ -506,14 +639,12 @@ async function installRuntime(settings: BrowserUseSettings): Promise<{ success: 
   installPromise = (async () => {
     try {
       lastInstallMessage = `Installing ${engineName} package...`;
-      await installEnginePackage(engine);
+      // Added beside any engine already installed, to switch between freely.
+      await addEnginePackage(engine);
 
       if (browser === 'chrome') {
         const configured = settings.chromePath ? expandHome(settings.chromePath) : null;
         if ((configured && fs.existsSync(configured)) || findGoogleChrome()) {
-          // Chrome needs no Chromium: drop the engine's own build, and any
-          // left by the engine used before. Other projects' builds stay.
-          await runEngineCli(engine, ['uninstall']).catch(() => undefined);
           lastInstallMessage = `${engineName} is ready to use Google Chrome.`;
           return { success: true, message: lastInstallMessage };
         }
@@ -586,11 +717,19 @@ function ownerSessions(ownerId: string): BrowserUseSession[] {
   return [...sessions.values()].filter((session) => session.ownerId === ownerId);
 }
 
+/** Ends the Xvfb once no browser is on it or about to be; the next real-window session starts it again. */
+function releaseVirtualScreenIfUnused(): void {
+  if (handles.size === 0 && launchesInProgress === 0) {
+    stopVirtualDisplay();
+  }
+}
+
 async function closeHandle(sessionId: string): Promise<void> {
   const handle = handles.get(sessionId);
   handles.delete(sessionId);
   await handle?.context?.close?.().catch(() => undefined);
   await handle?.browser?.close().catch(() => undefined);
+  releaseVirtualScreenIfUnused();
 }
 
 async function expireStaleSessions(now = Date.now()): Promise<void> {
@@ -617,7 +756,10 @@ async function captureSession(session: BrowserUseSession, page: any): Promise<vo
   session.screenshotDataUrl = `data:image/jpeg;base64,${Buffer.from(screenshot).toString('base64')}`;
   session.title = await page.title().catch(() => null);
   session.url = page.url() || session.url;
-  session.viewport = page.viewportSize?.() || session.viewport;
+  // A real window has no emulated viewport; its page area is measured instead.
+  session.viewport = page.viewportSize?.()
+    || await page.evaluate('({ width: innerWidth, height: innerHeight })').catch(() => null)
+    || session.viewport;
   session.updatedAt = new Date().toISOString();
 }
 
@@ -706,10 +848,16 @@ export const browserUseService = {
       engine: settings.engine === undefined ? current.engine : readEngine(settings.engine),
       browser: settings.browser === undefined ? current.browser : readBrowser(settings.browser),
       chromePath: settings.chromePath === undefined ? current.chromePath : readChromePath(settings.chromePath),
+      display: settings.display === undefined ? current.display : readDisplay(settings.display),
     };
 
     const next = writeSettings(nextSettings);
-    if (next.engine !== current.engine || next.browser !== current.browser || next.chromePath !== current.chromePath) {
+    if (
+      next.engine !== current.engine
+      || next.browser !== current.browser
+      || next.chromePath !== current.chromePath
+      || next.display !== current.display
+    ) {
       // Open sessions run under the old engine; they end rather than mix.
       runtimeProbeCache = null;
       await this.stopAllSessions();
@@ -726,7 +874,10 @@ export const browserUseService = {
   async getStatus() {
     const settings = readSettings();
     const readiness = getRuntimeReadiness();
-    const available = settings.enabled && readiness.playwrightInstalled && readiness.chromiumInstalled;
+    const available = settings.enabled
+      && readiness.playwrightInstalled
+      && readiness.chromiumInstalled
+      && readiness.virtualScreenReady;
 
     return {
       enabled: settings.enabled,
@@ -736,6 +887,15 @@ export const browserUseService = {
       isAdministrator: isAdministrator(),
       platform: process.platform,
       engineCommand: engineCommand(settings.engine),
+      display: settings.display,
+      virtualScreenRequired: needsVirtualScreen(settings),
+      xvfbInstalled: Boolean(findXvfb()),
+      xvfbInstallCommand: process.platform === 'linux' ? xvfbInstallCommand() : null,
+      // Both engines, to switch between and remove from Settings.
+      engines: BROWSER_USE_ENGINES.map((engine) => {
+        const module = engine === settings.engine ? readiness.playwright : loadEngine(engine);
+        return { engine, installed: Boolean(module), chromiumInstalled: Boolean(module && findEngineChromium(module)) };
+      }),
       runtime: getBrowserUseRuntime(),
       available,
       playwrightInstalled: readiness.playwrightInstalled,
@@ -774,6 +934,16 @@ export const browserUseService = {
       [MCP_SERVER_NAME, ...LEGACY_MCP_SERVER_NAMES].map((name) => removeMcpServerFromAllProviders(name)),
     )).flat();
     return { name: MCP_SERVER_NAME, results };
+  },
+
+  async installVirtualScreen() {
+    const result = await installXvfb();
+    return { ...result, status: await this.getStatus() };
+  },
+
+  async removeRuntime(engine: BrowserUseEngine, part: 'engine' | 'chromium') {
+    const result = await removeRuntime(readEngine(engine), part);
+    return { ...result, status: await this.getStatus() };
   },
 
   async installRuntime() {
@@ -825,7 +995,13 @@ export const browserUseService = {
     }
 
     const readiness = getRuntimeReadiness();
-    if (!settings.enabled || !readiness.playwrightInstalled || !readiness.chromiumInstalled || !readiness.playwright) {
+    if (
+      !settings.enabled
+      || !readiness.playwrightInstalled
+      || !readiness.chromiumInstalled
+      || !readiness.virtualScreenReady
+      || !readiness.playwright
+    ) {
       session.message = getSetupMessage(settings, readiness);
       sessions.set(session.id, session);
       return publicSession(session);
@@ -834,21 +1010,35 @@ export const browserUseService = {
     let browser: any | undefined;
     let context: any | undefined;
     let page: any;
-    const launchOptions = {
-      headless: true,
-      args: ['--disable-dev-shm-usage'],
-      // Real Chrome, where chosen: readiness found it in its standard place or
-      // at the location set in Settings.
-      ...(settings.browser === 'chrome' && readiness.chromiumExecutablePath
-        ? { executablePath: readiness.chromiumExecutablePath }
-        : {}),
-    };
-    const contextOptions = {
-      viewport: { width: 1440, height: 900 },
-      serviceWorkers: 'block',
-    };
+    const withWindow = settings.display === 'window';
+    launchesInProgress += 1;
 
     try {
+      const launchOptions = {
+        headless: !withWindow,
+        args: [
+          '--disable-dev-shm-usage',
+          ...(withWindow
+            ? [`--window-size=${BROWSER_WINDOW_SIZE.width},${BROWSER_WINDOW_SIZE.height}`, '--window-position=0,0']
+            : []),
+        ],
+        // Real Chrome, where chosen: readiness found it in its standard place or
+        // at the location set in Settings.
+        ...(settings.browser === 'chrome' && readiness.chromiumExecutablePath
+          ? { executablePath: readiness.chromiumExecutablePath }
+          : {}),
+        // On Linux the window goes on CloudCLI's Xvfb, never on a desktop.
+        ...(needsVirtualScreen(settings)
+          ? { env: { ...process.env, DISPLAY: await getVirtualDisplay() } }
+          : {}),
+      };
+      const contextOptions = {
+        // A real window keeps its own size: an emulated viewport inside it
+        // would differ from the window, which pages can notice.
+        viewport: withWindow ? null : { width: 1440, height: 900 },
+        serviceWorkers: 'block',
+      };
+
       if (profileName) {
         fs.mkdirSync(PROFILE_ROOT, { recursive: true });
         context = await readiness.playwright.chromium.launchPersistentContext(getProfilePath(profileName), {
@@ -868,6 +1058,13 @@ export const browserUseService = {
         throw new Error(`The browser could not start: ${adminInstructions(settings.engine, 'chromium')}`);
       }
       throw error;
+    } finally {
+      launchesInProgress -= 1;
+      // A browser that started is registered below, before anything awaits;
+      // only a failed launch may leave the virtual screen unused.
+      if (!page) {
+        releaseVirtualScreenIfUnused();
+      }
     }
     session.status = 'ready';
     session.message = 'Browser session is ready.';

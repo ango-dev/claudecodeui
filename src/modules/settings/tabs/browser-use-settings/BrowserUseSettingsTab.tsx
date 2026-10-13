@@ -10,9 +10,13 @@ import SettingsSection from '@/modules/settings/SettingsSection';
 import SettingsToggle from '@/modules/settings/SettingsToggle';
 import BrowserAdminRightsNotice from '@/modules/settings/tabs/browser-use-settings/BrowserAdminRightsNotice';
 import type { BrowserEngineChoice } from '@/modules/settings/tabs/browser-use-settings/BrowserAdminRightsNotice';
+import BrowserInstalledEngines from '@/modules/settings/tabs/browser-use-settings/BrowserInstalledEngines';
+import BrowserVirtualScreenNotice from '@/modules/settings/tabs/browser-use-settings/BrowserVirtualScreenNotice';
 
 type BrowserUseEngine = 'playwright' | 'patchright';
 type BrowserUseBrowser = 'chromium' | 'chrome';
+/** Headless, or a real window (on Linux, on CloudCLI's Xvfb virtual screen) that hides the headless tells. */
+type BrowserUseDisplay = 'headless' | 'window';
 
 type BrowserUseSettings = {
   enabled: boolean;
@@ -20,6 +24,7 @@ type BrowserUseSettings = {
   browser: BrowserUseBrowser;
   /** Where Google Chrome is, when it is not where its installer puts it. */
   chromePath: string | null;
+  display: BrowserUseDisplay;
 };
 
 type BrowserUseStatus = {
@@ -31,6 +36,13 @@ type BrowserUseStatus = {
   platform: string;
   /** The engine's CLI by full path, for the admin commands shown to run by hand. */
   engineCommand: string;
+  display: BrowserUseDisplay;
+  /** The real-window mode is chosen on Linux, where it needs Xvfb. */
+  virtualScreenRequired: boolean;
+  xvfbInstalled: boolean;
+  xvfbInstallCommand: string | null;
+  /** Both engines and their Chromium builds, as installed. */
+  engines: Array<{ engine: BrowserUseEngine; installed: boolean; chromiumInstalled: boolean }>;
   available: boolean;
   /** Whether the chosen engine's package (Playwright or Patchright) loads. */
   playwrightInstalled: boolean;
@@ -141,6 +153,18 @@ export default function BrowserUseSettingsTab() {
   const engineChoice: BrowserEngineChoice = `${settings?.engine ?? 'playwright'}-${settings?.browser ?? 'chromium'}`;
   const usesChrome = settings?.browser === 'chrome';
   const engineLabel = settings?.engine === 'patchright' ? 'Patchright' : 'Playwright';
+  const reloadStatus = async () => {
+    setIsStatusLoading(true);
+    try {
+      await loadStatus();
+    } finally {
+      setIsStatusLoading(false);
+    }
+  };
+  // Status from before a settings change can still describe the old choice.
+  const statusMatchesSettings = Boolean(
+    settings && status && status.engine === settings.engine && status.browser === settings.browser && status.display === settings.display,
+  );
   const saveChromePath = () => {
     const next = chromePathDraft.trim() || null;
     if (next !== (settings?.chromePath ?? null)) {
@@ -230,8 +254,32 @@ export default function BrowserUseSettingsTab() {
             )}
 
             {/* Only while something is missing: once installed there is nothing left to run. */}
-            {settings && status && status.engine === settings.engine && status.browser === settings.browser
-              && !(status.playwrightInstalled && status.chromiumInstalled) && (
+            <div>
+              <label htmlFor="browser-use-display" className="text-sm font-medium text-foreground">
+                {t('browserUseSettings.displayLabel')}
+              </label>
+              <p className="mt-0.5 text-sm text-muted-foreground">{t('browserUseSettings.displayDescription')}</p>
+            </div>
+            <select
+              id="browser-use-display"
+              value={settings?.display ?? 'headless'}
+              disabled={!settings || isSaving}
+              onChange={(event) => void updateSettings({ display: event.target.value as BrowserUseDisplay })}
+              className="w-full max-w-md touch-manipulation rounded-lg border border-input bg-card p-2.5 pr-8 text-sm text-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+            >
+              <option value="headless">{t('browserUseSettings.displays.headless')}</option>
+              <option value="window">
+                {status?.platform === 'linux' || !status
+                  ? t('browserUseSettings.displays.virtualScreen')
+                  : t('browserUseSettings.displays.window')}
+              </option>
+            </select>
+
+            {statusMatchesSettings && status?.virtualScreenRequired && !status.xvfbInstalled && (
+              <BrowserVirtualScreenNotice installCommand={status.xvfbInstallCommand} onInstalled={reloadStatus} t={t} />
+            )}
+
+            {statusMatchesSettings && status && !(status.playwrightInstalled && status.chromiumInstalled) && (
               <BrowserAdminRightsNotice
                 choice={engineChoice}
                 platform={status.platform}
@@ -250,6 +298,11 @@ export default function BrowserUseSettingsTab() {
               <span className="rounded-md border border-border px-2 py-1">
                 {usesChrome ? t('browserUseSettings.chromeLabel') : t('browserUseSettings.chromiumLabel')}: {runtimeLabel(status?.chromiumInstalled)}
               </span>
+              {status?.virtualScreenRequired && (
+                <span className="rounded-md border border-border px-2 py-1">
+                  {t('browserUseSettings.xvfbLabel')}: {runtimeLabel(status.xvfbInstalled)}
+                </span>
+              )}
               <span className="rounded-md border border-border px-2 py-1">
                 {t('browserUseSettings.statusPrefix')}: {isStatusLoading && !status
                   ? t('browserUseSettings.checking')
@@ -287,6 +340,16 @@ export default function BrowserUseSettingsTab() {
                     : t('browserUseSettings.installRuntime')}
                 </Button>
               </div>
+            )}
+
+            {status && settings && (
+              <BrowserInstalledEngines
+                engines={status.engines ?? []}
+                activeEngine={settings.engine}
+                usesChromium={!usesChrome}
+                onChanged={reloadStatus}
+                t={t}
+              />
             )}
 
             {error && (

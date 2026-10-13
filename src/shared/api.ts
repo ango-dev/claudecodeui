@@ -581,6 +581,8 @@ export const api = {
     stopSession: (sessionId: string) => post(`/api/browser-use/sessions/${sessionId}/stop`),
     deleteSession: (sessionId: string) => del(`/api/browser-use/sessions/${sessionId}`),
     installRuntime: () => post('/api/browser-use/runtime/install'),
+    removeRuntime: (engine: string, part: 'engine' | 'chromium') => post('/api/browser-use/runtime/remove', { engine, part }),
+    installVirtualScreen: () => post('/api/browser-use/virtual-screen/install'),
   },
 
   voice: {
