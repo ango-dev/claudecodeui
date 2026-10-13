@@ -24,7 +24,7 @@
 > - **Claude Code only.** Cursor, Codex and OpenCode are hidden and were not tested with this fork's interface. They can be shown again under Settings → Agents → Advanced, but may not work properly.
 > - **English only.** Text added or changed in this fork was not translated; other languages show it in English.
 >
-> **Plugins made alongside this fork**, matching its theme:
+> **Companion plugins:** forks of existing CloudCLI plugins, restyled to match this fork's theme. Credit for each goes to its original author; see each repo.
 >
 > - [cloudcli-plugin-prism](https://github.com/ango-dev/cloudcli-plugin-prism)
 > - [cloudcli-plugin-claude-usage](https://github.com/ango-dev/cloudcli-plugin-claude-usage)
