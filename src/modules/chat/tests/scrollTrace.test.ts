@@ -50,6 +50,16 @@ it('keeps the last three pages, so refreshing twice after a freeze does not lose
   expect(previous[2]).toMatch(/frozen-here/);
 });
 
+it('names the row a frozen page stopped drawing in', async () => {
+  const first = await import('@/modules/chat/utils/scrollTrace');
+  first.setScrollTraceEnabled(true);
+  first.traceScroll('older:end', undefined, true);
+  first.markScrollRow('row 12/150 Edit(900000 chars)');
+  vi.resetModules();
+  const second = await import('@/modules/chat/utils/scrollTrace');
+  expect(second.readScrollTrace().previous[0]).toMatch(/older:end[\s\S]*last row drawn: [\d.]+ row 12\/150 Edit\(900000 chars\)$/);
+});
+
 it('reports busy paths as per-second counts', async () => {
   vi.useFakeTimers();
   try {

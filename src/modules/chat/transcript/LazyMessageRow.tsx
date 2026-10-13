@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 
 import type { ChatMessage } from '@/shared/types';
 import type { LazyRowObserver } from '@/modules/chat/hooks/useLazyRowObserver';
-import { countScroll } from '@/modules/chat/utils/scrollTrace';
+import { countScroll, markScrollRow } from '@/modules/chat/utils/scrollTrace';
 
 /**
  * Mounts a transcript row's real content only while the row is near the
@@ -35,6 +35,8 @@ type LazyMessageRowProps = {
    * placeholder and mounts when scrolled toward.
    */
   initiallyNearViewport: boolean;
+  /** What the row holds, for the scroll recorder; set only while it records. */
+  traceLabel?: string;
   children: ReactNode;
 };
 
@@ -42,6 +44,7 @@ export default function LazyMessageRow({
   lazyRows,
   timestamp,
   initiallyNearViewport,
+  traceLabel,
   children,
 }: LazyMessageRowProps) {
   const [isNearViewport, setIsNearViewport] = useState(initiallyNearViewport);
@@ -75,6 +78,8 @@ export default function LazyMessageRow({
   }, [lazyRows, handleNearViewportChange]);
 
   const isMounted = lazyRows === null || isNearViewport;
+  // Rendered depth-first, so the content drawn next is this row's.
+  if (isMounted && traceLabel) markScrollRow(traceLabel);
 
   return (
     <div

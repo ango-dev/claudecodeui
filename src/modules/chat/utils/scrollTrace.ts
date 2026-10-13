@@ -14,6 +14,8 @@
 const ENABLED_KEY = 'cloudcli-scroll-trace';
 const CURRENT_KEY = 'cloudcli-scroll-trace-log';
 const PREVIOUS_KEY = 'cloudcli-scroll-trace-previous';
+/** The transcript row being drawn right now, written before it renders. */
+const ROW_KEY = 'cloudcli-scroll-trace-row';
 /** Earlier pages kept, so refreshing twice after a freeze does not lose it. */
 const PREVIOUS_RUNS = 3;
 const MAX_LINES = 600;
@@ -129,7 +131,19 @@ const readPreviousRuns = (): string[] => {
 
 /** On load: the last page's log joins the earlier runs, and recording resumes if it was on. */
 function initScrollTrace() {
-  const last = readStorage(CURRENT_KEY);
+  let last = readStorage(CURRENT_KEY);
+  const lastRow = readStorage(ROW_KEY);
+  if (last && lastRow) {
+    // The row a freeze stopped in: drawn last, so written after everything else.
+    try {
+      const parsed = JSON.parse(last) as { lastBeat?: number; lines?: string[] };
+      parsed.lines = [...(parsed.lines ?? []), `last row drawn: ${lastRow}`];
+      last = JSON.stringify(parsed);
+    } catch {
+      // An unreadable log stays as it is.
+    }
+  }
+  writeStorage(ROW_KEY, null);
   if (last) {
     writeStorage(PREVIOUS_KEY, JSON.stringify([last, ...readPreviousRuns()].slice(0, PREVIOUS_RUNS)));
     writeStorage(CURRENT_KEY, null);
@@ -150,6 +164,16 @@ export function traceScroll(name: string, data?: Record<string, TraceValue>, flu
   if (!state) return;
   push(`${name} ${format(data)}`.trimEnd());
   if (flush) persist();
+}
+
+/**
+ * Names the transcript row about to be drawn, written straight to storage: a
+ * row that never finishes drawing freezes the page before the log is next
+ * saved, and this is how the log still says which one it was.
+ */
+export function markScrollRow(label: string) {
+  if (!state) return;
+  writeStorage(ROW_KEY, `${((performance.now() - state.startedAt) / 1000).toFixed(3)} ${label}`);
 }
 
 /** A busy path that runs too often to log line by line; reported as a per-second count. */
@@ -175,6 +199,7 @@ export function readScrollTrace(): { current: string; previous: string[] } {
 
 export function clearScrollTrace() {
   writeStorage(PREVIOUS_KEY, null);
+  writeStorage(ROW_KEY, null);
   writeStorage(CURRENT_KEY, null);
   if (state) {
     state.lines = [];

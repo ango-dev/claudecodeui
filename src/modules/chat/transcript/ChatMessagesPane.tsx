@@ -19,7 +19,7 @@ import ProviderSelectionEmptyState from '@/modules/chat/transcript/ProviderSelec
 import ToolGroupContainer from '@/modules/chat/transcript/ToolGroupContainer';
 import LoadAllMessagesOverlay from '@/modules/chat/transcript/LoadAllMessagesOverlay';
 import { BackgroundTasksStrip } from '@/modules/chat/transcript/BackgroundTasksStrip';
-import { countScroll } from '@/modules/chat/utils/scrollTrace';
+import { countScroll, isScrollTraceEnabled } from '@/modules/chat/utils/scrollTrace';
 
 /**
  * How many of the newest rows mount with real content on the first commit,
@@ -34,6 +34,16 @@ const INITIAL_MOUNTED_TAIL_ROWS = 30;
  * that was rendered once collapses to its measured height and moves nothing.
  */
 const MAX_ROWS_RENDERED_BEFORE_MEASURING = 300;
+
+/** For the scroll recorder: what a row holds and how much text, which is what makes one slow to draw. */
+const describeTraceRow = (messages: ChatMessage[]): string => messages
+  .map((message) => {
+    const size = (message.content?.length ?? 0)
+      + (typeof message.toolInput === 'string' ? message.toolInput.length : 0)
+      + (typeof message.toolResult?.content === 'string' ? message.toolResult.content.length : 0);
+    return `${message.toolName ?? message.type}(${size} chars, ${message.timestamp})`;
+  })
+  .join(', ');
 
 type ChatMessagesPaneProps = {
   scrollContainerRef: RefObject<HTMLDivElement>;
@@ -295,6 +305,7 @@ function ChatMessagesPane({
             let prevMessage: ChatMessage | null = null;
             const rowCount = groupedVisibleMessages.length;
             const renderEveryRowFirst = usesScrollAnchorFallback() && rowCount <= MAX_ROWS_RENDERED_BEFORE_MEASURING;
+            const tracing = isScrollTraceEnabled();
 
             return groupedVisibleMessages.map((item, index) => {
               // Rows near the tail mount their content on first commit so the
@@ -312,6 +323,7 @@ function ChatMessagesPane({
                     lazyRows={lazyRows}
                     timestamp={item.timestamp}
                     initiallyNearViewport={initiallyNearViewport}
+                    traceLabel={tracing ? `row ${index}/${rowCount} group: ${describeTraceRow(item.messages)}` : undefined}
                   >
                     <ToolGroupContainer
                       group={item}
@@ -339,6 +351,7 @@ function ChatMessagesPane({
                   lazyRows={lazyRows}
                   timestamp={item.timestamp}
                   initiallyNearViewport={initiallyNearViewport}
+                  traceLabel={tracing ? `row ${index}/${rowCount} ${describeTraceRow([item])}` : undefined}
                 >
                   <MessageComponent
                     message={item}
