@@ -19,7 +19,17 @@
 
 ---
 
-> **About this fork:** a Claude Code-only build of CloudCLI. Cursor, Codex and OpenCode are hidden and were not tested with this fork's interface; they can be shown again under Settings → Agents → Advanced, but may not work properly. CloudCLI's name, license and credits are kept. The original project is [siteboon/claudecodeui](https://github.com/siteboon/claudecodeui).
+> **About this fork:** a Claude Code-only build of CloudCLI. CloudCLI's name, license and credits are kept; the original project is [siteboon/claudecodeui](https://github.com/siteboon/claudecodeui).
+>
+> - **Claude Code only.** Cursor, Codex and OpenCode are hidden and were not tested with this fork's interface. They can be shown again under Settings → Agents → Advanced, but may not work properly.
+> - **English only.** Text added or changed in this fork was not translated; other languages show it in English.
+>
+> **Plugins made alongside this fork**, matching its theme:
+>
+> - [cloudcli-plugin-prism](https://github.com/ango-dev/cloudcli-plugin-prism)
+> - [cloudcli-plugin-claude-usage](https://github.com/ango-dev/cloudcli-plugin-claude-usage)
+> - [cloudcli-plugin-agent-monitor](https://github.com/ango-dev/cloudcli-plugin-agent-monitor)
+> - [cloudcli-plugin-terminal](https://github.com/ango-dev/cloudcli-plugin-terminal)
 
 ## Screenshots
 
