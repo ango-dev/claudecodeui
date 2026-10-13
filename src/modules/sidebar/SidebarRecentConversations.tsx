@@ -13,6 +13,7 @@ import { useSidebarBulkSelection } from '@/modules/sidebar/hooks/useSidebarBulkS
 import { useTouchScreen } from '@/modules/sidebar/hooks/useTouchScreen';
 import { RECENT_SESSIONS_SELECTION_SCOPE } from '@/modules/sidebar/utils/sidebarSelectionScopes';
 import { useShowOtherAgents } from '@/shared/agentVisibility';
+import { dragSelectRowProps } from '@/modules/sidebar/hooks/useSidebarDragSelect';
 
 type SidebarRecentConversationsProps = {
   conversations: RecentConversationListItem[];
@@ -272,6 +273,7 @@ export default function SidebarRecentConversations({
                     toggleRow(conversation.sessionId);
                   }
                 } : undefined}
+                {...(isSelecting ? dragSelectRowProps(RECENT_SESSIONS_SELECTION_SCOPE, conversation.sessionId) : {})}
                 role={isSelecting ? 'checkbox' : undefined}
                 aria-checked={isSelecting ? isChecked : undefined}
                 aria-disabled={isSelecting && !isSelectable ? true : undefined}

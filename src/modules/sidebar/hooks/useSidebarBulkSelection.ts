@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import type { SidebarSessionSelection } from '@/shared/types';
+import { useSidebarDragSelect } from '@/modules/sidebar/hooks/useSidebarDragSelect';
 
 type UseSidebarBulkSelectionArgs = {
   /** The list the selection belongs to: a project id, or a tab's scope (see sidebarSelectionScopes). */
@@ -35,6 +36,8 @@ export function useSidebarBulkSelection({
   onCancelSelection,
 }: UseSidebarBulkSelectionArgs) {
   const isSelecting = selectedIds !== null;
+  // On touch screens, sliding a finger down the list ticks every row it passes.
+  useSidebarDragSelect({ scopeId, selectableIds, selectedIds, onSetSelection });
 
   const stateRef = useRef({ scopeId, selectableIds, selectedIds, openSessionId });
   // Synced after each render, before any click can reach the handlers.

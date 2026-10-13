@@ -14,6 +14,7 @@ import SidebarBulkActions from '@/modules/sidebar/SidebarBulkActions';
 import { useSidebarBulkSelection } from '@/modules/sidebar/hooks/useSidebarBulkSelection';
 import { ARCHIVED_SESSIONS_SELECTION_SCOPE } from '@/modules/sidebar/utils/sidebarSelectionScopes';
 import { useShowOtherAgents } from '@/shared/agentVisibility';
+import { dragSelectRowProps } from '@/modules/sidebar/hooks/useSidebarDragSelect';
 
 function HighlightedSnippet({ snippet, highlights }: { snippet: string; highlights: { start: number; end: number }[] }) {
   const parts: ReactNode[] = [];
@@ -710,6 +711,7 @@ export default function SidebarContent({
                       >
                         <button
                           className="flex min-w-0 flex-1 items-center gap-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          {...(isSelectingArchived ? dragSelectRowProps(ARCHIVED_SESSIONS_SELECTION_SCOPE, session.sessionId) : {})}
                           role={isSelectingArchived ? 'checkbox' : undefined}
                           aria-checked={isSelectingArchived ? isChecked : undefined}
                           onClick={(event) => {

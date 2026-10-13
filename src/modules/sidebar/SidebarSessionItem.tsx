@@ -9,6 +9,7 @@ import type { LLMProvider, Project, ProjectSession, SessionWithProvider } from '
 import { createSessionViewModel, formatCompactAge } from '@/modules/sidebar/utils/sidebarProjectFormatting';
 import SessionOptions from '@/modules/sidebar/SessionOptions';
 import { useShowOtherAgents } from '@/shared/agentVisibility';
+import { dragSelectRowProps } from '@/modules/sidebar/hooks/useSidebarDragSelect';
 
 type SidebarSessionItemProps = {
   project: Project;
@@ -151,6 +152,7 @@ function SidebarSessionItem({
       <div>
         <a
           href={`/session/${session.id}`}
+          {...(isSelecting ? dragSelectRowProps(project.projectId, session.id) : {})}
           role={isSelecting ? 'checkbox' : undefined}
           aria-checked={isSelecting ? isChecked : undefined}
           aria-disabled={isSelecting && !isSelectable ? true : undefined}
