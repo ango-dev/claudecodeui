@@ -3,14 +3,10 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateA
 import { useTranslation } from 'react-i18next';
 
 import type { AppTab, Project, ProjectSession } from '@/shared/types';
-import { cn } from '@/shared/utils';
 import MobileMenuButton from '@/modules/project-workspace/MobileMenuButton';
 import WorkspaceConnectionStatus from '@/modules/project-workspace/WorkspaceConnectionStatus';
 import WorkspaceTabs from '@/modules/project-workspace/WorkspaceTabs';
 import WorkspaceTitle from '@/modules/project-workspace/WorkspaceTitle';
-
-/** The strip's side padding while it overflows (sm:px-9): the arrow and fade sit there. */
-const TAB_ARROW_ROOM_PX = 36;
 
 type WorkspaceHeaderProps = {
   activeTab: AppTab;
@@ -44,7 +40,6 @@ export default function WorkspaceHeader({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
-  const hasOverflow = canScrollLeft || canScrollRight;
 
   const updateScrollState = useCallback(() => {
     const el = scrollRef.current;
@@ -95,24 +90,12 @@ export default function WorkspaceHeader({
     return () => window.cancelAnimationFrame(frame);
   }, [activeTab, updateScrollState]);
 
-  // An arrow reveals the next tab it covers, not a page of tabs: the strip
-  // slides just far enough to show it beside the arrow (sm:px-9 keeps that room).
+  // An arrow takes the strip all the way to that end: there are only a few
+  // tabs past the edge, so one tap shows them all.
   const scrollTabs = (direction: -1 | 1) => {
     const el = scrollRef.current;
     if (!el) return;
-    const view = el.getBoundingClientRect();
-    const tabs = Array.from(el.querySelectorAll<HTMLElement>('[role="tab"]'));
-    const visibleLeft = view.left + TAB_ARROW_ROOM_PX;
-    const visibleRight = view.right - TAB_ARROW_ROOM_PX;
-    const next = direction > 0
-      ? tabs.find((tab) => tab.getBoundingClientRect().right > visibleRight + 1)
-      : tabs.reverse().find((tab) => tab.getBoundingClientRect().left < visibleLeft - 1);
-    if (!next) return;
-    const bounds = next.getBoundingClientRect();
-    el.scrollBy({
-      left: direction > 0 ? bounds.right - visibleRight : bounds.left - visibleLeft,
-      behavior: 'smooth',
-    });
+    el.scrollTo({ left: direction > 0 ? el.scrollWidth - el.clientWidth : 0, behavior: 'smooth' });
   };
 
   return (
@@ -135,13 +118,12 @@ export default function WorkspaceHeader({
             {canScrollLeft && (
               <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-12 bg-gradient-to-r from-background via-background/90 to-transparent" />
             )}
+            {/* No extra room for the arrows at the ends: each end's arrow is
+                hidden once the strip reaches it, so the room only showed as a gap. */}
             <div
               ref={scrollRef}
               onScroll={updateScrollState}
-              className={cn(
-                'scrollbar-hide max-w-full scroll-smooth overflow-x-auto overscroll-x-contain px-3 [-webkit-overflow-scrolling:touch]',
-                hasOverflow ? 'sm:px-9' : 'sm:pl-3 sm:pr-0',
-              )}
+              className="scrollbar-hide max-w-full overflow-x-auto overscroll-x-contain scroll-smooth px-3 [-webkit-overflow-scrolling:touch] sm:pl-3 sm:pr-0"
             >
               <WorkspaceTabs
                 activeTab={activeTab}
