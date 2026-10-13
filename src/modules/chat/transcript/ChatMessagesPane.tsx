@@ -19,6 +19,7 @@ import ProviderSelectionEmptyState from '@/modules/chat/transcript/ProviderSelec
 import ToolGroupContainer from '@/modules/chat/transcript/ToolGroupContainer';
 import LoadAllMessagesOverlay from '@/modules/chat/transcript/LoadAllMessagesOverlay';
 import { BackgroundTasksStrip } from '@/modules/chat/transcript/BackgroundTasksStrip';
+import { countScroll } from '@/modules/chat/utils/scrollTrace';
 
 /**
  * How many of the newest rows mount with real content on the first commit,
@@ -152,6 +153,7 @@ function ChatMessagesPane({
 }: ChatMessagesPaneProps) {
   const { t } = useTranslation('chat');
   const lazyRows = useLazyRowObserver(scrollContainerRef);
+  countScroll('pane-render');
   const transcriptContentRef = useRef<HTMLDivElement>(null);
   useScrollAnchorFallback(scrollContainerRef, transcriptContentRef);
   const groupedVisibleMessages = useMemo(

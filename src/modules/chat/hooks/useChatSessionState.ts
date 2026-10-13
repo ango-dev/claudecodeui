@@ -9,6 +9,7 @@ import { createMessageHistoryRefreshCoordinator } from '@/modules/chat/utils/mes
 import { createCachedDiffCalculator } from '@/modules/chat/utils/messageTransforms';
 import { normalizedToChatMessages } from '@/modules/chat/hooks/useChatMessages';
 import { usesScrollAnchorFallback, waitForScrollRest } from '@/modules/chat/hooks/useScrollAnchorFallback';
+import { countScroll, traceScroll } from '@/modules/chat/utils/scrollTrace';
 import { findSearchTargetIndex, resolveSearchWindowSize } from '@/modules/chat/utils/searchTargetLocator';
 import { readSelectedProvider } from '@/shared/selectedProvider';
 import type { SearchTarget } from '@/modules/chat/utils/searchTargetLocator';
@@ -519,6 +520,15 @@ export function useChatSessionState({
       isLoadingMoreRef.current = true;
       setIsLoadingMoreMessages(true);
       const holdsPagesUntilRest = usesScrollAnchorFallback();
+      const startedAt = performance.now();
+      const since = () => performance.now() - startedAt;
+      traceScroll('older:start', {
+        top: container.scrollTop,
+        h: container.scrollHeight,
+        client: container.clientHeight,
+        msgs: chatMessagesLengthRef.current,
+        holds: holdsPagesUntilRest,
+      }, true);
       if (holdsPagesUntilRest) {
         // The window starts wider than the first page, so without this the
         // next pages would render the moment they arrive, mid-fling.
@@ -537,8 +547,12 @@ export function useChatSessionState({
           }),
           new Promise<null>((resolve) => { timeout = setTimeout(() => resolve(null), OLDER_PAGE_TIMEOUT_MS); }),
         ]).finally(() => clearTimeout(timeout));
-        if (!result) return false;
+        if (!result) {
+          traceScroll('older:timeout', { ms: since() }, true);
+          return false;
+        }
         const { slot, prependedCount } = result;
+        traceScroll('older:fetched', { ms: since(), prepended: prependedCount, hasMore: slot.hasMore, total: slot.total }, true);
         setHasMoreMessages(slot.hasMore);
         setTotalMessages(slot.total);
         messagesOffsetRef.current = slot.offset;
@@ -564,7 +578,9 @@ export function useChatSessionState({
         // the reader's place then is invisible, where mid-fling it either
         // stops iOS momentum or hides the new rows until the fling ends.
         if (holdsPagesUntilRest) {
+          traceScroll('older:wait-rest', { ms: since() }, true);
           await waitForScrollRest(container);
+          traceScroll('older:rested', { ms: since(), top: container.scrollTop }, true);
           if (!isActiveRef.current || activeSessionIdRef.current !== selectedSession.id) {
             return false;
           }
@@ -591,6 +607,7 @@ export function useChatSessionState({
         }
         return true;
       } finally {
+        traceScroll('older:end', { ms: since(), top: container.scrollTop, h: container.scrollHeight }, true);
         isLoadingMoreRef.current = false;
         setIsLoadingMoreMessages(false);
       }
@@ -602,6 +619,7 @@ export function useChatSessionState({
     if (!isActive) return;
     const container = scrollContainerRef.current;
     if (!container) return;
+    countScroll('scroll');
 
     const nearBottom = isNearBottom();
     setIsUserScrolledUp(!nearBottom);
@@ -651,6 +669,7 @@ export function useChatSessionState({
     const container = scrollContainerRef.current;
     if (pendingScrollRestoreRef.current) {
       const { height, top, anchor, anchorOffset } = pendingScrollRestoreRef.current;
+      const before = container.scrollTop;
       if (anchor?.isConnected && anchorOffset !== null) {
         const nextAnchorOffset = (
           anchor.getBoundingClientRect().top
@@ -660,6 +679,14 @@ export function useChatSessionState({
       } else {
         container.scrollTop = top + Math.max(container.scrollHeight - height, 0);
       }
+      traceScroll('restore', {
+        by: anchor?.isConnected && anchorOffset !== null ? 'anchor' : 'height',
+        from: before,
+        to: container.scrollTop,
+        h: container.scrollHeight,
+        oldH: height,
+        visible: visibleMessageCount,
+      }, true);
       pendingScrollRestoreRef.current = null;
       return;
     }
@@ -690,6 +717,7 @@ export function useChatSessionState({
     searchScrollActiveRef.current = false;
     setSearchTarget(null);
 
+    traceScroll('session:open', { id: selectedSession?.id?.slice(0, 8) ?? 'none' }, true);
     pendingInitialScrollRef.current = true;
     setVisibleMessageCount(initialVisibleMessages());
     topLoadLockRef.current = false;
@@ -1147,6 +1175,7 @@ export function useChatSessionState({
     if (!selectedSession || !selectedProject) return;
     if (isLoadingAllMessages) return;
     const requestSessionId = selectedSession.id;
+    traceScroll('load-all:start', { inFlight: isLoadingMoreRef.current }, true);
     allMessagesLoadedRef.current = true;
     isLoadingMoreRef.current = true;
     setIsLoadingAllMessages(true);
@@ -1198,6 +1227,7 @@ export function useChatSessionState({
       allMessagesLoadedRef.current = false;
       setShowLoadAllOverlay(false);
     } finally {
+      traceScroll('load-all:end', { msgs: chatMessagesLengthRef.current }, true);
       isLoadingMoreRef.current = false;
       setIsLoadingAllMessages(false);
     }

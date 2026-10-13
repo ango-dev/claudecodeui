@@ -5,6 +5,7 @@ import { CLOUDCLI_WORDMARK_FONT_FAMILY } from '@/shared/constants';
 import { IS_PLATFORM } from '@/shared/utils';
 import { useVersionCheck } from '@/shared/hooks/useVersionCheck';
 import PremiumFeatureCard from '@/modules/settings/PremiumFeatureCard';
+import { ScrollDiagnostics } from '@/modules/chat';
 
 const GITHUB_REPO_URL = 'https://github.com/siteboon/claudecodeui';
 const DISCORD_URL = 'https://discord.gg/buxwujPNRE';
@@ -161,6 +162,10 @@ export default function AboutTab() {
           />
         </div>
       )}
+
+      <div className="border-t border-border/50 pt-4">
+        <ScrollDiagnostics />
+      </div>
 
       {/* License */}
       <div className="border-t border-border/50 pt-4">

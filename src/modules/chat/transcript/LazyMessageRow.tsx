@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 
 import type { ChatMessage } from '@/shared/types';
 import type { LazyRowObserver } from '@/modules/chat/hooks/useLazyRowObserver';
+import { countScroll } from '@/modules/chat/utils/scrollTrace';
 
 /**
  * Mounts a transcript row's real content only while the row is near the
@@ -63,6 +64,7 @@ export default function LazyMessageRow({
         setMeasuredHeight(rect.height);
       }
     }
+    countScroll(nextIsNearViewport ? 'row-mount' : 'row-unmount');
     setIsNearViewport(nextIsNearViewport);
   }, []);
 

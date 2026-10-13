@@ -10,6 +10,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { api } from '@/shared/api';
+import { traceScroll } from '@/modules/chat/utils/scrollTrace';
 import type { LLMProvider, NormalizedMessage } from '@/shared/types';
 import { removeOptimisticUserEchoes } from '@/modules/chat/utils/sessionMessageReconciliation';
 import {
@@ -98,12 +99,21 @@ async function requestSessionHistoryPage(
   sessionId: string,
   options: SessionMessagesRequestOptions,
 ): Promise<SessionHistoryPage> {
-  const response = await api.providers.sessionMessages(sessionId, options, {
-    signal: AbortSignal.timeout(SESSION_HISTORY_REQUEST_TIMEOUT_MS),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-  const body = await response.json();
+  const startedAt = performance.now();
+  const request = { limit: options.limit ?? 'all', offset: options.offset ?? 0 };
+  traceScroll('history:request', request);
+  let body: Awaited<ReturnType<Response['json']>>;
+  try {
+    const response = await api.providers.sessionMessages(sessionId, options, {
+      signal: AbortSignal.timeout(SESSION_HISTORY_REQUEST_TIMEOUT_MS),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    body = await response.json();
+  } catch (error) {
+    traceScroll('history:failed', { ...request, ms: performance.now() - startedAt, error: String(error) }, true);
+    throw error;
+  }
+  traceScroll('history:response', { ...request, ms: performance.now() - startedAt });
   const data = body?.data ?? body;
   const messages: NormalizedMessage[] = Array.isArray(data.messages) ? data.messages : [];
 
@@ -639,7 +649,10 @@ export function useSessionStore() {
     } = {},
   ) => {
     const slot = getSlot(sessionId);
+    const queuedAt = performance.now();
     return enqueueHistoryMutation(slot, async () => {
+      // A wait here is time spent behind another history request for this session.
+      traceScroll('history:fetch-more', { queuedMs: performance.now() - queuedAt, hasMore: slot.hasMore, offset: slot.offset });
       let prependedCount = 0;
       let changed = false;
       const canRequest = opts.canRequest ?? (() => true);
