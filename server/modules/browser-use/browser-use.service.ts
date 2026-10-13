@@ -15,7 +15,7 @@ import { getBrowserUseRuntime } from './browser-use-runtime.js';
 
 const require = createRequire(import.meta.url);
 const __dirname = getModuleDirectory(import.meta.url);
-// Where the engine package is installed: require() from this file finds it there.
+// A folder that always exists, for install commands to run in.
 const APP_ROOT = findApplicationRoot(__dirname);
 const MAX_SESSIONS_PER_OWNER = Number.parseInt(process.env.CLOUDCLI_BROWSER_USE_MAX_SESSIONS_PER_OWNER || '3', 10);
 const SESSION_TTL_MS = Number.parseInt(process.env.CLOUDCLI_BROWSER_USE_SESSION_TTL_MS || String(30 * 60 * 1000), 10);
@@ -150,6 +150,14 @@ const DEFAULT_SETTINGS: BrowserUseSettings = {
 };
 const AGENT_OWNER_ID = 'agent';
 const PROFILE_ROOT = path.join(os.homedir(), '.cloudcli', 'browser-use', 'profiles');
+/**
+ * Where Install Runtime puts the engine package, with a package.json of its
+ * own naming only the chosen engine. In CloudCLI's own folder npm removed it
+ * again on the next install (a CloudCLI update, or the other engine), as
+ * packages installed with --no-save are pruned.
+ */
+const ENGINE_ROOT = path.join(os.homedir(), '.cloudcli', 'browser-use', 'runtime');
+const requireFromEngineRoot = createRequire(path.join(ENGINE_ROOT, 'package.json'));
 const MCP_SERVER_NAME = 'cloudcli-browser';
 const LEGACY_MCP_SERVER_NAMES = ['cloudcli-browser-use'];
 const RUNTIME_READINESS_CACHE_TTL_MS = 30_000;
@@ -215,10 +223,26 @@ function getSetupMessage(settings: BrowserUseSettings, readiness: RuntimeReadine
   return readiness.installMessage || 'Browser runtime is not ready.';
 }
 
+/** The engine's package folder: Install Runtime's, else one beside CloudCLI from before it had its own. */
+function resolveEnginePackage(engine: BrowserUseEngine): string | null {
+  for (const resolve of [requireFromEngineRoot.resolve, require.resolve]) {
+    try {
+      return path.dirname(resolve(`${engine}/package.json`));
+    } catch {
+      // Not installed there.
+    }
+  }
+  return null;
+}
+
 function loadEngine(engine: BrowserUseEngine): any | null {
+  const packageDirectory = resolveEnginePackage(engine);
+  if (!packageDirectory) {
+    return null;
+  }
   try {
     // Patchright is a drop-in fork: the same API under another package name.
-    return require(engine);
+    return require(packageDirectory);
   } catch {
     return null;
   }
@@ -402,11 +426,21 @@ function runNpm(args: string[]): Promise<void> {
 
 /** The engine's own CLI (what `npx patchright` runs), installed or where it will be. */
 function engineCliPath(engine: BrowserUseEngine): string {
-  try {
-    return path.join(path.dirname(require.resolve(`${engine}/package.json`)), 'cli.js');
-  } catch {
-    return path.join(APP_ROOT, 'node_modules', engine, 'cli.js');
-  }
+  return path.join(resolveEnginePackage(engine) ?? path.join(ENGINE_ROOT, 'node_modules', engine), 'cli.js');
+}
+
+/**
+ * Installs the engine into ENGINE_ROOT as its only package: npm removes the
+ * other engine, and the next browser install or uninstall then deletes the
+ * Chromium build only that engine used, so switching leaves nothing behind.
+ */
+async function installEnginePackage(engine: BrowserUseEngine): Promise<void> {
+  await fs.promises.mkdir(ENGINE_ROOT, { recursive: true });
+  await fs.promises.writeFile(
+    path.join(ENGINE_ROOT, 'package.json'),
+    `${JSON.stringify({ name: 'cloudcli-browser-runtime', private: true, dependencies: { [engine]: 'latest' } }, null, 2)}\n`,
+  );
+  await runNpm(['install', '--no-package-lock', '--no-audit', '--no-fund', '--prefix', ENGINE_ROOT]);
 }
 
 function runEngineCli(engine: BrowserUseEngine, args: string[]): Promise<void> {
@@ -472,11 +506,14 @@ async function installRuntime(settings: BrowserUseSettings): Promise<{ success: 
   installPromise = (async () => {
     try {
       lastInstallMessage = `Installing ${engineName} package...`;
-      await runNpm(['install', '--no-save', '--no-package-lock', engine]);
+      await installEnginePackage(engine);
 
       if (browser === 'chrome') {
         const configured = settings.chromePath ? expandHome(settings.chromePath) : null;
         if ((configured && fs.existsSync(configured)) || findGoogleChrome()) {
+          // Chrome needs no Chromium: drop the engine's own build, and any
+          // left by the engine used before. Other projects' builds stay.
+          await runEngineCli(engine, ['uninstall']).catch(() => undefined);
           lastInstallMessage = `${engineName} is ready to use Google Chrome.`;
           return { success: true, message: lastInstallMessage };
         }
