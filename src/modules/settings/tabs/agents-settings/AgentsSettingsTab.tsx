@@ -4,7 +4,6 @@ import type { AgentCategory, AgentContextByProvider, AgentProvider, AgentSetting
 import AgentCategoryContentSection from '@/modules/settings/tabs/agents-settings/sections/AgentCategoryContentSection';
 import AgentCategoryTabsSection from '@/modules/settings/tabs/agents-settings/sections/AgentCategoryTabsSection';
 import AgentSelectorSection from '@/modules/settings/tabs/agents-settings/sections/AgentSelectorSection';
-import OtherAgentsSwitch from '@/modules/settings/tabs/agents-settings/sections/OtherAgentsSwitch';
 import { useShowOtherAgents } from '@/shared/agentVisibility';
 
 type ProviderAuthStatusByProvider = Record<AgentProvider, ProviderAuthStatus>;
@@ -112,8 +111,6 @@ export default function AgentsSettingsTab({
           projects={projects}
         />
       </div>
-
-      <OtherAgentsSwitch />
     </div>
   );
 }

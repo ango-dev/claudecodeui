@@ -3,6 +3,7 @@ import { McpServers } from '@/modules/mcp';
 import { ProviderSkills } from '@/modules/skills';
 import AccountContent from '@/modules/settings/tabs/agents-settings/sections/content/AccountContent';
 import PermissionsContent from '@/modules/settings/tabs/agents-settings/sections/content/PermissionsContent';
+import OtherAgentsSwitch from '@/modules/settings/tabs/agents-settings/sections/OtherAgentsSwitch';
 
 type AgentCategoryContentSectionProps = {
   selectedAgent: AgentProvider;
@@ -33,11 +34,14 @@ export default function AgentCategoryContentSection({
   return (
     <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-3 md:p-4">
       {selectedCategory === 'account' && (
-        <AccountContent
-          agent={selectedAgent}
-          authStatus={agentContextById[selectedAgent].authStatus}
-          onLogin={agentContextById[selectedAgent].onLogin}
-        />
+        <>
+          <AccountContent
+            agent={selectedAgent}
+            authStatus={agentContextById[selectedAgent].authStatus}
+            onLogin={agentContextById[selectedAgent].onLogin}
+          />
+          <OtherAgentsSwitch />
+        </>
       )}
 
       {selectedCategory === 'permissions' && selectedAgent === 'claude' && (

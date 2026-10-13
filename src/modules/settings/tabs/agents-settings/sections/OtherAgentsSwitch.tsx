@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { TriangleAlert } from 'lucide-react';
+import { ChevronRight, TriangleAlert } from 'lucide-react';
 
 import { saveShowOtherAgents, useShowOtherAgents } from '@/shared/agentVisibility';
 import SettingsToggle from '@/modules/settings/SettingsToggle';
 
 /**
- * Rendered by AgentsSettingsTab at its very bottom, folded away under
- * "Advanced": this fork is for Claude Code, and the other agents it can still
+ * Rendered by AgentCategoryContentSection under an agent's Account panel,
+ * folded away under a quiet "Advanced" line: this fork is for Claude Code, and the other agents it can still
  * run (Cursor, Codex, OpenCode) were not tested with its interface, which the
  * switch says before anyone turns them on.
  */
@@ -32,9 +32,12 @@ export default function OtherAgentsSwitch() {
   };
 
   return (
-    <details className="group flex-shrink-0 border-t border-border px-4 py-2 text-xs text-muted-foreground" open={showOtherAgents || undefined}>
-      <summary className="cursor-pointer select-none py-1 hover:text-foreground">{k('advanced')}</summary>
-      <div className="space-y-2 pb-2 pt-1">
+    <details className="group mt-6 text-xs text-muted-foreground" open={showOtherAgents || undefined}>
+      <summary className="inline-flex cursor-pointer select-none list-none items-center gap-1 rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+        <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
+        {k('advanced')}
+      </summary>
+      <div className="mt-2 space-y-2 rounded-lg border border-border/60 p-3">
         <div className="flex items-center justify-between gap-4">
           <div className="min-w-0">
             <div className="text-sm font-medium text-foreground">{k('label')}</div>
