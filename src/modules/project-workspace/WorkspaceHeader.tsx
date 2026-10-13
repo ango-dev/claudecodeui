@@ -9,6 +9,9 @@ import WorkspaceConnectionStatus from '@/modules/project-workspace/WorkspaceConn
 import WorkspaceTabs from '@/modules/project-workspace/WorkspaceTabs';
 import WorkspaceTitle from '@/modules/project-workspace/WorkspaceTitle';
 
+/** The strip's side padding while it overflows (sm:px-9): the arrow and fade sit there. */
+const TAB_ARROW_ROOM_PX = 36;
+
 type WorkspaceHeaderProps = {
   activeTab: AppTab;
   setActiveTab: Dispatch<SetStateAction<AppTab>>;
@@ -92,10 +95,24 @@ export default function WorkspaceHeader({
     return () => window.cancelAnimationFrame(frame);
   }, [activeTab, updateScrollState]);
 
+  // An arrow reveals the next tab it covers, not a page of tabs: the strip
+  // slides just far enough to show it beside the arrow (sm:px-9 keeps that room).
   const scrollTabs = (direction: -1 | 1) => {
     const el = scrollRef.current;
     if (!el) return;
-    el.scrollBy({ left: direction * Math.max(180, el.clientWidth * 0.65), behavior: 'smooth' });
+    const view = el.getBoundingClientRect();
+    const tabs = Array.from(el.querySelectorAll<HTMLElement>('[role="tab"]'));
+    const visibleLeft = view.left + TAB_ARROW_ROOM_PX;
+    const visibleRight = view.right - TAB_ARROW_ROOM_PX;
+    const next = direction > 0
+      ? tabs.find((tab) => tab.getBoundingClientRect().right > visibleRight + 1)
+      : tabs.reverse().find((tab) => tab.getBoundingClientRect().left < visibleLeft - 1);
+    if (!next) return;
+    const bounds = next.getBoundingClientRect();
+    el.scrollBy({
+      left: direction > 0 ? bounds.right - visibleRight : bounds.left - visibleLeft,
+      behavior: 'smooth',
+    });
   };
 
   return (
