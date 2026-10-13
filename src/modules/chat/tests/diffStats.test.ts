@@ -54,4 +54,30 @@ describe('diff line counting', () => {
     expect(lines.map((line) => line.type)).toEqual(['added', 'added', 'added']);
     expect(lines.map((line) => line.content)).toEqual(['a', 'b', 'c']);
   });
+
+  it('keeps line numbers right around a change in the middle of a long file', () => {
+    const before = Array.from({ length: 50 }, (_, index) => `line ${index}`);
+    const after = [...before];
+    after.splice(20, 1, 'changed');
+    expect(calculateDiff(before.join('\n'), after.join('\n'))).toEqual([
+      { type: 'removed', content: 'line 20', lineNum: 21 },
+      { type: 'added', content: 'changed', lineNum: 21 },
+    ]);
+  });
+
+  // Building the alignment for this froze the transcript on iPad (tens of millions of cells).
+  it('stays quick on a large rewrite', () => {
+    const before = Array.from({ length: 6000 }, (_, index) => `old ${index}`).join('\n');
+    const after = Array.from({ length: 6000 }, (_, index) => `new ${index}`).join('\n');
+    const startedAt = performance.now();
+    expect(count(before, after)).toEqual({ added: 6000, removed: 6000 });
+    expect(performance.now() - startedAt).toBeLessThan(500);
+  });
+
+  it('aligns a large file with a small change by its shared start and end', () => {
+    const before = Array.from({ length: 20000 }, (_, index) => `line ${index}`);
+    const after = [...before];
+    after.splice(10000, 0, 'inserted');
+    expect(count(before.join('\n'), after.join('\n'))).toEqual({ added: 1, removed: 0 });
+  });
 });

@@ -21,60 +21,77 @@ const toDiffLines = (text: string): string[] => {
   return (text.endsWith('\n') ? text.slice(0, -1) : text).split('\n');
 };
 
+/**
+ * The most old-by-new line pairs the alignment below compares. Its table grows
+ * with their product: one large Write or Edit (thousands of lines each side)
+ * built tens of millions of cells on the main thread, which froze the
+ * transcript on iPad while it drew the tool card's "+N -N" (tool groups do
+ * that even folded). Past this, the changed middle is shown as removed then
+ * added, which is what such a rewrite mostly is anyway.
+ */
+const MAX_DIFF_CELLS = 2_000_000;
+
 export const calculateDiff = (oldStr: string, newStr: string): DiffLine[] => {
   const oldLines = toDiffLines(oldStr);
   const newLines = toDiffLines(newStr);
 
-  // Use LCS alignment so insertions/deletions don't cascade into a full-file "changed" diff.
-  const lcsTable: number[][] = Array.from({ length: oldLines.length + 1 }, () =>
-    new Array<number>(newLines.length + 1).fill(0),
-  );
-  for (let oldIndex = oldLines.length - 1; oldIndex >= 0; oldIndex -= 1) {
-    for (let newIndex = newLines.length - 1; newIndex >= 0; newIndex -= 1) {
-      if (oldLines[oldIndex] === newLines[newIndex]) {
-        lcsTable[oldIndex][newIndex] = lcsTable[oldIndex + 1][newIndex + 1] + 1;
-      } else {
-        lcsTable[oldIndex][newIndex] = Math.max(
-          lcsTable[oldIndex + 1][newIndex],
-          lcsTable[oldIndex][newIndex + 1],
-        );
-      }
-    }
+  // Lines both sides share at the start and end are unchanged; only the middle needs aligning.
+  let start = 0;
+  while (start < oldLines.length && start < newLines.length && oldLines[start] === newLines[start]) {
+    start += 1;
+  }
+  let oldEnd = oldLines.length;
+  let newEnd = newLines.length;
+  while (oldEnd > start && newEnd > start && oldLines[oldEnd - 1] === newLines[newEnd - 1]) {
+    oldEnd -= 1;
+    newEnd -= 1;
   }
 
   const diffLines: DiffLine[] = [];
-  let oldIndex = 0;
-  let newIndex = 0;
+  const pushRemoved = (index: number) => diffLines.push({ type: 'removed', content: oldLines[index], lineNum: index + 1 });
+  const pushAdded = (index: number) => diffLines.push({ type: 'added', content: newLines[index], lineNum: index + 1 });
 
-  while (oldIndex < oldLines.length && newIndex < newLines.length) {
-    const oldLine = oldLines[oldIndex];
-    const newLine = newLines[newIndex];
+  const oldCount = oldEnd - start;
+  const newCount = newEnd - start;
+  if (oldCount * newCount > MAX_DIFF_CELLS) {
+    for (let index = start; index < oldEnd; index += 1) pushRemoved(index);
+    for (let index = start; index < newEnd; index += 1) pushAdded(index);
+    return diffLines;
+  }
 
-    if (oldLine === newLine) {
-      oldIndex += 1;
-      newIndex += 1;
+  // Use LCS alignment so insertions/deletions don't cascade into a full-file "changed" diff.
+  // One flat typed array: a row array per line cost far more memory than the numbers.
+  const width = newCount + 1;
+  const lcs = new Uint32Array((oldCount + 1) * width);
+  for (let oldOffset = oldCount - 1; oldOffset >= 0; oldOffset -= 1) {
+    for (let newOffset = newCount - 1; newOffset >= 0; newOffset -= 1) {
+      lcs[oldOffset * width + newOffset] = oldLines[start + oldOffset] === newLines[start + newOffset]
+        ? lcs[(oldOffset + 1) * width + newOffset + 1] + 1
+        : Math.max(lcs[(oldOffset + 1) * width + newOffset], lcs[oldOffset * width + newOffset + 1]);
+    }
+  }
+
+  let oldOffset = 0;
+  let newOffset = 0;
+  while (oldOffset < oldCount && newOffset < newCount) {
+    if (oldLines[start + oldOffset] === newLines[start + newOffset]) {
+      oldOffset += 1;
+      newOffset += 1;
       continue;
     }
 
-    if (lcsTable[oldIndex + 1][newIndex] >= lcsTable[oldIndex][newIndex + 1]) {
-      diffLines.push({ type: 'removed', content: oldLine, lineNum: oldIndex + 1 });
-      oldIndex += 1;
+    if (lcs[(oldOffset + 1) * width + newOffset] >= lcs[oldOffset * width + newOffset + 1]) {
+      pushRemoved(start + oldOffset);
+      oldOffset += 1;
       continue;
     }
 
-    diffLines.push({ type: 'added', content: newLine, lineNum: newIndex + 1 });
-    newIndex += 1;
+    pushAdded(start + newOffset);
+    newOffset += 1;
   }
 
-  while (oldIndex < oldLines.length) {
-    diffLines.push({ type: 'removed', content: oldLines[oldIndex], lineNum: oldIndex + 1 });
-    oldIndex += 1;
-  }
-
-  while (newIndex < newLines.length) {
-    diffLines.push({ type: 'added', content: newLines[newIndex], lineNum: newIndex + 1 });
-    newIndex += 1;
-  }
+  for (; oldOffset < oldCount; oldOffset += 1) pushRemoved(start + oldOffset);
+  for (; newOffset < newCount; newOffset += 1) pushAdded(start + newOffset);
 
   return diffLines;
 };
