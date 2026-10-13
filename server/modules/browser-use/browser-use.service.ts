@@ -702,7 +702,18 @@ type GpuAccess = {
 const VULKAN_ICD_DIRECTORIES = ['/usr/share/vulkan/icd.d', '/etc/vulkan/icd.d', '/usr/local/share/vulkan/icd.d'];
 
 /** Chrome on the GPU through Vulkan: on Xvfb its OpenGL path is software only. */
-const GPU_ARGS = ['--use-angle=vulkan', '--enable-features=Vulkan,DefaultANGLEVulkan,VulkanFromANGLE'];
+const GPU_ARGS = ['--use-angle=vulkan'];
+const GPU_FEATURES = ['Vulkan', 'DefaultANGLEVulkan', 'VulkanFromANGLE'];
+
+/**
+ * The features Playwright and Patchright enable by default, in one
+ * --enable-features flag of their own. Chrome keeps only the last
+ * --enable-features it is given, so adding ours would silently drop theirs
+ * (CDPScreenshotNewSurface, used for screenshots): their flag is left out and
+ * its features join ours in one flag. Should an engine change its default,
+ * leaving out no longer matches, and its flag simply comes first again.
+ */
+const ENGINE_DEFAULT_FEATURES = ['CDPScreenshotNewSurface'];
 
 function groupName(gid: number): string | null {
   try {
@@ -990,6 +1001,7 @@ function ownerSessions(ownerId: string): BrowserUseSession[] {
 async function buildLaunchOptions(settings: BrowserUseSettings, readiness: RuntimeReadiness) {
   const withWindow = settings.display === 'window';
   const withTaskbar = needsWindowManager(settings);
+  const useGpu = shouldUseGpu(settings, readGpuAccess());
   const env: Record<string, string> = {};
   // On Linux the window goes on CloudCLI's Xvfb, never on a desktop.
   if (needsVirtualScreen(settings)) {
@@ -1015,8 +1027,10 @@ async function buildLaunchOptions(settings: BrowserUseSettings, readiness: Runti
       ...(withWindow && !withTaskbar
         ? [`--window-size=${BROWSER_WINDOW_SIZE.width},${BROWSER_WINDOW_SIZE.height}`, '--window-position=0,0']
         : []),
-      ...(shouldUseGpu(settings, readGpuAccess()) ? GPU_ARGS : []),
+      ...(useGpu ? GPU_ARGS : []),
+      ...(useGpu ? [`--enable-features=${[...ENGINE_DEFAULT_FEATURES, ...GPU_FEATURES].join(',')}`] : []),
     ],
+    ...(useGpu ? { ignoreDefaultArgs: [`--enable-features=${ENGINE_DEFAULT_FEATURES.join(',')}`] } : {}),
     // Real Chrome, where chosen: readiness found it in its standard place or
     // at the location set in Settings.
     ...(settings.browser === 'chrome' && readiness.chromiumExecutablePath
