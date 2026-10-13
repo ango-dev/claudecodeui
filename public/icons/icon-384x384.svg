@@ -1,6 +1,13 @@
 <svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
   <!-- Background fills entire canvas - iOS will handle corner rounding -->
-  <rect width="512" height="512" fill="#d77655"/>
+  <defs>
+    <!-- Lighter at the top, deeper at the bottom, like the Claude app icon -->
+    <linearGradient id="clay" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d97757"/>
+      <stop offset="1" stop-color="#d16a46"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#clay)"/>
   
   <!-- MessageSquare icon - scaled and centered -->
   <path d="M128 144C128 126.327 142.327 112 160 112H352C369.673 112 384 126.327 384 144V272C384 289.673 369.673 304 352 304H224L128 400V144Z" 
