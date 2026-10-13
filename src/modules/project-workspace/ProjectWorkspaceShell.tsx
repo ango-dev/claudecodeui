@@ -16,6 +16,7 @@ function ProjectWorkspaceShell({
   return (
     <div
       className="fixed inset-0 flex bg-background"
+      data-pwa-full-bleed
       // Sized to what is on screen: the area above the keyboard when it is up,
       // the whole screen in iOS home-screen apps (see useVisualViewportKeyboardOffset).
       // Positioned in the page rather than fixed: iPad home-screen apps report a

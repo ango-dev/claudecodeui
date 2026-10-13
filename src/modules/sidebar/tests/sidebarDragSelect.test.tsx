@@ -60,6 +60,50 @@ describe('drag selection on touch screens', () => {
     expect([...(onSet.mock.calls.at(-1)?.[0].sessionIds ?? [])]).toEqual(['a']);
   });
 
+  it('takes over within a few pixels sideways, before iOS would start scrolling', () => {
+    const onSet = vi.fn();
+    const view = render(<List selected={new Set()} onSet={onSet} />);
+    stubLayout(view.container);
+    touch('touchstart', 50, rowY(1));
+    expect(touch('touchmove', 57, rowY(1) + 2).defaultPrevented).toBe(true);
+    touch('touchend', 57, rowY(1));
+    expect([...(onSet.mock.calls.at(-1)?.[0].sessionIds ?? [])]).toEqual(['b']);
+  });
+
+  it('selects by pressing and holding a row, then sliding straight down', () => {
+    vi.useFakeTimers();
+    try {
+      const onSet = vi.fn();
+      const view = render(<List selected={new Set()} onSet={onSet} />);
+      stubLayout(view.container);
+      touch('touchstart', 50, rowY(0));
+      vi.advanceTimersByTime(300);
+      // The held row ticks at once.
+      expect([...(onSet.mock.calls.at(-1)?.[0].sessionIds ?? [])]).toEqual(['a']);
+      expect(touch('touchmove', 50, rowY(2)).defaultPrevented).toBe(true);
+      expect(touch('touchend', 50, rowY(2)).defaultPrevented).toBe(true);
+      expect([...(onSet.mock.calls.at(-1)?.[0].sessionIds ?? [])]).toEqual(['a', 'b', 'c']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not start a hold once the finger has scrolled away', () => {
+    vi.useFakeTimers();
+    try {
+      const onSet = vi.fn();
+      const view = render(<List selected={new Set()} onSet={onSet} />);
+      stubLayout(view.container);
+      touch('touchstart', 50, rowY(0));
+      touch('touchmove', 50, rowY(1));
+      vi.advanceTimersByTime(500);
+      expect(onSet).not.toHaveBeenCalled();
+      touch('touchend', 50, rowY(1));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('leaves a vertical swipe to scroll the list', () => {
     const onSet = vi.fn();
     const view = render(<List selected={new Set()} onSet={onSet} />);

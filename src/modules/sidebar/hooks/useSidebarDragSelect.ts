@@ -2,8 +2,14 @@ import { useEffect, useRef } from 'react';
 
 import type { SidebarSessionSelection } from '@/shared/types';
 
-/** How far a finger moves sideways before the gesture becomes a selection rather than a tap or a scroll. */
-const START_DISTANCE_PX = 10;
+/**
+ * How far a finger moves before the gesture is decided: sideways selects, up
+ * or down scrolls. Below iOS's own ~10pt scroll threshold, so the decision
+ * lands before Safari starts a scroll that a page can no longer stop.
+ */
+const START_DISTANCE_PX = 6;
+/** A finger resting this long on a row starts selecting too, whichever way it then slides. */
+const HOLD_MS = 300;
 /** Within this distance of the list's top or bottom edge, the list scrolls under the finger. */
 const EDGE_PX = 48;
 /** The fastest the list scrolls at its very edge, in pixels per frame. */
@@ -34,7 +40,7 @@ type Drag = {
   startId: string;
   /** The row the finger came down on; the list scrolled while selecting is its scroll container. */
   startRow: Element;
-  /** Undecided until the finger has moved: sideways selects; anything else is left to the browser (scroll, tap). */
+  /** Undecided until the finger moves or rests: sideways or resting selects; anything else is left to the browser (scroll, tap). */
   phase: 'pending' | 'selecting' | 'ignored';
   /** Ticking or unticking: the opposite of the first row's state, as in iOS. */
   mode: 'select' | 'deselect';
@@ -57,10 +63,11 @@ function scrollableAncestor(element: Element | null): HTMLElement | null {
 
 /**
  * Used by useSidebarBulkSelection for touch screens in select mode: put a
- * finger on a row, move it sideways, then slide up or down, and every row
- * passed is ticked (or unticked, when the first row already was), as in iOS
- * Photos and Files. A gesture that starts vertically scrolls as usual and a
- * tap still toggles one row; holding near the list's edge scrolls it.
+ * finger on a row and either move it sideways or rest it a moment, then slide
+ * up or down, and every row passed is ticked (or unticked, when the first row
+ * already was), as in iOS Photos and Files. A gesture that starts vertically
+ * scrolls as usual and a tap still toggles one row; holding near the list's
+ * edge scrolls it.
  */
 export function useSidebarDragSelect({ scopeId, selectableIds, selectedIds, onSetSelection }: UseSidebarDragSelectArgs) {
   const isSelecting = selectedIds !== null;
@@ -76,6 +83,11 @@ export function useSidebarDragSelect({ scopeId, selectableIds, selectedIds, onSe
     }
     let drag: Drag | null = null;
     let frame = 0;
+    let holdTimer: ReturnType<typeof setTimeout> | null = null;
+    const clearHold = () => {
+      if (holdTimer) clearTimeout(holdTimer);
+      holdTimer = null;
+    };
 
     const rowAt = (x: number, y: number): Element | null => {
       const row = document.elementFromPoint(x, y)?.closest('[data-select-id]') ?? null;
@@ -117,7 +129,14 @@ export function useSidebarDragSelect({ scopeId, selectableIds, selectedIds, onSe
       frame = requestAnimationFrame(autoScroll);
     };
 
+    const startSelecting = () => {
+      if (!drag) return;
+      drag.phase = 'selecting';
+      drag.scroller = scrollableAncestor(drag.startRow);
+    };
+
     const handleTouchStart = (event: TouchEvent) => {
+      clearHold();
       if (event.touches.length !== 1) {
         drag = null;
         return;
@@ -143,6 +162,13 @@ export function useSidebarDragSelect({ scopeId, selectableIds, selectedIds, onSe
         lastY: touch.clientY,
         scroller: null,
       };
+      // Press and hold, then slide: the first row ticks at once, as feedback.
+      holdTimer = setTimeout(() => {
+        holdTimer = null;
+        if (drag?.phase !== 'pending') return;
+        startSelecting();
+        applyRange(drag.startId);
+      }, HOLD_MS);
     };
 
     const handleTouchMove = (event: TouchEvent) => {
@@ -155,13 +181,13 @@ export function useSidebarDragSelect({ scopeId, selectableIds, selectedIds, onSe
         const dx = Math.abs(touch.clientX - drag.startX);
         const dy = Math.abs(touch.clientY - drag.startY);
         if (dx < START_DISTANCE_PX && dy < START_DISTANCE_PX) return;
+        clearHold();
         if (dy >= dx) {
           // A vertical start is a scroll: the browser keeps it.
           drag.phase = 'ignored';
           return;
         }
-        drag.phase = 'selecting';
-        drag.scroller = scrollableAncestor(drag.startRow);
+        startSelecting();
       }
       // The finger now selects instead of scrolling the list.
       event.preventDefault();
@@ -171,6 +197,7 @@ export function useSidebarDragSelect({ scopeId, selectableIds, selectedIds, onSe
     };
 
     const handleTouchEnd = (event: TouchEvent) => {
+      clearHold();
       if (drag?.phase === 'selecting') {
         // No click afterwards: it would toggle the row the finger lifted on.
         event.preventDefault();
@@ -190,6 +217,7 @@ export function useSidebarDragSelect({ scopeId, selectableIds, selectedIds, onSe
       document.removeEventListener('touchend', handleTouchEnd, { capture: true });
       document.removeEventListener('touchcancel', handleTouchEnd, { capture: true });
       if (frame) cancelAnimationFrame(frame);
+      clearHold();
     };
   }, [isSelecting]);
 }

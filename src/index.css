@@ -201,11 +201,15 @@
     --shell-top-inset: var(--header-safe-area-top);
   }
 
-  body.pwa-mode .fixed.inset-0 {
-    top: var(--header-total-padding);
-    left: var(--safe-area-inset-left);
-    right: var(--safe-area-inset-right);
-    bottom: 0;
+  /* Full-screen overlays in home-screen apps: the dim and blur cover the iOS
+     status bar too, and a transparent border (the background paints under it)
+     keeps what the overlay holds below the status bar. Ones that lay out their
+     own top edge opt out with data-pwa-full-bleed. */
+  body.pwa-mode .fixed.inset-0:not([data-pwa-full-bleed]) {
+    inset: 0;
+    border-style: solid;
+    border-color: transparent;
+    border-width: var(--header-total-padding) var(--safe-area-inset-right) 0 var(--safe-area-inset-left);
   }
   
   /* Global transition defaults */
@@ -1146,5 +1150,15 @@
   kbd {
     font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace !important;
     font-variant-ligatures: none;
+  }
+
+  /* Sidebar rows while selecting (useSidebarDragSelect): a finger held on a
+     row to start a slide must not open iOS's link preview, select text or
+     lift the link for drag and drop. */
+  [data-select-id] {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-user-drag: none;
   }
 }
