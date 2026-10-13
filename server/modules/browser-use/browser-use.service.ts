@@ -83,6 +83,16 @@ type BrowserUseBrowser = 'chromium' | 'chrome';
  */
 type BrowserUseDisplay = 'headless' | 'window';
 
+/**
+ * Whether the browser may draw with the server's GPU. With 'auto', on Linux,
+ * Chrome is pointed at the GPU through Vulkan when CloudCLI can open a render
+ * device and a Vulkan driver is installed; otherwise WebGL is left to software
+ * rendering, which Chrome blocklists, and a browser without WebGL stands out
+ * to fingerprinting. 'off' never passes the GPU flags, for a driver that
+ * misbehaves. macOS and Windows use the GPU on their own either way.
+ */
+type BrowserUseGpu = 'auto' | 'off';
+
 type BrowserUseSettings = {
   enabled: boolean;
   engine: BrowserUseEngine;
@@ -90,6 +100,7 @@ type BrowserUseSettings = {
   /** Where Chrome is, when it is not in its standard place (e.g. unpacked into a home folder without admin rights). */
   chromePath: string | null;
   display: BrowserUseDisplay;
+  gpu: BrowserUseGpu;
 };
 
 const BROWSER_USE_ENGINES: readonly BrowserUseEngine[] = ['playwright', 'patchright'];
@@ -101,6 +112,8 @@ const readEngine = (value: unknown): BrowserUseEngine => (
 const readBrowser = (value: unknown): BrowserUseBrowser => (value === 'chrome' ? 'chrome' : 'chromium');
 
 const readDisplay = (value: unknown): BrowserUseDisplay => (value === 'window' ? 'window' : 'headless');
+
+const readGpu = (value: unknown): BrowserUseGpu => (value === 'off' ? 'off' : 'auto');
 
 /** A real window needs a virtual screen only on Linux; elsewhere the desktop is there. */
 const needsVirtualScreen = (settings: BrowserUseSettings): boolean => (
@@ -171,6 +184,7 @@ const DEFAULT_SETTINGS: BrowserUseSettings = {
   browser: 'chromium',
   chromePath: null,
   display: 'headless',
+  gpu: 'auto',
 };
 // Browsers being launched: their sessions have no handle yet, but may be on the virtual screen.
 let launchesInProgress = 0;
@@ -204,6 +218,7 @@ function readSettings(): BrowserUseSettings {
       browser: readBrowser(parsed.browser),
       chromePath: readChromePath(parsed.chromePath),
       display: readDisplay(parsed.display),
+      gpu: readGpu(parsed.gpu),
     };
   } catch (error: any) {
     console.warn('[Browser] Failed to read settings:', error?.message || error);
@@ -218,6 +233,7 @@ function writeSettings(settings: BrowserUseSettings): BrowserUseSettings {
     browser: readBrowser(settings.browser),
     chromePath: readChromePath(settings.chromePath),
     display: readDisplay(settings.display),
+    gpu: readGpu(settings.gpu),
   };
 
   appConfigDb.set(BROWSER_USE_SETTINGS_KEY, JSON.stringify(normalized));
@@ -549,14 +565,140 @@ function adminInstructions(engine: BrowserUseEngine, browser: BrowserUseBrowser)
  * package names differ (Debian and Ubuntu: xvfb). Installing system packages
  * needs administrator rights.
  */
-function xvfbPackageCommand(): string[] {
+/**
+ * The install command for a system package under the server's package
+ * manager, whose package names differ between distributions.
+ */
+function packageInstallCommand(names: { apt: string; dnf: string; pacman: string; zypper: string }): string[] {
   const has = (binary: string) => ['/usr/bin', '/bin', '/usr/sbin', '/sbin'].some((directory) => fs.existsSync(path.join(directory, binary)));
-  if (has('dnf')) return ['dnf', 'install', '-y', 'xorg-x11-server-Xvfb'];
-  if (has('yum')) return ['yum', 'install', '-y', 'xorg-x11-server-Xvfb'];
-  if (has('pacman')) return ['pacman', '-S', '--noconfirm', 'xorg-server-xvfb'];
-  if (has('zypper')) return ['zypper', '--non-interactive', 'install', 'xorg-x11-server-Xvfb'];
-  return ['apt-get', 'install', '-y', 'xvfb'];
+  if (has('dnf')) return ['dnf', 'install', '-y', ...names.dnf.split(' ')];
+  if (has('yum')) return ['yum', 'install', '-y', ...names.dnf.split(' ')];
+  if (has('pacman')) return ['pacman', '-S', '--noconfirm', ...names.pacman.split(' ')];
+  if (has('zypper')) return ['zypper', '--non-interactive', 'install', ...names.zypper.split(' ')];
+  return ['apt-get', 'install', '-y', ...names.apt.split(' ')];
 }
+
+function xvfbPackageCommand(): string[] {
+  return packageInstallCommand({ apt: 'xvfb', dnf: 'xorg-x11-server-Xvfb', pacman: 'xorg-server-xvfb', zypper: 'xorg-x11-server-Xvfb' });
+}
+
+//----------------- GPU ------------
+
+/** What the server offers the browser for drawing with its GPU (Linux). */
+type GpuAccess = {
+  /** /dev/dri/renderD* devices: one per GPU. None on most VPSes. */
+  renderNodes: string[];
+  /** CloudCLI's process can open a render device (its user is in the device's group). */
+  accessible: boolean;
+  /** The user CloudCLI runs as, for the group command. */
+  user: string;
+  /** The groups that give access: the render devices' group (usually render) and video. */
+  groups: string[];
+  /** A Vulkan driver (ICD) is installed, which Chrome's Vulkan path needs. */
+  vulkanDriver: boolean;
+};
+
+const VULKAN_ICD_DIRECTORIES = ['/usr/share/vulkan/icd.d', '/etc/vulkan/icd.d', '/usr/local/share/vulkan/icd.d'];
+
+/** Chrome on the GPU through Vulkan: on Xvfb its OpenGL path is software only. */
+const GPU_ARGS = ['--use-angle=vulkan', '--enable-features=Vulkan,DefaultANGLEVulkan,VulkanFromANGLE'];
+
+function groupName(gid: number): string | null {
+  try {
+    const line = fs.readFileSync('/etc/group', 'utf8').split('\n').find((entry) => entry.split(':')[2] === String(gid));
+    return line ? line.split(':')[0] : null;
+  } catch {
+    return null;
+  }
+}
+
+function readGpuAccess(): GpuAccess {
+  const user = (() => {
+    try {
+      return os.userInfo().username;
+    } catch {
+      return process.env.USER || 'your-user';
+    }
+  })();
+  if (process.platform !== 'linux') {
+    return { renderNodes: [], accessible: false, user, groups: [], vulkanDriver: false };
+  }
+  let renderNodes: string[] = [];
+  try {
+    renderNodes = fs.readdirSync('/dev/dri').filter((name) => /^renderD\d+$/.test(name)).map((name) => `/dev/dri/${name}`);
+  } catch {
+    // No /dev/dri: no GPU, as on most VPSes.
+  }
+  const accessible = renderNodes.some((node) => {
+    try {
+      fs.accessSync(node, fs.constants.R_OK | fs.constants.W_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  const groups = [...new Set([
+    ...renderNodes.map((node) => {
+      try {
+        return groupName(fs.statSync(node).gid);
+      } catch {
+        return null;
+      }
+    }).filter((name): name is string => Boolean(name)),
+    'video',
+  ])];
+  const vulkanDriver = VULKAN_ICD_DIRECTORIES.some((directory) => {
+    try {
+      return fs.readdirSync(directory).some((name) => name.endsWith('.json'));
+    } catch {
+      return false;
+    }
+  });
+  return { renderNodes, accessible, user, groups, vulkanDriver };
+}
+
+/** Whether the GPU flags go to the browser: allowed, and everything they need is there. */
+const shouldUseGpu = (settings: BrowserUseSettings, gpu: GpuAccess): boolean => (
+  settings.gpu === 'auto' && process.platform === 'linux' && gpu.accessible && gpu.vulkanDriver
+);
+
+/** What WebGL reports in the browser as configured: the GPU, a software renderer, or nothing. */
+type WebglReport = {
+  status: 'hardware' | 'software' | 'unavailable';
+  renderer: string | null;
+  vendor: string | null;
+  webgl2: boolean;
+};
+
+/** Run in the page: WebGL's renderer as the page sees it (a string, as the server has no DOM types). */
+const WEBGL_PROBE_SCRIPT = `(() => {
+  const canvas = document.createElement('canvas');
+  const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+  if (!gl) return null;
+  const info = gl.getExtension('WEBGL_debug_renderer_info');
+  return {
+    webgl2: typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext,
+    vendor: String(info ? gl.getParameter(info.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR)),
+    renderer: String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)),
+  };
+})()`;
+
+const SOFTWARE_RENDERER = /SwiftShader|llvmpipe|softpipe|lavapipe|Software|Basic Render/i;
+
+function classifyWebgl(result: { renderer?: string; vendor?: string; webgl2?: boolean } | null): WebglReport {
+  if (!result) {
+    return { status: 'unavailable', renderer: null, vendor: null, webgl2: false };
+  }
+  const renderer = result.renderer ?? null;
+  return {
+    status: renderer && !SOFTWARE_RENDERER.test(renderer) ? 'hardware' : 'software',
+    renderer,
+    vendor: result.vendor ?? null,
+    webgl2: Boolean(result.webgl2),
+  };
+}
+
+// ---------------------------
 
 function xvfbInstallCommand(): string {
   return `sudo ${xvfbPackageCommand().join(' ')}`;
@@ -740,6 +882,65 @@ function ownerSessions(ownerId: string): BrowserUseSession[] {
   return [...sessions.values()].filter((session) => session.ownerId === ownerId);
 }
 
+/**
+ * How a browser is started for these settings: headless or with a real
+ * window (on Linux on CloudCLI's Xvfb), real Chrome where chosen, and on the
+ * GPU where it can be reached. Shared by agent sessions and the WebGL check,
+ * so the check sees exactly what a session would.
+ */
+async function buildLaunchOptions(settings: BrowserUseSettings, readiness: RuntimeReadiness) {
+  const withWindow = settings.display === 'window';
+  const launchOptions = {
+    headless: !withWindow,
+    args: [
+      '--disable-dev-shm-usage',
+      ...(withWindow
+        ? [`--window-size=${BROWSER_WINDOW_SIZE.width},${BROWSER_WINDOW_SIZE.height}`, '--window-position=0,0']
+        : []),
+      ...(shouldUseGpu(settings, readGpuAccess()) ? GPU_ARGS : []),
+    ],
+    // Real Chrome, where chosen: readiness found it in its standard place or
+    // at the location set in Settings.
+    ...(settings.browser === 'chrome' && readiness.chromiumExecutablePath
+      ? { executablePath: readiness.chromiumExecutablePath }
+      : {}),
+    // On Linux the window goes on CloudCLI's Xvfb, never on a desktop.
+    ...(needsVirtualScreen(settings)
+      ? await getVirtualDisplay().then(({ display, xauthority }) => ({
+        env: { ...process.env, DISPLAY: display, XAUTHORITY: xauthority },
+      }))
+      : {}),
+  };
+  const contextOptions = {
+    // A real window keeps its own size: an emulated viewport inside it
+    // would differ from the window, which pages can notice.
+    viewport: withWindow ? null : { width: 1440, height: 900 },
+    serviceWorkers: 'block',
+  };
+  return { launchOptions, contextOptions };
+}
+
+/**
+ * Starts a throwaway browser as a session would and reads what WebGL reports
+ * there, for Settings' WebGL check. Counted as a launch, so the virtual
+ * screen stays up for it.
+ */
+async function probeWebgl(settings: BrowserUseSettings, readiness: RuntimeReadiness): Promise<WebglReport> {
+  let browser: any;
+  launchesInProgress += 1;
+  try {
+    const { launchOptions, contextOptions } = await buildLaunchOptions(settings, readiness);
+    browser = await readiness.playwright.chromium.launch(launchOptions);
+    const page = await (await browser.newContext(contextOptions)).newPage();
+    await page.setContent('<!doctype html><title>WebGL check</title>');
+    return classifyWebgl(await page.evaluate(WEBGL_PROBE_SCRIPT));
+  } finally {
+    await browser?.close().catch(() => undefined);
+    launchesInProgress -= 1;
+    releaseVirtualScreenIfUnused();
+  }
+}
+
 /** Ends the Xvfb once no browser is on it or about to be; the next real-window session starts it again. */
 function releaseVirtualScreenIfUnused(): void {
   if (handles.size === 0 && launchesInProgress === 0) {
@@ -895,6 +1096,7 @@ export const browserUseService = {
       browser: settings.browser === undefined ? current.browser : readBrowser(settings.browser),
       chromePath: settings.chromePath === undefined ? current.chromePath : readChromePath(settings.chromePath),
       display: settings.display === undefined ? current.display : readDisplay(settings.display),
+      gpu: settings.gpu === undefined ? current.gpu : readGpu(settings.gpu),
     };
 
     const next = writeSettings(nextSettings);
@@ -903,6 +1105,7 @@ export const browserUseService = {
       || next.browser !== current.browser
       || next.chromePath !== current.chromePath
       || next.display !== current.display
+      || next.gpu !== current.gpu
     ) {
       // Open sessions run under the old engine; they end rather than mix.
       runtimeProbeCache = null;
@@ -937,6 +1140,23 @@ export const browserUseService = {
       virtualScreenRequired: needsVirtualScreen(settings),
       xvfbInstalled: Boolean(findXvfb()),
       xvfbInstallCommand: process.platform === 'linux' ? xvfbInstallCommand() : null,
+      gpu: (() => {
+        const access = readGpuAccess();
+        return {
+          setting: settings.gpu,
+          ...access,
+          inUse: shouldUseGpu(settings, access),
+          groupCommand: `sudo usermod -aG ${access.groups.join(',') || 'render,video'} ${access.user}`,
+          vulkanInstallCommand: process.platform === 'linux'
+            ? `sudo ${packageInstallCommand({
+              apt: 'mesa-vulkan-drivers',
+              dnf: 'mesa-vulkan-drivers',
+              pacman: 'vulkan-radeon vulkan-intel',
+              zypper: 'libvulkan_radeon libvulkan_intel',
+            }).join(' ')}`
+            : null,
+        };
+      })(),
       // Both engines, to switch between and remove from Settings.
       engines: BROWSER_USE_ENGINES.map((engine) => {
         const module = engine === settings.engine ? readiness.playwright : loadEngine(engine);
@@ -980,6 +1200,16 @@ export const browserUseService = {
       [MCP_SERVER_NAME, ...LEGACY_MCP_SERVER_NAMES].map((name) => removeMcpServerFromAllProviders(name)),
     )).flat();
     return { name: MCP_SERVER_NAME, results };
+  },
+
+  /** Settings' WebGL check: starts a browser as configured and reports what WebGL shows. */
+  async checkGraphics(): Promise<WebglReport> {
+    const settings = readSettings();
+    const readiness = getRuntimeReadiness();
+    if (!readiness.playwright || !readiness.chromiumInstalled || !readiness.virtualScreenReady) {
+      throw new Error(getSetupMessage({ ...settings, enabled: true }, readiness));
+    }
+    return probeWebgl(settings, readiness);
   },
 
   async installVirtualScreen() {
@@ -1060,37 +1290,10 @@ export const browserUseService = {
     let browser: any | undefined;
     let context: any | undefined;
     let page: any;
-    const withWindow = settings.display === 'window';
     launchesInProgress += 1;
 
     try {
-      const launchOptions = {
-        headless: !withWindow,
-        args: [
-          '--disable-dev-shm-usage',
-          ...(withWindow
-            ? [`--window-size=${BROWSER_WINDOW_SIZE.width},${BROWSER_WINDOW_SIZE.height}`, '--window-position=0,0']
-            : []),
-        ],
-        // Real Chrome, where chosen: readiness found it in its standard place or
-        // at the location set in Settings.
-        ...(settings.browser === 'chrome' && readiness.chromiumExecutablePath
-          ? { executablePath: readiness.chromiumExecutablePath }
-          : {}),
-        // On Linux the window goes on CloudCLI's Xvfb, never on a desktop.
-        ...(needsVirtualScreen(settings)
-          ? await getVirtualDisplay().then(({ display, xauthority }) => ({
-            env: { ...process.env, DISPLAY: display, XAUTHORITY: xauthority },
-          }))
-          : {}),
-      };
-      const contextOptions = {
-        // A real window keeps its own size: an emulated viewport inside it
-        // would differ from the window, which pages can notice.
-        viewport: withWindow ? null : { width: 1440, height: 900 },
-        serviceWorkers: 'block',
-      };
-
+      const { launchOptions, contextOptions } = await buildLaunchOptions(settings, readiness);
       if (profileName) {
         fs.mkdirSync(PROFILE_ROOT, { recursive: true });
         context = await readiness.playwright.chromium.launchPersistentContext(getProfilePath(profileName), {

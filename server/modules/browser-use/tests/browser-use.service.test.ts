@@ -44,6 +44,7 @@ test('browser settings default to Playwright with Chromium', async () => {
       browser: 'chromium',
       chromePath: null,
       display: 'headless',
+      gpu: 'auto',
     });
   });
 });
@@ -57,11 +58,12 @@ test('browser settings keep a stealth Chrome choice and drop unknown values', as
       browser: 'chrome',
       chromePath: '~/chrome/opt/google/chrome/chrome',
       display: 'headless',
+      gpu: 'auto',
     });
 
     // Only the fields given change; anything unrecognised falls back to the default.
-    const reset = await browserUseService.updateSettings({ engine: 'puppeteer', browser: 'firefox', chromePath: '', display: 'kiosk' } as never);
-    assert.deepEqual(reset, { enabled: false, engine: 'playwright', browser: 'chromium', chromePath: null, display: 'headless' });
+    const reset = await browserUseService.updateSettings({ engine: 'puppeteer', browser: 'firefox', chromePath: '', display: 'kiosk', gpu: 'maybe' } as never);
+    assert.deepEqual(reset, { enabled: false, engine: 'playwright', browser: 'chromium', chromePath: null, display: 'headless', gpu: 'auto' });
     assert.deepEqual(await browserUseService.getSettings(), reset);
   });
 });
@@ -106,5 +108,17 @@ test('removing an engine the current choice uses is refused', async () => {
     const result = await browserUseService.removeRuntime('patchright', 'chromium');
     assert.equal(result.success, false);
     assert.match(result.message, /in use/);
+  });
+});
+
+test('the GPU can be turned off, and status says why it is or is not used', async () => {
+  await withDatabase(async () => {
+    assert.equal((await browserUseService.updateSettings({ gpu: 'off' })).gpu, 'off');
+    const status = await browserUseService.getStatus();
+    assert.equal(status.gpu.setting, 'off');
+    assert.equal(status.gpu.inUse, false);
+    assert.ok(Array.isArray(status.gpu.renderNodes));
+    // The group command names the user CloudCLI runs as.
+    assert.match(status.gpu.groupCommand, /^sudo usermod -aG \S+ \S+$/);
   });
 });

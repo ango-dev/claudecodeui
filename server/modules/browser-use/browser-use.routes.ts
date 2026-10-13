@@ -20,6 +20,7 @@ export const BROWSER_USE_ERROR_CODES = {
   RUNTIME_INSTALL_FAILED: 'BROWSER_USE_RUNTIME_INSTALL_FAILED',
   RUNTIME_REMOVE_FAILED: 'BROWSER_USE_RUNTIME_REMOVE_FAILED',
   VIRTUAL_SCREEN_INSTALL_FAILED: 'BROWSER_USE_VIRTUAL_SCREEN_INSTALL_FAILED',
+  GRAPHICS_CHECK_FAILED: 'BROWSER_USE_GRAPHICS_CHECK_FAILED',
   SESSIONS_LOAD_FAILED: 'BROWSER_USE_SESSIONS_LOAD_FAILED',
   SESSION_STOP_FAILED: 'BROWSER_USE_SESSION_STOP_FAILED',
   SESSION_DELETE_FAILED: 'BROWSER_USE_SESSION_DELETE_FAILED',
@@ -139,6 +140,20 @@ router.post('/runtime/remove', async (req, res) => {
       500,
       BROWSER_USE_ERROR_CODES.RUNTIME_REMOVE_FAILED,
       'Failed to remove from the Browser runtime.',
+      error instanceof Error ? error.message : undefined,
+    );
+  }
+});
+
+router.post('/graphics/check', async (_req, res) => {
+  try {
+    res.json({ success: true, data: await browserUseService.checkGraphics() });
+  } catch (error) {
+    sendError(
+      res,
+      500,
+      BROWSER_USE_ERROR_CODES.GRAPHICS_CHECK_FAILED,
+      'Failed to check WebGL.',
       error instanceof Error ? error.message : undefined,
     );
   }

@@ -10,6 +10,8 @@ import SettingsSection from '@/modules/settings/SettingsSection';
 import SettingsToggle from '@/modules/settings/SettingsToggle';
 import BrowserAdminRightsNotice from '@/modules/settings/tabs/browser-use-settings/BrowserAdminRightsNotice';
 import type { BrowserEngineChoice } from '@/modules/settings/tabs/browser-use-settings/BrowserAdminRightsNotice';
+import BrowserGraphicsCheck from '@/modules/settings/tabs/browser-use-settings/BrowserGraphicsCheck';
+import type { BrowserGpuStatus } from '@/modules/settings/tabs/browser-use-settings/BrowserGraphicsCheck';
 import BrowserInstalledEngines from '@/modules/settings/tabs/browser-use-settings/BrowserInstalledEngines';
 import BrowserVirtualScreenNotice from '@/modules/settings/tabs/browser-use-settings/BrowserVirtualScreenNotice';
 
@@ -25,6 +27,8 @@ type BrowserUseSettings = {
   /** Where Google Chrome is, when it is not where its installer puts it. */
   chromePath: string | null;
   display: BrowserUseDisplay;
+  /** Whether the browser may use the server's GPU (Vulkan on Linux). */
+  gpu: BrowserGpuStatus['setting'];
 };
 
 type BrowserUseStatus = {
@@ -41,6 +45,8 @@ type BrowserUseStatus = {
   virtualScreenRequired: boolean;
   xvfbInstalled: boolean;
   xvfbInstallCommand: string | null;
+  /** The server's GPU as the browser can use it; see BrowserGraphicsCheck. */
+  gpu: BrowserGpuStatus;
   /** Both engines and their Chromium builds, as installed. */
   engines: Array<{ engine: BrowserUseEngine; installed: boolean; chromiumInstalled: boolean }>;
   available: boolean;
@@ -274,6 +280,16 @@ export default function BrowserUseSettingsTab() {
                   : t('browserUseSettings.displays.window')}
               </option>
             </select>
+
+            {status?.gpu && settings && (
+              <BrowserGraphicsCheck
+                gpu={status.gpu}
+                platform={status.platform}
+                disabled={isSaving}
+                onGpuChange={(gpu) => void updateSettings({ gpu })}
+                t={t}
+              />
+            )}
 
             {statusMatchesSettings && status?.virtualScreenRequired && !status.xvfbInstalled && (
               <BrowserVirtualScreenNotice installCommand={status.xvfbInstallCommand} onInstalled={reloadStatus} t={t} />

@@ -583,6 +583,7 @@ export const api = {
     installRuntime: () => post('/api/browser-use/runtime/install'),
     removeRuntime: (engine: string, part: 'engine' | 'chromium') => post('/api/browser-use/runtime/remove', { engine, part }),
     installVirtualScreen: () => post('/api/browser-use/virtual-screen/install'),
+    checkGraphics: () => post('/api/browser-use/graphics/check'),
   },
 
   voice: {
