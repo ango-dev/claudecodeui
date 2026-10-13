@@ -17,6 +17,7 @@ import {
 import { formatShortcut } from '@/shared/utils';
 import { usePermission } from '@/modules/chat/context/PermissionContext';
 import { MarkdownContent } from '@/modules/chat/tools/ContentRenderers/MarkdownContent';
+import { TraceStep, markScrollStep } from '@/modules/chat/utils/scrollTrace';
 
 type PlanDisplayProps = {
   title: string;
@@ -44,6 +45,7 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
 }) => {
   const { t } = useTranslation();
   const permissionCtx = usePermission();
+  markScrollStep(`plan card: ${content.length} chars, streaming=${isStreaming}`);
 
   const pendingRequest = permissionCtx?.pendingPermissionRequests.find(
     (r) => r.toolName === 'ExitPlanMode' || r.toolName === 'exit_plan_mode'
@@ -155,6 +157,8 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
           </CardContent>
         </CollapsibleContent>
 
+        <TraceStep step="plan card: content done" />
+
         {/* Footer — always visible when permission is pending */}
         {pendingRequest && (
           <CardFooter className="justify-end gap-2 border-t border-border/40 px-4 pb-3 pt-3">
@@ -174,6 +178,7 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
             </Button>
           </CardFooter>
         )}
+        <TraceStep step="plan card: done" />
       </Card>
     </Collapsible>
   );

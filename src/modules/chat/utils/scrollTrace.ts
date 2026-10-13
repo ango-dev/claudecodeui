@@ -14,8 +14,13 @@
 const ENABLED_KEY = 'cloudcli-scroll-trace';
 const CURRENT_KEY = 'cloudcli-scroll-trace-log';
 const PREVIOUS_KEY = 'cloudcli-scroll-trace-previous';
-/** The transcript row being drawn right now, written before it renders. */
+/** The transcript row being drawn right now and its steps, written as they happen. */
 const ROW_KEY = 'cloudcli-scroll-trace-row';
+/** Rows a page froze while drawing; shown as a placeholder until drawn on request. */
+const SKIPPED_KEY = 'cloudcli-scroll-trace-skipped';
+const MAX_STEPS = 24;
+/** The last heartbeat, kept apart from the log so it stays current while nothing is logged. */
+const BEAT_KEY = 'cloudcli-scroll-trace-beat';
 /** Earlier pages kept, so refreshing twice after a freeze does not lose it. */
 const PREVIOUS_RUNS = 3;
 const MAX_LINES = 600;
@@ -37,6 +42,10 @@ type TraceState = {
 };
 
 let state: TraceState | null = null;
+
+type RowMark = { at: number; label: string; timestamp?: string; steps: string[] };
+let rowMark: RowMark | null = null;
+let skippedRows: Array<{ timestamp: string; label: string }> = [];
 
 const readStorage = (key: string): string | null => {
   try {
@@ -64,7 +73,9 @@ const format = (data?: Record<string, TraceValue>): string => {
 };
 
 const persist = () => {
-  if (!state || !state.dirty) return;
+  if (!state) return;
+  writeStorage(BEAT_KEY, String(state.lastBeat));
+  if (!state.dirty) return;
   state.dirty = false;
   writeStorage(CURRENT_KEY, JSON.stringify({ lastBeat: state.lastBeat, lines: state.lines }));
 };
@@ -98,8 +109,14 @@ const beat = () => {
 const pageListeners: Array<[string, (event: Event) => void]> = [
   ['error', (event) => { push(`ERROR ${(event as ErrorEvent).message}`); persist(); }],
   ['unhandledrejection', (event) => { push(`REJECTION ${String((event as PromiseRejectionEvent).reason)}`); persist(); }],
-  ['pagehide', () => { push('pagehide'); if (state) state.dirty = true; persist(); }],
-  ['visibilitychange', () => { push(`visibility ${document.visibilityState}`); persist(); }],
+  // Leaving the page normally also clears the row mark, so one that survives
+  // to the next load is from a page that froze or crashed while drawing it.
+  ['pagehide', () => { push('pagehide'); if (state) state.dirty = true; persist(); writeStorage(ROW_KEY, null); }],
+  ['visibilitychange', () => {
+    push(`visibility ${document.visibilityState}`);
+    persist();
+    if (document.visibilityState === 'hidden') writeStorage(ROW_KEY, null);
+  }],
 ];
 
 const start = () => {
@@ -130,20 +147,39 @@ const readPreviousRuns = (): string[] => {
 };
 
 /** On load: the last page's log joins the earlier runs, and recording resumes if it was on. */
-function initScrollTrace() {
-  let last = readStorage(CURRENT_KEY);
-  const lastRow = readStorage(ROW_KEY);
-  if (last && lastRow) {
-    // The row a freeze stopped in: drawn last, so written after everything else.
-    try {
-      const parsed = JSON.parse(last) as { lastBeat?: number; lines?: string[] };
-      parsed.lines = [...(parsed.lines ?? []), `last row drawn: ${lastRow}`];
-      last = JSON.stringify(parsed);
-    } catch {
-      // An unreadable log stays as it is.
-    }
+const readJson = <T>(key: string, fallback: T): T => {
+  try {
+    const raw = readStorage(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
   }
+};
+
+function initScrollTrace() {
+  skippedRows = readJson(SKIPPED_KEY, []);
+  let last = readStorage(CURRENT_KEY);
+  const lastRow = readJson<RowMark | null>(ROW_KEY, null);
   writeStorage(ROW_KEY, null);
+  if (last && lastRow) {
+    // The row a freeze stopped in, with how far its drawing got.
+    const parsed = readJson<{ lines?: string[] }>(CURRENT_KEY, {});
+    const lastBeat = Number(readStorage(BEAT_KEY) ?? 0);
+    const finished = lastRow.steps.at(-1)?.endsWith('drawn; layout running') ?? false;
+    // Still drawing it when the heartbeat stopped: that row froze the page.
+    const froze = !finished && lastRow.at > lastBeat - 1000;
+    if (froze && lastRow.timestamp && !skippedRows.some((row) => row.timestamp === lastRow.timestamp)) {
+      skippedRows = [...skippedRows, { timestamp: lastRow.timestamp, label: lastRow.label }].slice(-10);
+      writeStorage(SKIPPED_KEY, JSON.stringify(skippedRows));
+    }
+    parsed.lines = [
+      ...(parsed.lines ?? []),
+      `last row drawn: ${lastRow.label}`,
+      ...lastRow.steps.map((step) => `  step ${step}`),
+      froze ? '  -> the page froze in this row; it is skipped from now on (Draw it anyway brings it back)' : '  -> drawing finished; the page stopped later',
+    ];
+    last = JSON.stringify(parsed);
+  }
   if (last) {
     writeStorage(PREVIOUS_KEY, JSON.stringify([last, ...readPreviousRuns()].slice(0, PREVIOUS_RUNS)));
     writeStorage(CURRENT_KEY, null);
@@ -171,9 +207,37 @@ export function traceScroll(name: string, data?: Record<string, TraceValue>, flu
  * row that never finishes drawing freezes the page before the log is next
  * saved, and this is how the log still says which one it was.
  */
-export function markScrollRow(label: string) {
+export function markScrollRow(label: string, timestamp?: string) {
   if (!state) return;
-  writeStorage(ROW_KEY, `${((performance.now() - state.startedAt) / 1000).toFixed(3)} ${label}`);
+  const elapsed = ((performance.now() - state.startedAt) / 1000).toFixed(3);
+  rowMark = { at: performance.now(), label: `${elapsed} ${label}`, timestamp, steps: [] };
+  writeStorage(ROW_KEY, JSON.stringify(rowMark));
+}
+
+/** A step inside the row being drawn (plan card, markdown, a code block), so a freeze names the part. */
+export function markScrollStep(step: string) {
+  if (!state || !rowMark) return;
+  rowMark.at = performance.now();
+  rowMark.steps.push(`${((rowMark.at - state.startedAt) / 1000).toFixed(3)} ${step}`);
+  if (rowMark.steps.length > MAX_STEPS) rowMark.steps.splice(0, rowMark.steps.length - MAX_STEPS);
+  writeStorage(ROW_KEY, JSON.stringify(rowMark));
+}
+
+/** Marks a step where it renders: placed after a subtree, it says that subtree finished drawing. */
+export function TraceStep({ step }: { step: string }): null {
+  markScrollStep(step);
+  return null;
+}
+
+/** Whether the row with this timestamp froze a page while drawing and is skipped. */
+export const isRowSkipped = (timestamp?: string): boolean => (
+  Boolean(timestamp) && skippedRows.some((row) => row.timestamp === timestamp)
+);
+
+/** Draws a skipped row again (its "Draw it anyway" button). */
+export function unskipRow(timestamp: string) {
+  skippedRows = skippedRows.filter((row) => row.timestamp !== timestamp);
+  writeStorage(SKIPPED_KEY, skippedRows.length ? JSON.stringify(skippedRows) : null);
 }
 
 /** A busy path that runs too often to log line by line; reported as a per-second count. */
@@ -200,6 +264,8 @@ export function readScrollTrace(): { current: string; previous: string[] } {
 export function clearScrollTrace() {
   writeStorage(PREVIOUS_KEY, null);
   writeStorage(ROW_KEY, null);
+  writeStorage(SKIPPED_KEY, null);
+  skippedRows = [];
   writeStorage(CURRENT_KEY, null);
   if (state) {
     state.lines = [];

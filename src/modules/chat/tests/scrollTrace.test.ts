@@ -50,14 +50,42 @@ it('keeps the last three pages, so refreshing twice after a freeze does not lose
   expect(previous[2]).toMatch(/frozen-here/);
 });
 
-it('names the row a frozen page stopped drawing in', async () => {
+it('names the row and step a frozen page stopped in, and skips that row from then on', async () => {
   const first = await import('@/modules/chat/utils/scrollTrace');
   first.setScrollTraceEnabled(true);
   first.traceScroll('older:end', undefined, true);
-  first.markScrollRow('row 12/150 Edit(900000 chars)');
+  first.markScrollRow('row 48/129 ExitPlanMode(7834 chars)', '2026-10-13T02:49:55.899Z');
+  first.markScrollStep('plan card: 7834 chars, streaming=false');
+  first.markScrollStep('markdown: parsing (math=false)');
+  // The page freezes here; the refresh that ends it fires no pagehide.
   vi.resetModules();
   const second = await import('@/modules/chat/utils/scrollTrace');
-  expect(second.readScrollTrace().previous[0]).toMatch(/older:end[\s\S]*last row drawn: [\d.]+ row 12\/150 Edit\(900000 chars\)$/);
+  const log = second.readScrollTrace().previous[0];
+  expect(log).toMatch(/last row drawn: [\d.]+ row 48\/129 ExitPlanMode\(7834 chars\)/);
+  expect(log).toMatch(/step [\d.]+ markdown: parsing \(math=false\)\n.*froze in this row/);
+  expect(second.isRowSkipped('2026-10-13T02:49:55.899Z')).toBe(true);
+  second.unskipRow('2026-10-13T02:49:55.899Z');
+  expect(second.isRowSkipped('2026-10-13T02:49:55.899Z')).toBe(false);
+});
+
+it('does not skip a row that finished drawing', async () => {
+  const first = await import('@/modules/chat/utils/scrollTrace');
+  first.setScrollTraceEnabled(true);
+  first.markScrollRow('row 3/10 text(20 chars)', '2026-10-13T00:00:00.000Z');
+  first.markScrollStep('drawn; layout running');
+  vi.resetModules();
+  const second = await import('@/modules/chat/utils/scrollTrace');
+  expect(second.isRowSkipped('2026-10-13T00:00:00.000Z')).toBe(false);
+});
+
+it('does not skip a row when the page was left normally', async () => {
+  const first = await import('@/modules/chat/utils/scrollTrace');
+  first.setScrollTraceEnabled(true);
+  first.markScrollRow('row 3/10 text(20 chars)', '2026-10-13T00:00:00.000Z');
+  window.dispatchEvent(new Event('pagehide'));
+  vi.resetModules();
+  const second = await import('@/modules/chat/utils/scrollTrace');
+  expect(second.isRowSkipped('2026-10-13T00:00:00.000Z')).toBe(false);
 });
 
 it('reports busy paths as per-second counts', async () => {

@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { memo, useCallback, useMemo, useRef } from 'react';
+import { memo, useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 
 import type { BackgroundTaskSummary,
@@ -19,7 +19,7 @@ import ProviderSelectionEmptyState from '@/modules/chat/transcript/ProviderSelec
 import ToolGroupContainer from '@/modules/chat/transcript/ToolGroupContainer';
 import LoadAllMessagesOverlay from '@/modules/chat/transcript/LoadAllMessagesOverlay';
 import { BackgroundTasksStrip } from '@/modules/chat/transcript/BackgroundTasksStrip';
-import { countScroll, isScrollTraceEnabled } from '@/modules/chat/utils/scrollTrace';
+import { countScroll, isScrollTraceEnabled, markScrollStep } from '@/modules/chat/utils/scrollTrace';
 
 /**
  * How many of the newest rows mount with real content on the first commit,
@@ -164,6 +164,10 @@ function ChatMessagesPane({
   const { t } = useTranslation('chat');
   const lazyRows = useLazyRowObserver(scrollContainerRef);
   countScroll('pane-render');
+  // Every row this commit drew has finished; what follows is layout and effects.
+  useLayoutEffect(() => {
+    markScrollStep('drawn; layout running');
+  });
   const transcriptContentRef = useRef<HTMLDivElement>(null);
   useScrollAnchorFallback(scrollContainerRef, transcriptContentRef);
   const groupedVisibleMessages = useMemo(
