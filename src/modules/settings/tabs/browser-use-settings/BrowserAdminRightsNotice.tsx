@@ -9,6 +9,11 @@ type BrowserAdminRightsNoticeProps = {
   platform: string;
   /** The server runs as root, so Install can do the admin steps itself. */
   isAdministrator: boolean;
+  /**
+   * The engine's CLI by full path, from the server: npx is often missing,
+   * and sudo resets the PATH (an nvm-installed Node vanishes under it).
+   */
+  engineCommand: string | null;
   t: TFunction;
 };
 
@@ -43,8 +48,8 @@ function StepList({ steps }: { steps: Step[] }) {
  * this says which commands need them and how to get by without them, for the
  * server's own platform.
  */
-export default function BrowserAdminRightsNotice({ choice, platform, isAdministrator, t }: BrowserAdminRightsNoticeProps) {
-  const engine = choice.startsWith('patchright') ? 'patchright' : 'playwright';
+export default function BrowserAdminRightsNotice({ choice, platform, isAdministrator, engineCommand, t }: BrowserAdminRightsNoticeProps) {
+  const engine = engineCommand ?? `npx ${choice.startsWith('patchright') ? 'patchright' : 'playwright'}`;
   const usesChrome = choice.endsWith('chrome');
   const os = platform === 'darwin' || platform === 'win32' ? platform : 'linux';
   const k = (key: string) => `browserUseSettings.admin.${key}`;
@@ -54,9 +59,9 @@ export default function BrowserAdminRightsNotice({ choice, platform, isAdministr
 
   if (os === 'linux') {
     if (usesChrome) {
-      needsAdmin.push({ text: t(k('linuxInstallChrome')), command: `sudo npx ${engine} install chrome` });
+      needsAdmin.push({ text: t(k('linuxInstallChrome')), command: `sudo ${engine} install chrome` });
     }
-    needsAdmin.push({ text: t(k('linuxInstallDeps')), command: `sudo npx ${engine} install-deps chromium` });
+    needsAdmin.push({ text: t(k('linuxInstallDeps')), command: `sudo ${engine} install-deps chromium` });
     if (usesChrome) {
       withoutAdmin.push({
         text: t(k('linuxUnpackChrome')),
@@ -70,7 +75,7 @@ export default function BrowserAdminRightsNotice({ choice, platform, isAdministr
       withoutAdmin.push({ text: t(k('macUserApplications')) });
     }
   } else if (usesChrome) {
-    needsAdmin.push({ text: t(k('windowsInstallChrome')), command: `npx ${engine} install chrome` });
+    needsAdmin.push({ text: t(k('windowsInstallChrome')), command: `${engine} install chrome` });
     withoutAdmin.push({ text: t(k('windowsUserInstall')) });
   }
 

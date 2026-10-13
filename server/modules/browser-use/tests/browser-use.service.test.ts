@@ -74,5 +74,10 @@ test('browser status names the chosen engine and where the server runs', async (
     assert.equal(typeof status.isAdministrator, 'boolean');
     // A configured location that does not exist is not "installed".
     assert.equal(status.chromiumInstalled, false);
+    // The admin commands run the engine's CLI by full path: npx is often not
+    // on the PATH, and sudo resets it.
+    assert.ok(status.engineCommand.includes(process.execPath));
+    assert.match(status.engineCommand, /patchright[\\/]cli\.js'?"?$/);
+    assert.doesNotMatch(status.engineCommand, /npx/);
   });
 });

@@ -9,12 +9,14 @@ import spawn from 'cross-spawn';
 
 import { appConfigDb } from '@/modules/database/index.js';
 import { providerMcpService } from '@/modules/providers/index.js';
-import { getModuleDirectory } from '@/shared/utils.js';
+import { findApplicationRoot, getModuleDirectory } from '@/shared/utils.js';
 
 import { getBrowserUseRuntime } from './browser-use-runtime.js';
 
 const require = createRequire(import.meta.url);
 const __dirname = getModuleDirectory(import.meta.url);
+// Where the engine package is installed: require() from this file finds it there.
+const APP_ROOT = findApplicationRoot(__dirname);
 const MAX_SESSIONS_PER_OWNER = Number.parseInt(process.env.CLOUDCLI_BROWSER_USE_MAX_SESSIONS_PER_OWNER || '3', 10);
 const SESSION_TTL_MS = Number.parseInt(process.env.CLOUDCLI_BROWSER_USE_SESSION_TTL_MS || String(30 * 60 * 1000), 10);
 const BROWSER_USE_SETTINGS_KEY = 'browser_use_settings';
@@ -334,7 +336,7 @@ const INSTALL_COMMAND_TIMEOUT_MS = Number.parseInt(
 function runCommand(command: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
-      cwd: process.cwd(),
+      cwd: APP_ROOT,
       env: process.env,
       shell: false,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -374,10 +376,65 @@ function runCommand(command: string, args: string[]): Promise<void> {
   });
 }
 
-function formatInstallError(error: unknown): string {
+/**
+ * npm's own CLI, beside the Node running CloudCLI. npm and npx are often not
+ * on the PATH: under sudo, which resets it (nvm installs vanish), or when
+ * CloudCLI runs as a service. Node itself always is: it is this process.
+ */
+function findNpmCli(): string | null {
+  const nodeDirectory = path.dirname(process.execPath);
+  const candidates = [
+    process.env.npm_execpath,
+    // Windows keeps npm beside node.exe; Linux and macOS under ../lib.
+    path.join(nodeDirectory, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    path.join(nodeDirectory, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+  ];
+  return candidates.find((candidate) => candidate && /npm-cli\.js$/.test(candidate) && fs.existsSync(candidate)) ?? null;
+}
+
+function runNpm(args: string[]): Promise<void> {
+  const npmCli = findNpmCli();
+  if (npmCli) {
+    return runCommand(process.execPath, [npmCli, ...args]);
+  }
+  return runCommand(process.platform === 'win32' ? 'npm.cmd' : 'npm', args);
+}
+
+/** The engine's own CLI (what `npx patchright` runs), installed or where it will be. */
+function engineCliPath(engine: BrowserUseEngine): string {
+  try {
+    return path.join(path.dirname(require.resolve(`${engine}/package.json`)), 'cli.js');
+  } catch {
+    return path.join(APP_ROOT, 'node_modules', engine, 'cli.js');
+  }
+}
+
+function runEngineCli(engine: BrowserUseEngine, args: string[]): Promise<void> {
+  return runCommand(process.execPath, [engineCliPath(engine), ...args]);
+}
+
+const quoteShellArgument = (value: string): string => {
+  if (process.platform === 'win32') {
+    return `"${value}"`;
+  }
+  return /^[\w@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
+};
+
+/**
+ * The engine's CLI as a command to paste into a terminal, by full path: it
+ * works without npx and under sudo, from any folder. Settings appends the
+ * arguments (`install chrome`, `install-deps chromium`).
+ */
+function engineCommand(engine: BrowserUseEngine): string {
+  const command = `${quoteShellArgument(process.execPath)} ${quoteShellArgument(engineCliPath(engine))}`;
+  // PowerShell, Windows' default terminal, runs a quoted path only after &.
+  return process.platform === 'win32' ? `& ${command}` : command;
+}
+
+function formatInstallError(error: unknown, engine: BrowserUseEngine): string {
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes('sudo') && message.includes('password')) {
-    return 'Installing Chromium system dependencies requires administrator privileges. Run `npx playwright install-deps chromium` (or `npx patchright install-deps chromium`) on the machine where CloudCLI runs, then try again.';
+    return `Installing Chromium system dependencies requires administrator privileges. Run \`sudo ${engineCommand(engine)} install-deps chromium\` on the machine where CloudCLI runs, then try again.`;
   }
   return message || 'Failed to install Browser runtime.';
 }
@@ -387,19 +444,19 @@ const isAdministrator = (): boolean => typeof process.getuid === 'function' && p
 
 /**
  * The commands that need administrator rights, for the message shown when an
- * install step could not run without them. Run in CloudCLI's folder.
+ * install step could not run without them.
  */
 function adminInstructions(engine: BrowserUseEngine, browser: BrowserUseBrowser): string {
   if (browser === 'chrome') {
     if (process.platform === 'linux') {
-      return `Installing Google Chrome needs administrator rights. Run \`sudo npx ${engine} install chrome\` in CloudCLI's folder, or install Chrome from google.com/chrome. Without admin rights, unpack Chrome into your home folder and set its location here, or choose Stealth with Chromium.`;
+      return `Installing Google Chrome needs administrator rights. Run \`sudo ${engineCommand(engine)} install chrome\`, or install Chrome from google.com/chrome. Without admin rights, unpack Chrome into your home folder and set its location here, or choose Stealth with Chromium.`;
     }
     if (process.platform === 'darwin') {
       return 'Installing Google Chrome needs an administrator password. Install Chrome from google.com/chrome, or drag Google Chrome.app into Applications in your home folder (no admin rights needed), then check again.';
     }
     return 'Install Google Chrome from google.com/chrome. Run without administrator rights, its installer puts Chrome in your user folder, which CloudCLI finds.';
   }
-  return `Chromium is installed, but Linux may need its system libraries, which only an administrator can add: \`sudo npx ${engine} install-deps chromium\` in CloudCLI's folder.`;
+  return `Chromium is installed, but Linux may need its system libraries, which only an administrator can add: \`sudo ${engineCommand(engine)} install-deps chromium\`.`;
 }
 
 async function installRuntime(settings: BrowserUseSettings): Promise<{ success: boolean; message: string }> {
@@ -408,7 +465,6 @@ async function installRuntime(settings: BrowserUseSettings): Promise<{ success: 
   }
 
   const { engine, browser } = settings;
-  const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
   // Each engine has its own package and its own Chromium build, installed
   // through its own CLI (Patchright's is Playwright's under another name).
   const engineName = engine === 'patchright' ? 'Patchright' : 'Playwright';
@@ -416,7 +472,7 @@ async function installRuntime(settings: BrowserUseSettings): Promise<{ success: 
   installPromise = (async () => {
     try {
       lastInstallMessage = `Installing ${engineName} package...`;
-      await runCommand(npmCommand, ['install', '--no-save', '--no-package-lock', engine]);
+      await runNpm(['install', '--no-save', '--no-package-lock', engine]);
 
       if (browser === 'chrome') {
         const configured = settings.chromePath ? expandHome(settings.chromePath) : null;
@@ -429,7 +485,7 @@ async function installRuntime(settings: BrowserUseSettings): Promise<{ success: 
         // and the message says what to run instead.
         lastInstallMessage = 'Installing Google Chrome...';
         try {
-          await runCommand(npmCommand, ['exec', '--', engine, 'install', 'chrome']);
+          await runEngineCli(engine, ['install', 'chrome']);
         } catch {
           lastInstallMessage = adminInstructions(engine, browser);
           return { success: false, message: lastInstallMessage };
@@ -443,18 +499,18 @@ async function installRuntime(settings: BrowserUseSettings): Promise<{ success: 
       const needsDeps = process.platform === 'linux';
       if (needsDeps && isAdministrator()) {
         lastInstallMessage = 'Installing Chromium system dependencies...';
-        await runCommand(npmCommand, ['exec', '--', engine, 'install-deps', 'chromium']);
+        await runEngineCli(engine, ['install-deps', 'chromium']);
       }
 
       lastInstallMessage = 'Installing Chromium runtime...';
-      await runCommand(npmCommand, ['exec', '--', engine, 'install', 'chromium']);
+      await runEngineCli(engine, ['install', 'chromium']);
 
       lastInstallMessage = needsDeps && !isAdministrator()
         ? `Browser runtime installed. ${adminInstructions(engine, browser)}`
         : 'Browser runtime installed.';
       return { success: true, message: lastInstallMessage };
     } catch (error) {
-      lastInstallMessage = formatInstallError(error);
+      lastInstallMessage = formatInstallError(error, engine);
       return { success: false, message: lastInstallMessage };
     }
   })();
@@ -642,6 +698,7 @@ export const browserUseService = {
       browserExecutablePath: readiness.chromiumExecutablePath,
       isAdministrator: isAdministrator(),
       platform: process.platform,
+      engineCommand: engineCommand(settings.engine),
       runtime: getBrowserUseRuntime(),
       available,
       playwrightInstalled: readiness.playwrightInstalled,

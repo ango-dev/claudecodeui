@@ -29,6 +29,8 @@ type BrowserUseStatus = {
   browserExecutablePath: string | null;
   isAdministrator: boolean;
   platform: string;
+  /** The engine's CLI by full path, for the admin commands shown to run by hand. */
+  engineCommand: string;
   available: boolean;
   /** Whether the chosen engine's package (Playwright or Patchright) loads. */
   playwrightInstalled: boolean;
@@ -227,11 +229,14 @@ export default function BrowserUseSettingsTab() {
               </div>
             )}
 
-            {settings && (
+            {/* Only while something is missing: once installed there is nothing left to run. */}
+            {settings && status && status.engine === settings.engine && status.browser === settings.browser
+              && !(status.playwrightInstalled && status.chromiumInstalled) && (
               <BrowserAdminRightsNotice
                 choice={engineChoice}
-                platform={status?.platform ?? 'linux'}
-                isAdministrator={status?.isAdministrator === true}
+                platform={status.platform}
+                isAdministrator={status.isAdministrator}
+                engineCommand={status.engineCommand ?? null}
                 t={t}
               />
             )}
