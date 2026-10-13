@@ -13,7 +13,7 @@ function renderPendingPlan({ chatHidden = false, composerEmpty = true } = {}) {
   const handlePermissionDecision = vi.fn();
   const view = render(
     <PermissionContext.Provider
-      value={{ pendingPermissionRequests: [{ requestId: 'plan-1', toolName: 'ExitPlanMode' }], handlePermissionDecision }}
+      value={{ pendingPermissionRequests: [{ requestId: 'plan-1', toolName: 'ExitPlanMode', input: { plan: '1. Do it' } }], handlePermissionDecision }}
     >
       <div className={chatHidden ? 'hidden' : 'block'}>
         <PlanDisplay title="Plan" content="1. Do it" toolName="ExitPlanMode" defaultOpen />

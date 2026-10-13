@@ -204,6 +204,7 @@ export const ToolRenderer: React.FC<ToolRendererProps> = memo(({
         rawContent={rawToolInput}
         toolName={toolName}
         toolId={toolId}
+        toolResult={toolResult}
       />
     );
   }

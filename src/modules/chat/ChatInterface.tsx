@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import type { FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowDownIcon } from 'lucide-react';
 
@@ -391,10 +392,46 @@ function ChatInterface({
     }
   }, [currentProviderEffort, currentProviderModel, input, permissionMode, scheduleMessage, setInput]);
 
+  // A plan whose request is gone is answered with a new message. Leaving plan
+  // mode first takes a render, so the message is sent once the mode reads right.
+  const latestPlanToolId = useMemo(() => {
+    for (let index = chatMessages.length - 1; index >= 0; index -= 1) {
+      const message = chatMessages[index];
+      if (message.toolName === 'ExitPlanMode' || message.toolName === 'exit_plan_mode') {
+        return message.toolId ?? null;
+      }
+    }
+    return null;
+  }, [chatMessages]);
+  const pendingPlanFollowUpRef = useRef<string | null>(null);
+  const submitPlanFollowUp = useCallback((text: string) => {
+    void handleSubmit(
+      { preventDefault: () => undefined } as unknown as FormEvent<HTMLFormElement>,
+      { content: text, attachments: [] },
+    );
+  }, [handleSubmit]);
+  const sendPlanFollowUp = useCallback((text: string, leavePlanMode: boolean) => {
+    if (leavePlanMode && permissionMode === 'plan') {
+      pendingPlanFollowUpRef.current = text;
+      selectPermissionMode('default');
+      return;
+    }
+    submitPlanFollowUp(text);
+  }, [permissionMode, selectPermissionMode, submitPlanFollowUp]);
+  useEffect(() => {
+    const text = pendingPlanFollowUpRef.current;
+    if (!text || permissionMode === 'plan') return;
+    pendingPlanFollowUpRef.current = null;
+    submitPlanFollowUp(text);
+  }, [permissionMode, submitPlanFollowUp]);
+
   const permissionContextValue = useMemo(() => ({
     pendingPermissionRequests,
     handlePermissionDecision,
-  }), [pendingPermissionRequests, handlePermissionDecision]);
+    latestPlanToolId,
+    isSessionBusy: isProcessing,
+    sendPlanFollowUp,
+  }), [pendingPermissionRequests, handlePermissionDecision, latestPlanToolId, isProcessing, sendPlanFollowUp]);
 
   // Lets markdown image paths in the transcript resolve against this project.
   const markdownWorkspaceValue = useMemo(() => ({
