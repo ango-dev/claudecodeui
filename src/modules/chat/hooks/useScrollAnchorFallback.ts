@@ -3,6 +3,16 @@ import type { RefObject } from 'react';
 
 /** A scroll quieter than this long has ended, momentum included. */
 const SCROLL_IDLE_MS = 150;
+/**
+ * A finger counted as down with no movement and no scrolling for this long is
+ * taken as lifted. iOS sends the lift to the element first touched, and a
+ * page of older messages can rebuild that row mid-touch: the lift then never
+ * reaches the transcript, and without this the transcript waited for rest
+ * forever (a page stuck on "Loading older messages").
+ */
+const STALE_TOUCH_MS = 1_000;
+/** The longest a page of older messages waits for the scroll to rest before it is shown anyway. */
+const MAX_REST_WAIT_MS = 3_000;
 /** Within this distance of the bottom the transcript follows new output instead. */
 const NEAR_BOTTOM_PX = 50;
 
@@ -42,7 +52,16 @@ export function waitForScrollRest(container: HTMLElement): Promise<void> {
   const activity = scrollActivityByContainer.get(container);
   if (!activity || activity.isAtRest()) return Promise.resolve();
   return new Promise((resolve) => {
-    activity.restWaiters.push(resolve);
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(cap);
+      resolve();
+    };
+    // Never hold a page indefinitely: the anchor keeps the reader's place either way.
+    const cap = setTimeout(finish, MAX_REST_WAIT_MS);
+    activity.restWaiters.push(finish);
     activity.requestRestCheck();
   });
 }
@@ -118,6 +137,7 @@ export function useScrollAnchorFallback(
     let anchor: Anchor | null = null;
     let wasNearBottom = true;
     let isTouching = false;
+    let lastTouchAt = 0;
     let lastScrollAt = 0;
     // Shift absorbed by the transform and not yet moved into scrollTop.
     let pendingShift = 0;
@@ -136,7 +156,13 @@ export function useScrollAnchorFallback(
       recordAnchor();
     };
 
-    const isScrolling = () => isTouching || Date.now() - lastScrollAt < SCROLL_IDLE_MS;
+    const isScrolling = () => {
+      const now = Date.now();
+      if (isTouching && now - Math.max(lastTouchAt, lastScrollAt) > STALE_TOUCH_MS) {
+        isTouching = false;
+      }
+      return isTouching || now - lastScrollAt < SCROLL_IDLE_MS;
+    };
     const restWaiters: Array<() => void> = [];
 
     const scheduleFlush = () => {
@@ -163,8 +189,16 @@ export function useScrollAnchorFallback(
       recordAnchor();
       if (pendingShift !== 0 || restWaiters.length > 0) scheduleFlush();
     };
-    const handleTouchStart = () => { isTouching = true; };
-    const handleTouchEnd = () => {
+    const handleTouchStart = () => {
+      isTouching = true;
+      lastTouchAt = Date.now();
+    };
+    const handleTouchMove = () => {
+      lastTouchAt = Date.now();
+    };
+    const handleTouchEnd = (event: TouchEvent) => {
+      // Another finger still down keeps the scroll going.
+      if (event.touches.length > 0) return;
       isTouching = false;
       if (pendingShift !== 0 || restWaiters.length > 0) scheduleFlush();
     };
@@ -208,8 +242,10 @@ export function useScrollAnchorFallback(
     childListObserver.observe(container, { childList: true });
     container.addEventListener('scroll', handleScroll, { passive: true });
     container.addEventListener('touchstart', handleTouchStart, { passive: true });
-    container.addEventListener('touchend', handleTouchEnd, { passive: true });
-    container.addEventListener('touchcancel', handleTouchEnd, { passive: true });
+    container.addEventListener('touchmove', handleTouchMove, { passive: true });
+    // On the window too: a lift outside the transcript still ends the touch.
+    window.addEventListener('touchend', handleTouchEnd, { passive: true, capture: true });
+    window.addEventListener('touchcancel', handleTouchEnd, { passive: true, capture: true });
     return () => {
       resizeObserver.disconnect();
       childListObserver.disconnect();
@@ -217,8 +253,9 @@ export function useScrollAnchorFallback(
       for (const resolve of restWaiters.splice(0)) resolve();
       container.removeEventListener('scroll', handleScroll);
       container.removeEventListener('touchstart', handleTouchStart);
-      container.removeEventListener('touchend', handleTouchEnd);
-      container.removeEventListener('touchcancel', handleTouchEnd);
+      container.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd, { capture: true });
+      window.removeEventListener('touchcancel', handleTouchEnd, { capture: true });
       if (idleTimer) clearTimeout(idleTimer);
       content.style.transform = '';
       container.style.overflowAnchor = '';

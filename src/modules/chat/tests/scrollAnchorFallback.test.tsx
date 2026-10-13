@@ -105,6 +105,43 @@ describe('useScrollAnchorFallback', () => {
     await expect(waitForScrollRest(container)).resolves.toBeUndefined();
   });
 
+  it('does not wait forever on a touch whose lift never arrived (iOS, row rebuilt mid-touch)', async () => {
+    const { container } = renderTranscript();
+    vi.advanceTimersByTime(500);
+    // The finger lands on a row; its lift goes to a node that is gone by then.
+    const row = container.querySelector('[data-testid="row"]') as HTMLElement;
+    fireEvent.touchStart(row);
+    let rested = false;
+    void waitForScrollRest(container).then(() => { rested = true; });
+
+    vi.advanceTimersByTime(600);
+    await Promise.resolve();
+    expect(rested).toBe(false); // a finger resting still is still a touch for a moment
+
+    vi.advanceTimersByTime(800);
+    await Promise.resolve();
+    expect(rested).toBe(true);
+  });
+
+  it('shows a held page after a few seconds even while scrolling never stops', async () => {
+    const { container } = renderTranscript();
+    let rested = false;
+    void waitForScrollRest(container).then(() => { rested = true; });
+    for (let elapsed = 0; elapsed < 2_900; elapsed += 100) {
+      fireEvent.scroll(container);
+      vi.advanceTimersByTime(100);
+    }
+    await Promise.resolve();
+    expect(rested).toBe(false);
+    // Still scrolling, past the cap.
+    for (let elapsed = 0; elapsed < 200; elapsed += 100) {
+      fireEvent.scroll(container);
+      vi.advanceTimersByTime(100);
+    }
+    await Promise.resolve();
+    expect(rested).toBe(true);
+  });
+
   it('takes over on Safari even where Safari reports scroll anchoring of its own', () => {
     vi.stubGlobal('CSS', { supports: () => true });
     vi.spyOn(navigator, 'vendor', 'get').mockReturnValue('Apple Computer, Inc.');
