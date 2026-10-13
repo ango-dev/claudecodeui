@@ -257,17 +257,17 @@ function getSetupMessage(settings: BrowserUseSettings, readiness: RuntimeReadine
 
   const engineName = readiness.engine === 'patchright' ? 'Patchright' : 'Playwright';
   if (!readiness.playwrightInstalled) {
-    return `Install ${engineName} and ${readiness.browser === 'chrome' ? 'Google Chrome' : 'Chromium'} to use browser sessions.`;
+    return `Install ${engineName} to use the browser.`;
   }
 
   if (!readiness.virtualScreenReady) {
-    return `The real-window mode needs Xvfb, a virtual screen for servers. Install it from Settings -> Browser, or run \`${xvfbInstallCommand()}\`. Or choose Headless.`;
+    return `Real window mode needs Xvfb. Install it in Settings -> Browser, or run \`${xvfbInstallCommand()}\`.`;
   }
 
   if (!readiness.chromiumInstalled) {
     return readiness.browser === 'chrome'
-      ? `${engineName} is installed, but Google Chrome was not found. Install Chrome (this needs administrator rights), or set where it is.`
-      : `${engineName} is installed, but Chromium is missing. Install the Chromium runtime to continue.`;
+      ? 'Google Chrome was not found. Install it, or set its location.'
+      : 'Chromium is missing. Press Install Runtime.';
   }
 
   return readiness.installMessage || 'Browser runtime is not ready.';
@@ -535,7 +535,7 @@ function engineCommand(engine: BrowserUseEngine): string {
 function formatInstallError(error: unknown, engine: BrowserUseEngine): string {
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes('sudo') && message.includes('password')) {
-    return `Installing Chromium system dependencies requires administrator privileges. Run \`sudo ${engineCommand(engine)} install-deps chromium\` on the machine where CloudCLI runs, then try again.`;
+    return `Needs admin rights. Run \`sudo ${engineCommand(engine)} install-deps chromium\` on the server.`;
   }
   return message || 'Failed to install Browser runtime.';
 }
@@ -550,14 +550,14 @@ const isAdministrator = (): boolean => typeof process.getuid === 'function' && p
 function adminInstructions(engine: BrowserUseEngine, browser: BrowserUseBrowser): string {
   if (browser === 'chrome') {
     if (process.platform === 'linux') {
-      return `Installing Google Chrome needs administrator rights. Run \`sudo ${engineCommand(engine)} install chrome\`, or install Chrome from google.com/chrome. Without admin rights, unpack Chrome into your home folder and set its location here, or choose Stealth with Chromium.`;
+      return `Installing Chrome needs admin rights. Run \`sudo ${engineCommand(engine)} install chrome\`, or choose Stealth + Chromium.`;
     }
     if (process.platform === 'darwin') {
-      return 'Installing Google Chrome needs an administrator password. Install Chrome from google.com/chrome, or drag Google Chrome.app into Applications in your home folder (no admin rights needed), then check again.';
+      return 'Install Chrome from google.com/chrome, or drag Google Chrome.app into ~/Applications.';
     }
-    return 'Install Google Chrome from google.com/chrome. Run without administrator rights, its installer puts Chrome in your user folder, which CloudCLI finds.';
+    return 'Install Chrome from google.com/chrome.';
   }
-  return `Chromium is installed, but Linux may need its system libraries, which only an administrator can add: \`sudo ${engineCommand(engine)} install-deps chromium\`.`;
+  return `If the browser won't start, run \`sudo ${engineCommand(engine)} install-deps chromium\`.`;
 }
 
 /**
@@ -738,8 +738,8 @@ async function installXvfb(): Promise<{ success: boolean; message: string }> {
     return {
       success: false,
       message: lacksRights
-        ? `Installing Xvfb needs administrator rights, which CloudCLI does not have. Run \`${xvfbInstallCommand()}\` on the server, then check again.`
-        : `Installing Xvfb failed${detail ? `: ${detail}` : ''}. Run \`${xvfbInstallCommand()}\` on the server to see the full error.`,
+        ? `Needs admin rights. Run \`${xvfbInstallCommand()}\` on the server.`
+        : `Install failed${detail ? `: ${detail}` : ''}. Run \`${xvfbInstallCommand()}\` on the server to see why.`,
     };
   } finally {
     runtimeProbeCache = null;
@@ -760,11 +760,11 @@ async function removeRuntime(
   settings: BrowserUseSettings,
 ): Promise<{ success: boolean; message: string }> {
   if (installPromise) {
-    return { success: false, message: 'An install or removal is running; try again when it finishes.' };
+    return { success: false, message: 'Another install is running. Try again in a moment.' };
   }
   const engineName = engine === 'patchright' ? 'Patchright' : 'Playwright';
   if (engine === settings.engine && (part === 'engine' || settings.browser === 'chromium')) {
-    return { success: false, message: `${engineName} is in use by the current choice. Choose another engine or browser first.` };
+    return { success: false, message: `${engineName} is in use. Switch to another engine or browser first.` };
   }
   // Holds the same lock as Install Runtime: two npm runs in one folder corrupt it.
   installPromise = (async () => {
@@ -1326,7 +1326,7 @@ export const browserUseService = {
       await context?.close?.().catch(() => undefined);
       await browser?.close?.().catch(() => undefined);
       releaseVirtualScreenIfUnused();
-      throw new Error('Browser settings changed while the session was starting. Create the session again.');
+      throw new Error('Settings changed while the browser was starting. Try again.');
     }
     session.status = 'ready';
     session.message = 'Browser session is ready.';
