@@ -99,3 +99,12 @@ test('the real-window choice applies to any engine and asks for Xvfb only on Lin
     assert.deepEqual(status.engines.map((item) => item.engine), ['playwright', 'patchright']);
   });
 });
+
+test('removing an engine the current choice uses is refused', async () => {
+  await withDatabase(async () => {
+    await browserUseService.updateSettings({ engine: 'patchright', browser: 'chromium' });
+    const result = await browserUseService.removeRuntime('patchright', 'chromium');
+    assert.equal(result.success, false);
+    assert.match(result.message, /in use/);
+  });
+});

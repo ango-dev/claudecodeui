@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronsUpDown, FileText } from 'lucide-react';
 
@@ -55,9 +55,14 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
     }
   };
 
-  // ⌘↩ (Ctrl+Enter elsewhere) builds, as the button's hint says. In a text
-  // field it builds only when the field is empty: with text typed, the same
-  // keys send that text (the composer's own Ctrl/⌘+Enter), e.g. to revise.
+  // The card, to tell whether the plan is on screen: the chat stays mounted
+  // while another tab (Shell, Git, ...) is shown.
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  // ⌘↩ (Ctrl+Enter elsewhere) builds, as the button's hint says, while the
+  // plan is on screen and the keys are not meant for anything else: focus on
+  // nothing in particular, or in the chat composer with nothing to send.
+  // With text or attachments there, the same keys send them, e.g. to revise.
   useEffect(() => {
     if (!pendingRequest) return undefined;
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -65,10 +70,17 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
       if (event.defaultPrevented || event.key !== 'Enter' || !(event.metaKey || event.ctrlKey) || event.shiftKey || event.altKey) {
         return;
       }
-      const target = event.target instanceof HTMLElement ? event.target : null;
-      const field = target?.closest('input, textarea, [contenteditable="true"]') as HTMLInputElement | HTMLTextAreaElement | HTMLElement | null;
-      const fieldText = field && 'value' in field ? field.value : field?.textContent;
-      if (field && fieldText?.trim()) {
+      const card = cardRef.current;
+      const isOnScreen = card
+        ? (typeof card.checkVisibility === 'function' ? card.checkVisibility() : !card.closest('.hidden, [hidden]'))
+        : false;
+      if (!isOnScreen) {
+        return;
+      }
+      const target = event.target instanceof Element ? event.target : null;
+      const focusedNowhere = !target || target === document.body || target === document.documentElement;
+      const inEmptyComposer = Boolean(target?.closest('[data-slot="prompt-input-box"][data-composer-empty="true"]'));
+      if (!focusedNowhere && !inEmptyComposer) {
         return;
       }
       event.preventDefault();
@@ -91,7 +103,7 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
 
   return (
     <Collapsible defaultOpen={defaultOpen}>
-      <Card className="my-1 flex flex-col shadow-none">
+      <Card ref={cardRef} className="my-1 flex flex-col shadow-none">
         {/* Header — always visible */}
         <CardHeader className="flex flex-row items-start justify-between space-y-0 px-4 pb-0 pt-4">
           <div className="flex items-center gap-2">

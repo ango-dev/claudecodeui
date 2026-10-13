@@ -174,6 +174,9 @@ const DEFAULT_SETTINGS: BrowserUseSettings = {
 };
 // Browsers being launched: their sessions have no handle yet, but may be on the virtual screen.
 let launchesInProgress = 0;
+// Bumped when sessions are stopped for new settings: a launch that started
+// before then finishes under the old ones, so it closes instead of joining.
+let sessionGeneration = 0;
 const AGENT_OWNER_ID = 'agent';
 const PROFILE_ROOT = path.join(os.homedir(), '.cloudcli', 'browser-use', 'profiles');
 /**
@@ -585,10 +588,16 @@ async function installXvfb(): Promise<{ success: boolean; message: string }> {
       await run(manager, args);
     }
   } catch (error) {
-    const detail = error instanceof Error ? error.message.split('\n').filter(Boolean).pop() : '';
+    const output = error instanceof Error ? error.message : String(error);
+    const detail = output.split('\n').filter(Boolean).pop() ?? '';
+    // sudo -n says so when it would need a password or the user may not use it.
+    const lacksRights = !isAdministrator()
+      && /password is required|not in the sudoers|not allowed to|command not found|ENOENT/i.test(output);
     return {
       success: false,
-      message: `Installing Xvfb needs administrator rights, which CloudCLI does not have. Run \`${xvfbInstallCommand()}\` on the server, then check again.${detail ? ` (${detail})` : ''}`,
+      message: lacksRights
+        ? `Installing Xvfb needs administrator rights, which CloudCLI does not have. Run \`${xvfbInstallCommand()}\` on the server, then check again.`
+        : `Installing Xvfb failed${detail ? `: ${detail}` : ''}. Run \`${xvfbInstallCommand()}\` on the server to see the full error.`,
     };
   } finally {
     runtimeProbeCache = null;
@@ -603,27 +612,41 @@ async function installXvfb(): Promise<{ success: boolean; message: string }> {
  * own uninstall deletes the builds no other installed engine or project
  * uses; the package then goes from ENGINE_ROOT.
  */
-async function removeRuntime(engine: BrowserUseEngine, part: 'engine' | 'chromium'): Promise<{ success: boolean; message: string }> {
+async function removeRuntime(
+  engine: BrowserUseEngine,
+  part: 'engine' | 'chromium',
+  settings: BrowserUseSettings,
+): Promise<{ success: boolean; message: string }> {
   if (installPromise) {
-    return { success: false, message: 'An install is running; try again when it finishes.' };
+    return { success: false, message: 'An install or removal is running; try again when it finishes.' };
   }
   const engineName = engine === 'patchright' ? 'Patchright' : 'Playwright';
+  if (engine === settings.engine && (part === 'engine' || settings.browser === 'chromium')) {
+    return { success: false, message: `${engineName} is in use by the current choice. Choose another engine or browser first.` };
+  }
+  // Holds the same lock as Install Runtime: two npm runs in one folder corrupt it.
+  installPromise = (async () => {
+    try {
+      if (resolveEnginePackage(engine)) {
+        await runEngineCli(engine, ['uninstall']);
+      }
+      if (part === 'engine') {
+        await removeEnginePackage(engine);
+      }
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : String(error) };
+    }
+    return {
+      success: true,
+      message: part === 'engine' ? `${engineName} and its Chromium removed.` : `${engineName}'s Chromium removed.`,
+    };
+  })();
   try {
-    if (resolveEnginePackage(engine)) {
-      await runEngineCli(engine, ['uninstall']);
-    }
-    if (part === 'engine') {
-      await removeEnginePackage(engine);
-    }
-  } catch (error) {
-    return { success: false, message: error instanceof Error ? error.message : String(error) };
+    return await installPromise;
   } finally {
+    installPromise = null;
     runtimeProbeCache = null;
   }
-  return {
-    success: true,
-    message: part === 'engine' ? `${engineName} and its Chromium removed.` : `${engineName}'s Chromium removed.`,
-  };
 }
 
 async function installRuntime(settings: BrowserUseSettings): Promise<{ success: boolean; message: string }> {
@@ -770,7 +793,8 @@ type ClickTarget = { ref?: string; selector?: string; text?: string; role?: stri
  * are accepted too), checked so nothing else reaches the locator engine.
  */
 function readRef(ref: string): string {
-  const match = /^(?:\[ref=|@)?(e\d+)\]?$/.exec(ref.trim());
+  // Elements inside iframes are numbered per frame: f1e5.
+  const match = /^(?:\[ref=|@)?((?:f\d+)?e\d+)\]?$/.exec(ref.trim());
   if (!match) {
     throw new Error(`"${ref}" is not an element reference from browser_snapshot (expected e.g. e12).`);
   }
@@ -799,14 +823,35 @@ function resolveTarget(page: any, input: ClickTarget) {
 }
 
 /**
+ * resolveTarget for an action, failing at once when a reference names no
+ * element: the page changed since the snapshot. Waiting on it would only end
+ * in a timeout, with a less useful message.
+ */
+async function resolveActionTarget(page: any, input: ClickTarget) {
+  const target = resolveTarget(page, input);
+  if (input.ref && target && (await target.count().catch(() => 0)) === 0) {
+    throw new Error(`Element ${readRef(input.ref)} is not on the page any more. Take a new browser_snapshot and use its references.`);
+  }
+  return target;
+}
+
+/**
  * The page's accessibility tree with element references, as Playwright's
- * agent tooling produces it; a tree without references where the installed
- * Playwright predates that mode.
+ * agent tooling produces it. Playwright before 1.57 has no page.ariaSnapshot
+ * but the same tree, references included, under _snapshotForAI (a string, or
+ * { full } in some versions); a tree without references is the last resort.
  */
 async function readAgentSnapshot(page: any): Promise<string> {
   try {
     if (typeof page.ariaSnapshot === 'function') {
       return await page.ariaSnapshot({ mode: 'ai', timeout: 5_000 });
+    }
+    if (typeof page._snapshotForAI === 'function') {
+      const snapshot = await page._snapshotForAI({ timeout: 5_000 });
+      const text = typeof snapshot === 'string' ? snapshot : snapshot?.full;
+      if (typeof text === 'string') {
+        return text;
+      }
     }
   } catch {
     // Falls through to the plain tree.
@@ -825,7 +870,8 @@ async function getActionPoint(page: any, input: ClickTarget) {
     return null;
   }
 
-  const box = await locator.boundingBox().catch(() => null);
+  // Only for the cursor drawn in the monitor: never worth the action's whole wait.
+  const box = await locator.boundingBox({ timeout: 2_000 }).catch(() => null);
   if (!box) {
     return null;
   }
@@ -942,7 +988,7 @@ export const browserUseService = {
   },
 
   async removeRuntime(engine: BrowserUseEngine, part: 'engine' | 'chromium') {
-    const result = await removeRuntime(readEngine(engine), part);
+    const result = await removeRuntime(readEngine(engine), part, readSettings());
     return { ...result, status: await this.getStatus() };
   },
 
@@ -963,6 +1009,8 @@ export const browserUseService = {
 
   async createAgentSession(options?: { profileName?: string | null }) {
     const settings = readSettings();
+    // Taken with the settings: a change after this point stops sessions under them.
+    const generation = sessionGeneration;
     if (!settings.enabled) {
       throw new Error('Browser agent tools are disabled.');
     }
@@ -990,7 +1038,9 @@ export const browserUseService = {
     };
 
     const activeOwnerSessions = ownerSessions(AGENT_OWNER_ID).filter((item) => item.status === 'ready');
-    if (activeOwnerSessions.length >= MAX_SESSIONS_PER_OWNER) {
+    // Browsers still starting count too: they become ready after this check,
+    // so parallel requests would otherwise all pass it.
+    if (activeOwnerSessions.length + launchesInProgress >= MAX_SESSIONS_PER_OWNER) {
       throw new Error(`Browser is limited to ${MAX_SESSIONS_PER_OWNER} active agent sessions.`);
     }
 
@@ -1029,7 +1079,9 @@ export const browserUseService = {
           : {}),
         // On Linux the window goes on CloudCLI's Xvfb, never on a desktop.
         ...(needsVirtualScreen(settings)
-          ? { env: { ...process.env, DISPLAY: await getVirtualDisplay() } }
+          ? await getVirtualDisplay().then(({ display, xauthority }) => ({
+            env: { ...process.env, DISPLAY: display, XAUTHORITY: xauthority },
+          }))
           : {}),
       };
       const contextOptions = {
@@ -1065,6 +1117,13 @@ export const browserUseService = {
       if (!page) {
         releaseVirtualScreenIfUnused();
       }
+    }
+    if (generation !== sessionGeneration) {
+      // Settings changed (or the server is stopping) while this browser started.
+      await context?.close?.().catch(() => undefined);
+      await browser?.close?.().catch(() => undefined);
+      releaseVirtualScreenIfUnused();
+      throw new Error('Browser settings changed while the session was starting. Create the session again.');
     }
     session.status = 'ready';
     session.message = 'Browser session is ready.';
@@ -1150,9 +1209,9 @@ export const browserUseService = {
     if (!handle?.page) {
       throw new Error('Browser runtime handle is not available.');
     }
+    const target = await resolveActionTarget(handle.page, input);
     const point = await getActionPoint(handle.page, input);
 
-    const target = resolveTarget(handle.page, input);
     if (target) {
       await target.click({ timeout: 10_000 });
     } else if (typeof input.x === 'number' && typeof input.y === 'number') {
@@ -1175,7 +1234,7 @@ export const browserUseService = {
     }
 
     if (input.ref || input.selector) {
-      await resolveTarget(handle.page, { ref: input.ref, selector: input.selector }).fill(input.text, { timeout: 10_000 });
+      await (await resolveActionTarget(handle.page, { ref: input.ref, selector: input.selector })).fill(input.text, { timeout: 10_000 });
       session.cursor = await getActionPoint(handle.page, { ref: input.ref, selector: input.selector }).then((point) => (
         point ? { ...point, actor: 'agent' as const } : null
       ));
@@ -1198,7 +1257,7 @@ export const browserUseService = {
       throw new Error('Browser runtime handle is not available.');
     }
     for (const field of fields) {
-      const target = resolveTarget(handle.page, { ref: field.ref, selector: field.selector });
+      const target = await resolveActionTarget(handle.page, { ref: field.ref, selector: field.selector });
       if (!target) {
         throw new Error('Each field needs a ref or a selector.');
       }
@@ -1232,7 +1291,7 @@ export const browserUseService = {
     if (!handle?.page) {
       throw new Error('Browser runtime handle is not available.');
     }
-    const locator = resolveTarget(handle.page, target);
+    const locator = await resolveActionTarget(handle.page, target);
     if (!locator) {
       throw new Error('Provide the ref or selector of the select element.');
     }
@@ -1336,6 +1395,7 @@ export const browserUseService = {
   },
 
   async stopAllSessions() {
+    sessionGeneration += 1;
     await Promise.all([...sessions.keys()].map(async (sessionId) => {
       await closeHandle(sessionId);
       const session = sessions.get(sessionId);

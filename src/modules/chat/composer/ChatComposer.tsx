@@ -369,6 +369,8 @@ export default function ChatComposer({
         >
           <div
             data-slot="prompt-input-box"
+            // Read by a pending plan's ⌘↩ / Ctrl+Enter: with nothing to send here, the keys build the plan.
+            data-composer-empty={!input.trim() && attachedFiles.length === 0 ? 'true' : 'false'}
             className={[
               'relative rounded-[var(--radius)] border',
               isTextareaExpanded ? 'chat-input-expanded' : '',
