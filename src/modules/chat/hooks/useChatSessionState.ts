@@ -708,33 +708,43 @@ export function useChatSessionState({
     // so the page lands in a pause on the way up.
     const leadScreens = usesScrollAnchorFallback() ? SAFARI_OLDER_PAGE_LEAD_SCREENS : 1;
     const shouldLoadOlder = contentTop < Math.max(100, container.clientHeight * leadScreens);
+    // With the space above (Safari), a page never moves the reader, so there
+    // is no lock between pages: one held until the reader scrolled back below
+    // the first message, and a fling past it into the space waited there,
+    // blank, until they did. One load runs at a time anyway. After each page
+    // the position is checked again, as a reader resting in the space sends
+    // no scroll events to ask for the next one.
+    const keepsLoading = Boolean(olderSpacerRef.current);
+    const checkAgain = () => requestAnimationFrame(() => { void handleScrollRef.current(); });
     // Loaded but not yet shown (after "Load all" on Safari): shown a page at a
     // time into the space above, before anything is fetched.
-    if (olderSpacerRef.current && chatMessagesLengthRef.current > visibleMessageCountRef.current) {
-      if (!shouldLoadOlder) { topLoadLockRef.current = false; return; }
-      if (topLoadLockRef.current) {
-        if (contentTop > 20) topLoadLockRef.current = false;
-        return;
-      }
-      if (pendingScrollRestoreRef.current) return;
+    if (keepsLoading && chatMessagesLengthRef.current > visibleMessageCountRef.current) {
+      if (!shouldLoadOlder) return;
+      // The last page is not applied yet; look again once it is.
+      if (pendingScrollRestoreRef.current) { checkAgain(); return; }
       pendingScrollRestoreRef.current = captureScrollRestoreState(container);
       setVisibleMessageCount((prev) => Math.min(
         chatMessagesLengthRef.current,
         (Number.isFinite(prev) ? prev : chatMessagesLengthRef.current) + readSessionMessagesPageSize(),
       ));
-      topLoadLockRef.current = true;
+      checkAgain();
       return;
     }
     if (!allMessagesLoadedRef.current) {
       if (!shouldLoadOlder) { topLoadLockRef.current = false; return; }
-      if (topLoadLockRef.current) {
+      if (!keepsLoading && topLoadLockRef.current) {
         if (contentTop > 20) topLoadLockRef.current = false;
         return;
       }
       const didLoad = await loadOlderMessages(container);
-      if (didLoad) topLoadLockRef.current = true;
+      if (didLoad && !keepsLoading) topLoadLockRef.current = true;
+      if (didLoad && keepsLoading) checkAgain();
     }
   }, [hasMoreMessages, isActive, isNearBottom, loadOlderMessages, refillOlderSpacer]);
+
+  // For handleScroll to check the position again after a page lands.
+  const handleScrollRef = useRef(handleScroll);
+  useEffect(() => { handleScrollRef.current = handleScroll; }, [handleScroll]);
 
   const wasChatActiveRef = useRef(isActive);
   useLayoutEffect(() => {

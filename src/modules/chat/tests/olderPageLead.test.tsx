@@ -137,3 +137,41 @@ it('shows loaded but hidden older messages a page at a time on Safari', async ()
   expect(result.current.visibleMessageCount).toBe(shownBefore + 50);
   expect(store.fetchMore).not.toHaveBeenCalled();
 });
+
+it('keeps loading older pages on Safari while the reader is in the space above', async () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+  vi.spyOn(navigator, 'vendor', 'get').mockReturnValue('Apple Computer, Inc.');
+  const { useChatSessionState } = await import('@/modules/chat/hooks/useChatSessionState');
+  const store = createStore();
+  const slot = { fetchedAt: 1, status: 'idle' as const, total: 1000, hasMore: true, offset: 100 };
+  store.fetchMore = vi.fn(async () => ({ slot, prependedCount: 50 })) as never;
+  const { result } = renderHook(() => useChatSessionState({
+    isActive: true,
+    selectedProject: project,
+    selectedSession: session,
+    ws: null,
+    sendMessage: vi.fn(),
+    resetStreamingState: vi.fn(),
+    statusCheckSentAtRef: { current: new Map() },
+    lastSeqRef: { current: new Map() },
+    sessionStore: store as never,
+  }));
+  await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+
+  // Flung past the first loaded message, into the space kept above it.
+  const container = document.createElement('div');
+  Object.defineProperty(container, 'scrollHeight', { get: () => 20000 });
+  Object.defineProperty(container, 'clientHeight', { get: () => 800 });
+  Object.defineProperty(container, 'scrollTop', { get: () => 0, set: () => undefined });
+  const spacer = document.createElement('div');
+  Object.defineProperty(spacer, 'offsetHeight', { get: () => 3000 });
+  (result.current.scrollContainerRef as { current: HTMLDivElement | null }).current = container;
+  (result.current.olderSpacerRef as { current: HTMLDivElement | null }).current = spacer;
+
+  await act(async () => { await result.current.handleScroll(); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+  await act(async () => { await result.current.handleScroll(); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+  // Not held until the reader scrolls back below the first message.
+  expect((store.fetchMore as unknown as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThanOrEqual(2);
+});
