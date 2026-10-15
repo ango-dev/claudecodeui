@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { memo, useCallback, useMemo, useRef } from 'react';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 
 import type { BackgroundTaskSummary,
@@ -162,6 +162,13 @@ function ChatMessagesPane({
     [visibleMessages, showThinking],
   );
 
+  // The row count before the latest change, to tell a page of older rows
+  // arriving from a mass arrival (renderEveryRowFirst below).
+  const [rowCounts, setRowCounts] = useState({ current: 0, previous: 0 });
+  if (rowCounts.current !== groupedVisibleMessages.length) {
+    setRowCounts({ current: groupedVisibleMessages.length, previous: rowCounts.current });
+  }
+
   // Stable, deterministic keys for the messages rendered this pass.
   //
   // A server refresh can replace source records with equivalent new objects, so
@@ -277,8 +284,9 @@ function ChatMessagesPane({
             onLoadAllMessages={loadAllMessages}
           />
 
-          {/* Legacy message count indicator (for non-paginated view) */}
-          {!hasMoreMessages && chatMessages.length > visibleMessageCount && (
+          {/* Legacy message count indicator (for non-paginated view). Safari
+              reveals hidden loaded messages itself as the reader nears them. */}
+          {!hasMoreMessages && chatMessages.length > visibleMessageCount && !usesScrollAnchorFallback() && (
             <div className="border-b border-gray-200 py-2 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
               {t('session.messages.showingLast', { count: visibleMessageCount, total: chatMessages.length })} |
               <button className="ml-1 text-blue-600 underline hover:text-blue-700" onClick={loadEarlierMessages}>
@@ -297,7 +305,14 @@ function ChatMessagesPane({
           {(() => {
             let prevMessage: ChatMessage | null = null;
             const rowCount = groupedVisibleMessages.length;
-            const renderEveryRowFirst = usesScrollAnchorFallback() && rowCount <= MAX_ROWS_RENDERED_BEFORE_MEASURING;
+            // Safari draws every row as it arrives, so none holds an estimate
+            // that is corrected (moving the transcript) when scrolled to. Only a
+            // mass arrival (a search jump opening a wide window) starts most as
+            // placeholders; older pages arrive one at a time.
+            const renderEveryRowFirst = usesScrollAnchorFallback() && (
+              rowCount <= MAX_ROWS_RENDERED_BEFORE_MEASURING
+              || rowCount - rowCounts.previous <= MAX_ROWS_RENDERED_BEFORE_MEASURING
+            );
 
             return groupedVisibleMessages.map((item, index) => {
               // Rows near the tail mount their content on first commit so the

@@ -235,6 +235,8 @@ export function useChatSessionState({
   const [isUserScrolledUp, setIsUserScrolledUp] = useState(false);
   const [tokenBudget, setTokenBudget] = useState<Record<string, unknown> | null>(null);
   const [visibleMessageCount, setVisibleMessageCount] = useState(initialVisibleMessages);
+  const visibleMessageCountRef = useRef(visibleMessageCount);
+  useEffect(() => { visibleMessageCountRef.current = visibleMessageCount; }, [visibleMessageCount]);
   const [allMessagesLoaded, setAllMessagesLoaded] = useState(false);
   const [isLoadingAllMessages, setIsLoadingAllMessages] = useState(false);
   const [loadAllJustFinished, setLoadAllJustFinished] = useState(false);
@@ -553,9 +555,9 @@ export function useChatSessionState({
       if (pendingInitialScrollRef.current) return;
       // A hidden Chat tab measures as zero; it is topped up when shown again.
       if (container.clientHeight === 0 || !spacer.isConnected) return;
-      const wanted = hasMoreMessagesRef.current && !allMessagesLoadedRef.current
-        ? container.clientHeight * OLDER_SPACER_SCREENS
-        : 0;
+      const hasOlderToShow = (hasMoreMessagesRef.current && !allMessagesLoadedRef.current)
+        || chatMessagesLengthRef.current > visibleMessageCountRef.current;
+      const wanted = hasOlderToShow ? container.clientHeight * OLDER_SPACER_SCREENS : 0;
       const change = wanted - spacer.offsetHeight;
       if (Math.abs(change) < 1) return;
       const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 50;
@@ -706,6 +708,23 @@ export function useChatSessionState({
     // so the page lands in a pause on the way up.
     const leadScreens = usesScrollAnchorFallback() ? SAFARI_OLDER_PAGE_LEAD_SCREENS : 1;
     const shouldLoadOlder = contentTop < Math.max(100, container.clientHeight * leadScreens);
+    // Loaded but not yet shown (after "Load all" on Safari): shown a page at a
+    // time into the space above, before anything is fetched.
+    if (olderSpacerRef.current && chatMessagesLengthRef.current > visibleMessageCountRef.current) {
+      if (!shouldLoadOlder) { topLoadLockRef.current = false; return; }
+      if (topLoadLockRef.current) {
+        if (contentTop > 20) topLoadLockRef.current = false;
+        return;
+      }
+      if (pendingScrollRestoreRef.current) return;
+      pendingScrollRestoreRef.current = captureScrollRestoreState(container);
+      setVisibleMessageCount((prev) => Math.min(
+        chatMessagesLengthRef.current,
+        (Number.isFinite(prev) ? prev : chatMessagesLengthRef.current) + readSessionMessagesPageSize(),
+      ));
+      topLoadLockRef.current = true;
+      return;
+    }
     if (!allMessagesLoadedRef.current) {
       if (!shouldLoadOlder) { topLoadLockRef.current = false; return; }
       if (topLoadLockRef.current) {
@@ -1253,6 +1272,11 @@ export function useChatSessionState({
 
     const container = scrollContainerRef.current;
     const scrollRestoreState = container ? captureScrollRestoreState(container) : null;
+    if (usesScrollAnchorFallback()) {
+      // The window runs ahead of what is loaded; without this the first of the
+      // older messages would all appear at once when they arrive.
+      setVisibleMessageCount((prev) => Math.min(prev, chatMessagesLengthRef.current));
+    }
 
     try {
       const slot = await sessionStore.fetchFromServer(requestSessionId, {
@@ -1274,7 +1298,10 @@ export function useChatSessionState({
         setHasMoreMessages(false);
         setTotalMessages(slot.total);
         messagesOffsetRef.current = slot.offset;
-        setVisibleMessageCount(Infinity);
+        // Safari shows them a page at a time as the reader nears the top
+        // (handleScroll): a thousand rows at once could only start as
+        // estimates, each corrected mid-fling as it was reached.
+        if (!usesScrollAnchorFallback()) setVisibleMessageCount(Infinity);
         setAllMessagesLoaded(true);
 
         setLoadAllJustFinished(true);
