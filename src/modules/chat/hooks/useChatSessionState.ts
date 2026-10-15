@@ -23,10 +23,15 @@ const OLDER_PAGE_TIMEOUT_MS = 15_000;
 /** How many screens before the first loaded message Safari starts on the next older page (see handleScroll). */
 const SAFARI_OLDER_PAGE_LEAD_SCREENS = 6;
 /**
- * How tall, in screens, Safari keeps the blank space above the oldest loaded
- * message while older ones remain (see olderSpacerRef). Three to four pages.
+ * Beyond the estimated height of the older messages not yet shown, the space
+ * Safari keeps above the oldest one (see olderSpacerRef) has this many
+ * screens to spare, so an estimate on the low side still holds every page.
  */
-const OLDER_SPACER_SCREENS = 20;
+const OLDER_SPACER_MARGIN_SCREENS = 1;
+/** The space never grows past this many screens, whatever the estimate. */
+const OLDER_SPACER_MAX_SCREENS = 400;
+/** The smallest height assumed for one message when estimating that space. */
+const MIN_MESSAGE_HEIGHT_PX = 40;
 /** A page of older messages is assumed this tall, in screens, until one has been measured. */
 const ASSUMED_OLDER_PAGE_SCREENS = 6;
 /**
@@ -232,6 +237,8 @@ export function useChatSessionState({
   const hasMoreMessagesRef = useRef(false);
   useEffect(() => { hasMoreMessagesRef.current = hasMoreMessages; }, [hasMoreMessages]);
   const [totalMessages, setTotalMessages] = useState(0);
+  const totalMessagesRef = useRef(0);
+  useEffect(() => { totalMessagesRef.current = totalMessages; }, [totalMessages]);
   const [isUserScrolledUp, setIsUserScrolledUp] = useState(false);
   const [tokenBudget, setTokenBudget] = useState<Record<string, unknown> | null>(null);
   const [visibleMessageCount, setVisibleMessageCount] = useState(initialVisibleMessages);
@@ -276,6 +283,9 @@ export function useChatSessionState({
   const olderSpacerRef = useRef<HTMLDivElement>(null);
   const lastOlderPageHeightRef = useRef<number | null>(null);
   const spacerRefillPendingRef = useRef(false);
+  const revealWaitsForRestRef = useRef(false);
+  const spacerRefillAgainRef = useRef(false);
+  const refillOlderSpacerRef = useRef<() => void>(() => undefined);
   const pendingInitialScrollRef = useRef(true);
   const messagesOffsetRef = useRef(0);
   const scrollPositionRef = useRef({ height: 0, top: 0 });
@@ -541,7 +551,13 @@ export function useChatSessionState({
   const refillOlderSpacer = useCallback(() => {
     const container = scrollContainerRef.current;
     const spacer = olderSpacerRef.current;
-    if (!container || !spacer || spacerRefillPendingRef.current) return;
+    if (!container || !spacer) return;
+    // Asked again while waiting: once this pass is done, one more, with
+    // whatever changed meanwhile.
+    if (spacerRefillPendingRef.current) {
+      spacerRefillAgainRef.current = true;
+      return;
+    }
     spacerRefillPendingRef.current = true;
     const apply = () => {
       if (!isScrollAtRest(container)) {
@@ -549,27 +565,54 @@ export function useChatSessionState({
         return;
       }
       spacerRefillPendingRef.current = false;
+      if (spacerRefillAgainRef.current) {
+        spacerRefillAgainRef.current = false;
+        requestAnimationFrame(() => refillOlderSpacerRef.current());
+      }
       // Not while a session opens: moving scrollTop then reads as the reader
       // scrolling up, which cancels the opening scroll to the bottom. That
       // scroll tops the space up itself once it is done.
       if (pendingInitialScrollRef.current) return;
       // A hidden Chat tab measures as zero; it is topped up when shown again.
       if (container.clientHeight === 0 || !spacer.isConnected) return;
-      const hasOlderToShow = (hasMoreMessagesRef.current && !allMessagesLoadedRef.current)
-        || chatMessagesLengthRef.current > visibleMessageCountRef.current;
-      const wanted = hasOlderToShow ? container.clientHeight * OLDER_SPACER_SCREENS : 0;
-      const change = wanted - spacer.offsetHeight;
+      // As tall as the older messages still to show are likely to be, so
+      // every page fits however far a fling goes, and the scroll bar reflects
+      // the whole conversation: those not fetched (the server counts raw
+      // transcript rows, so scaled to messages by what is loaded) and those
+      // loaded but hidden, at the average height of the ones on the page.
+      const loadedMessages = chatMessagesLengthRef.current;
+      const shownMessages = Math.max(1, Math.min(visibleMessageCountRef.current, loadedMessages));
+      const unfetched = hasMoreMessagesRef.current && !allMessagesLoadedRef.current
+        ? Math.max(0, totalMessagesRef.current - messagesOffsetRef.current)
+          * (loadedMessages / Math.max(1, messagesOffsetRef.current))
+        : 0;
+      const hidden = Math.max(0, loadedMessages - shownMessages);
+      const averageHeight = Math.max(
+        MIN_MESSAGE_HEIGHT_PX,
+        (container.scrollHeight - spacer.offsetHeight) / shownMessages,
+      );
+      const wanted = unfetched + hidden > 0
+        ? Math.min(
+          (unfetched + hidden) * averageHeight + container.clientHeight * OLDER_SPACER_MARGIN_SCREENS,
+          container.clientHeight * OLDER_SPACER_MAX_SCREENS,
+        )
+        : 0;
+      const change = Math.round(wanted) - spacer.offsetHeight;
       if (Math.abs(change) < 1) return;
-      const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 50;
+      const top = container.scrollTop;
+      const wasAtBottom = container.scrollHeight - top - container.clientHeight < 50;
       // A transcript not yet placed (still at its top before the opening
       // scroll) gets the space only once it is at the bottom or scrolled.
       if (spacer.offsetHeight === 0 && !wasAtBottom && !isUserScrolledUpRef.current) return;
-      spacer.style.height = `${wanted}px`;
-      // At the bottom the transcript is following new output; it stays there.
-      container.scrollTop = wasAtBottom ? container.scrollHeight : container.scrollTop + change;
+      spacer.style.height = `${Math.round(wanted)}px`;
+      // From the position read before resizing: a smaller space first clamps
+      // scrollTop to the shorter page, and adding the change to that threw the
+      // reader elsewhere. At the bottom the transcript follows new output.
+      container.scrollTop = wasAtBottom ? container.scrollHeight : top + change;
     };
     void waitForScrollRest(container, Infinity).then(apply);
   }, []);
+  useEffect(() => { refillOlderSpacerRef.current = refillOlderSpacer; }, [refillOlderSpacer]);
 
   const loadOlderMessages = useCallback(
     async (container: HTMLDivElement) => {
@@ -722,6 +765,20 @@ export function useChatSessionState({
       if (!shouldLoadOlder) return;
       // The last page is not applied yet; look again once it is.
       if (pendingScrollRestoreRef.current) { checkAgain(); return; }
+      // Mid-fling only a page the space above can take: the rest would pile up
+      // as an offset that only settles at rest. Otherwise it waits for rest.
+      const fitsAbove = olderSpacerHeight()
+        >= (lastOlderPageHeightRef.current ?? container.clientHeight * ASSUMED_OLDER_PAGE_SCREENS);
+      if (!fitsAbove && !isScrollAtRest(container)) {
+        if (!revealWaitsForRestRef.current) {
+          revealWaitsForRestRef.current = true;
+          void waitForScrollRest(container, Infinity).then(() => {
+            revealWaitsForRestRef.current = false;
+            checkAgain();
+          });
+        }
+        return;
+      }
       pendingScrollRestoreRef.current = captureScrollRestoreState(container);
       setVisibleMessageCount((prev) => Math.min(
         chatMessagesLengthRef.current,
@@ -770,7 +827,9 @@ export function useChatSessionState({
         shift -= absorbed;
         refillOlderSpacer();
       }
-      if (Math.abs(shift) >= 0.5) {
+      // What the space could not take is left to useScrollAnchorFallback
+      // mid-fling: moving scrollTop then stopped the fling and snapped the view.
+      if (Math.abs(shift) >= 0.5 && (!spacer || isScrollAtRest(container))) {
         container.scrollTop += shift;
       }
       pendingScrollRestoreRef.current = null;
