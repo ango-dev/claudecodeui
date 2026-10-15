@@ -1,8 +1,6 @@
 import { useEffect } from 'react';
 import type { RefObject } from 'react';
 
-import { countScroll, traceScroll } from '@/modules/chat/utils/scrollTrace';
-
 /** A scroll quieter than this long has ended, momentum included. */
 const SCROLL_IDLE_MS = 150;
 /**
@@ -152,7 +150,6 @@ export function useScrollAnchorFallback(
 
     const flushPendingShift = () => {
       if (pendingShift === 0) return;
-      traceScroll('anchor:flush', { shift: pendingShift, top: container.scrollTop });
       content.style.transform = '';
       container.scrollTop += pendingShift;
       pendingShift = 0;
@@ -162,7 +159,6 @@ export function useScrollAnchorFallback(
     const isScrolling = () => {
       const now = Date.now();
       if (isTouching && now - Math.max(lastTouchAt, lastScrollAt) > STALE_TOUCH_MS) {
-        traceScroll('anchor:stale-touch');
         isTouching = false;
       }
       return isTouching || now - lastScrollAt < SCROLL_IDLE_MS;
@@ -178,7 +174,6 @@ export function useScrollAnchorFallback(
           return;
         }
         flushPendingShift();
-        if (restWaiters.length > 0) traceScroll('anchor:rest', { waiters: restWaiters.length });
         for (const resolve of restWaiters.splice(0)) resolve();
       }, SCROLL_IDLE_MS);
     };
@@ -195,7 +190,6 @@ export function useScrollAnchorFallback(
       if (pendingShift !== 0 || restWaiters.length > 0) scheduleFlush();
     };
     const handleTouchStart = () => {
-      traceScroll('touch:start', { top: container.scrollTop });
       isTouching = true;
       lastTouchAt = Date.now();
     };
@@ -205,13 +199,11 @@ export function useScrollAnchorFallback(
     const handleTouchEnd = (event: TouchEvent) => {
       // Another finger still down keeps the scroll going.
       if (event.touches.length > 0) return;
-      traceScroll(`touch:${event.type === 'touchcancel' ? 'cancel' : 'end'}`, { top: container.scrollTop, onTranscript: container.contains(event.target as Node) });
       isTouching = false;
       if (pendingShift !== 0 || restWaiters.length > 0) scheduleFlush();
     };
 
     const resizeObserver = new ResizeObserver(() => {
-      countScroll('resize');
       // A hidden Chat tab measures as zero; that says nothing about the rows.
       if (container.clientHeight === 0) {
         anchor = null;
@@ -228,8 +220,6 @@ export function useScrollAnchorFallback(
       const shift = offset - anchor.offset;
       if (Math.abs(shift) < 0.5) return;
 
-      countScroll('shift');
-      if (Math.abs(shift) > 200) traceScroll('anchor:shift', { shift, top: container.scrollTop, scrolling: isScrolling() });
       if (isScrolling()) {
         pendingShift += shift;
         content.style.transform = `translateY(${-pendingShift}px)`;

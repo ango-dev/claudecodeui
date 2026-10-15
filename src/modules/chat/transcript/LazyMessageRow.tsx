@@ -3,7 +3,6 @@ import type { ReactNode } from 'react';
 
 import type { ChatMessage } from '@/shared/types';
 import type { LazyRowObserver } from '@/modules/chat/hooks/useLazyRowObserver';
-import { countScroll, isRowSkipped, markScrollRow, unskipRow } from '@/modules/chat/utils/scrollTrace';
 
 /**
  * Mounts a transcript row's real content only while the row is near the
@@ -35,8 +34,6 @@ type LazyMessageRowProps = {
    * placeholder and mounts when scrolled toward.
    */
   initiallyNearViewport: boolean;
-  /** What the row holds, for the scroll recorder; set only while it records. */
-  traceLabel?: string;
   children: ReactNode;
 };
 
@@ -44,7 +41,6 @@ export default function LazyMessageRow({
   lazyRows,
   timestamp,
   initiallyNearViewport,
-  traceLabel,
   children,
 }: LazyMessageRowProps) {
   const [isNearViewport, setIsNearViewport] = useState(initiallyNearViewport);
@@ -67,7 +63,6 @@ export default function LazyMessageRow({
         setMeasuredHeight(rect.height);
       }
     }
-    countScroll(nextIsNearViewport ? 'row-mount' : 'row-unmount');
     setIsNearViewport(nextIsNearViewport);
   }, []);
 
@@ -77,13 +72,7 @@ export default function LazyMessageRow({
     return lazyRows.observe(element, handleNearViewportChange);
   }, [lazyRows, handleNearViewportChange]);
 
-  // A row that froze the page while drawing (scroll diagnostics) waits behind
-  // a button instead, so the session can still be read past it.
-  const rowTimestamp = timestamp ? String(timestamp) : undefined;
-  const [isSkipped, setIsSkipped] = useState(() => isRowSkipped(rowTimestamp));
   const isMounted = lazyRows === null || isNearViewport;
-  // Rendered depth-first, so the content drawn next is this row's.
-  if (isMounted && traceLabel && !isSkipped) markScrollRow(traceLabel, rowTimestamp);
 
   return (
     <div
@@ -91,22 +80,7 @@ export default function LazyMessageRow({
       data-message-timestamp={timestamp || undefined}
       style={isMounted ? undefined : { height: measuredHeight ?? ESTIMATED_ROW_HEIGHT_PX }}
     >
-      {isMounted && isSkipped && (
-        <div className="my-2 flex items-center justify-between gap-3 rounded-lg border border-dashed border-amber-500/50 px-3 py-2 text-xs text-muted-foreground">
-          <span>This message froze the app the last time it was drawn, so it is skipped.</span>
-          <button
-            type="button"
-            className="shrink-0 font-medium text-foreground underline-offset-2 hover:underline"
-            onClick={() => {
-              if (rowTimestamp) unskipRow(rowTimestamp);
-              setIsSkipped(false);
-            }}
-          >
-            Draw it anyway
-          </button>
-        </div>
-      )}
-      {isMounted && !isSkipped ? children : null}
+      {isMounted ? children : null}
     </div>
   );
 }

@@ -813,11 +813,12 @@
     }
   }
 
-  /* Text wrapping improvements */
+  /* Text wrapping improvements. No automatic hyphenation: on iPad, Safari's
+     layout hung for good on some messages with it (found with the scroll
+     diagnostics), freezing the app while older messages loaded. */
   .chat-message {
     word-wrap: break-word;
     overflow-wrap: break-word;
-    hyphens: auto;
   }
 
   /* Force wrap long URLs and code */
@@ -1160,26 +1161,5 @@
     -webkit-user-select: none;
     user-select: none;
     -webkit-user-drag: none;
-  }
-
-  /* Layout experiments from the scroll diagnostics panel (utils/scrollTrace),
-     each turning one suspect off on this device while a freeze is narrowed down. */
-  html.exp-no-hyphens .chat-message {
-    -webkit-hyphens: manual;
-    hyphens: manual;
-  }
-
-  html.exp-no-break-all .chat-message pre,
-  html.exp-no-break-all .chat-message code {
-    word-break: normal;
-  }
-
-  html.exp-no-contain .chat-messages-pane,
-  html.exp-no-contain .chat-message {
-    contain: none;
-  }
-
-  html.exp-no-serif .chat-message .font-serif {
-    font-family: Geist, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   }
 }

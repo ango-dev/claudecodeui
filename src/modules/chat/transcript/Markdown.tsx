@@ -14,7 +14,6 @@ import { copyTextToClipboard } from '@/shared/utils';
 import { SyntaxHighlighter, warmPrismDark, warmPrismLight } from '@/shared/syntaxHighlighter';
 import { usePaletteOps } from '@/modules/command-palette';
 import { buildSyntaxTheme } from '@/modules/chat/utils/syntaxHighlightTheme';
-import { TraceStep, markScrollStep } from '@/modules/chat/utils/scrollTrace';
 import type { PrismStyleSheet } from '@/modules/chat/utils/syntaxHighlightTheme';
 
 type MarkdownProps = {
@@ -107,7 +106,6 @@ const CodeBlock = ({ node: _node, className, children, forceBlock, ...props }: C
 
   const match = /language-(\w+)/.exec(className || '');
   const language = match ? match[1] : 'text';
-  markScrollStep(`code block: ${language}, ${raw.length} chars`);
   const languageLabel = language.charAt(0).toUpperCase() + language.slice(1);
 
   if (language === 'mermaid') {
@@ -274,7 +272,6 @@ const markdownComponents = {
  * code highlighting and table rules.
  */
 function MarkdownBodyRenderer({ children, breaks = false }: Omit<MarkdownProps, 'className'>) {
-  markScrollStep(`markdown: ${String(children ?? '').length} chars`);
   const content = useMemo(
     // The LaTeX pass runs second because it reads the code spans the fence pass
     // normalizes, and must leave the LaTeX inside them literal.
@@ -349,15 +346,10 @@ function MarkdownBodyRenderer({ children, breaks = false }: Omit<MarkdownProps, 
     [openFileInEditor, openDirectory],
   );
 
-  markScrollStep(`markdown: parsing (math=${hasMath})`);
   return (
-    <>
-      <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components as any}>
-        {content}
-      </ReactMarkdown>
-      {/* Drawn after the markdown, so it marks that the markdown finished (scroll diagnostics). */}
-      <TraceStep step="markdown: done" />
-    </>
+    <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components as any}>
+      {content}
+    </ReactMarkdown>
   );
 }
 

@@ -17,7 +17,6 @@ import {
 import { formatShortcut } from '@/shared/utils';
 import { usePermission } from '@/modules/chat/context/PermissionContext';
 import { MarkdownContent } from '@/modules/chat/tools/ContentRenderers/MarkdownContent';
-import { TraceStep, markScrollStep } from '@/modules/chat/utils/scrollTrace';
 
 /** How the user answered a plan from its card, remembered so the card says so after a reload. */
 type PlanAnswer = 'accepted' | 'revised' | 'declined';
@@ -91,7 +90,6 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
 }) => {
   const { t } = useTranslation();
   const permissionCtx = usePermission();
-  markScrollStep(`plan card: ${content.length} chars, streaming=${isStreaming}`);
 
   // This plan's own request: the one carrying its text. The only plan request
   // waiting also counts for the newest unanswered plan, in case the text was
@@ -255,8 +253,6 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
           </CardContent>
         </CollapsibleContent>
 
-        <TraceStep step="plan card: content done" />
-
         {/* Footer: the plan's answer, or the buttons while it has none. */}
         {showActions && !isRevising && (
           <CardFooter className="justify-end gap-2 border-t border-border/40 px-4 pb-3 pt-3">
@@ -305,7 +301,6 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
             {answer === 'accepted' ? 'Approved' : answer === 'revised' ? 'Sent back with changes' : 'Declined'}
           </CardFooter>
         )}
-        <TraceStep step="plan card: done" />
       </Card>
     </Collapsible>
   );
