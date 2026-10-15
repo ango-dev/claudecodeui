@@ -46,9 +46,10 @@ const scrollActivityByContainer = new WeakMap<HTMLElement, ScrollActivity>();
  * Used by useChatSessionState to add a page of older messages only once the
  * transcript has stopped moving: correcting for it then is invisible, where
  * mid-fling it either stops iOS momentum or has to be held back. Resolves at
- * once where the fallback does not run.
+ * once where the fallback does not run. Waits at most `maxWaitMs`; pass
+ * Infinity to wait for the scroll to really stop.
  */
-export function waitForScrollRest(container: HTMLElement): Promise<void> {
+export function waitForScrollRest(container: HTMLElement, maxWaitMs = MAX_REST_WAIT_MS): Promise<void> {
   const activity = scrollActivityByContainer.get(container);
   if (!activity || activity.isAtRest()) return Promise.resolve();
   return new Promise((resolve) => {
@@ -56,14 +57,23 @@ export function waitForScrollRest(container: HTMLElement): Promise<void> {
     const finish = () => {
       if (settled) return;
       settled = true;
-      clearTimeout(cap);
+      if (cap) clearTimeout(cap);
       resolve();
     };
     // Never hold a page indefinitely: the anchor keeps the reader's place either way.
-    const cap = setTimeout(finish, MAX_REST_WAIT_MS);
+    const cap = Number.isFinite(maxWaitMs) ? setTimeout(finish, maxWaitMs) : null;
     activity.restWaiters.push(finish);
     activity.requestRestCheck();
   });
+}
+
+/**
+ * Used by useChatSessionState to resize the space it keeps above the oldest
+ * loaded message only when moving scrollTop to match cannot stop a fling.
+ * True where the fallback does not run.
+ */
+export function isScrollAtRest(container: HTMLElement): boolean {
+  return scrollActivityByContainer.get(container)?.isAtRest() ?? true;
 }
 
 /**

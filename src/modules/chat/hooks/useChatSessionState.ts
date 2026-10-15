@@ -8,7 +8,7 @@ import { readSessionMessagesPageSize, SESSION_MESSAGES_PAGE_SIZE } from '@/modul
 import { createMessageHistoryRefreshCoordinator } from '@/modules/chat/utils/messageHistoryRefreshCoordinator';
 import { createCachedDiffCalculator } from '@/modules/chat/utils/messageTransforms';
 import { normalizedToChatMessages } from '@/modules/chat/hooks/useChatMessages';
-import { usesScrollAnchorFallback, waitForScrollRest } from '@/modules/chat/hooks/useScrollAnchorFallback';
+import { isScrollAtRest, usesScrollAnchorFallback, waitForScrollRest } from '@/modules/chat/hooks/useScrollAnchorFallback';
 import { findSearchTargetIndex, resolveSearchWindowSize } from '@/modules/chat/utils/searchTargetLocator';
 import { readSelectedProvider } from '@/shared/selectedProvider';
 import type { SearchTarget } from '@/modules/chat/utils/searchTargetLocator';
@@ -20,6 +20,15 @@ const INITIAL_VISIBLE_MESSAGES = 100;
  * indicator spinning until a refresh.
  */
 const OLDER_PAGE_TIMEOUT_MS = 15_000;
+/** How many screens before the first loaded message Safari starts on the next older page (see handleScroll). */
+const SAFARI_OLDER_PAGE_LEAD_SCREENS = 6;
+/**
+ * How tall, in screens, Safari keeps the blank space above the oldest loaded
+ * message while older ones remain (see olderSpacerRef). Three to four pages.
+ */
+const OLDER_SPACER_SCREENS = 20;
+/** A page of older messages is assumed this tall, in screens, until one has been measured. */
+const ASSUMED_OLDER_PAGE_SCREENS = 6;
 /**
  * The window a session opens with: at least a full first page, so a larger
  * "messages loaded at a time" setting is not loaded and then kept hidden.
@@ -220,6 +229,8 @@ export function useChatSessionState({
   const [isLoadingSessionMessages, setIsLoadingSessionMessages] = useState(false);
   const [isLoadingMoreMessages, setIsLoadingMoreMessages] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
+  const hasMoreMessagesRef = useRef(false);
+  useEffect(() => { hasMoreMessagesRef.current = hasMoreMessages; }, [hasMoreMessages]);
   const [totalMessages, setTotalMessages] = useState(0);
   const [isUserScrolledUp, setIsUserScrolledUp] = useState(false);
   const [tokenBudget, setTokenBudget] = useState<Record<string, unknown> | null>(null);
@@ -252,6 +263,17 @@ export function useChatSessionState({
   const allMessagesLoadedRef = useRef(false);
   const topLoadLockRef = useRef(false);
   const pendingScrollRestoreRef = useRef<ScrollRestoreState | null>(null);
+  /**
+   * Blank space above the oldest loaded message, kept on Safari while older
+   * messages remain (ChatMessagesPane renders it). Safari cannot move scrollTop
+   * mid-fling without stopping it, so a page added above the reader used to
+   * wait for the scroll to rest, and a fling reached the top and bounced there
+   * first. A page now lands inside this space, which shrinks by the page's
+   * height so nothing on screen moves; it is topped up again at rest.
+   */
+  const olderSpacerRef = useRef<HTMLDivElement>(null);
+  const lastOlderPageHeightRef = useRef<number | null>(null);
+  const spacerRefillPendingRef = useRef(false);
   const pendingInitialScrollRef = useRef(true);
   const messagesOffsetRef = useRef(0);
   const scrollPositionRef = useRef({ height: 0, top: 0 });
@@ -509,6 +531,44 @@ export function useChatSessionState({
     return scrollHeight - scrollTop - clientHeight < 50;
   }, []);
 
+  const olderSpacerHeight = () => olderSpacerRef.current?.offsetHeight ?? 0;
+
+  // Tops the space above the oldest message back up (or removes it once there
+  // is nothing older), moving scrollTop by the same amount: done only at rest,
+  // where that move is invisible and stops nothing.
+  const refillOlderSpacer = useCallback(() => {
+    const container = scrollContainerRef.current;
+    const spacer = olderSpacerRef.current;
+    if (!container || !spacer || spacerRefillPendingRef.current) return;
+    spacerRefillPendingRef.current = true;
+    const apply = () => {
+      if (!isScrollAtRest(container)) {
+        void waitForScrollRest(container, Infinity).then(apply);
+        return;
+      }
+      spacerRefillPendingRef.current = false;
+      // Not while a session opens: moving scrollTop then reads as the reader
+      // scrolling up, which cancels the opening scroll to the bottom. That
+      // scroll tops the space up itself once it is done.
+      if (pendingInitialScrollRef.current) return;
+      // A hidden Chat tab measures as zero; it is topped up when shown again.
+      if (container.clientHeight === 0 || !spacer.isConnected) return;
+      const wanted = hasMoreMessagesRef.current && !allMessagesLoadedRef.current
+        ? container.clientHeight * OLDER_SPACER_SCREENS
+        : 0;
+      const change = wanted - spacer.offsetHeight;
+      if (Math.abs(change) < 1) return;
+      const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 50;
+      // A transcript not yet placed (still at its top before the opening
+      // scroll) gets the space only once it is at the bottom or scrolled.
+      if (spacer.offsetHeight === 0 && !wasAtBottom && !isUserScrolledUpRef.current) return;
+      spacer.style.height = `${wanted}px`;
+      // At the bottom the transcript is following new output; it stays there.
+      container.scrollTop = wasAtBottom ? container.scrollHeight : container.scrollTop + change;
+    };
+    void waitForScrollRest(container, Infinity).then(apply);
+  }, []);
+
   const loadOlderMessages = useCallback(
     async (container: HTMLDivElement) => {
       if (!isActive) return false;
@@ -563,7 +623,11 @@ export function useChatSessionState({
         // widens below. On Safari that waits for the scroll to rest: keeping
         // the reader's place then is invisible, where mid-fling it either
         // stops iOS momentum or hides the new rows until the fling ends.
-        if (holdsPagesUntilRest) {
+        // With room for the page in the space above (olderSpacerRef), it can
+        // land mid-fling: nothing on screen moves, so nothing has to wait.
+        const fitsAboveReader = olderSpacerHeight()
+          >= (lastOlderPageHeightRef.current ?? container.clientHeight * ASSUMED_OLDER_PAGE_SCREENS);
+        if (holdsPagesUntilRest && !fitsAboveReader) {
           await waitForScrollRest(container);
           if (!isActiveRef.current || activeSessionIdRef.current !== selectedSession.id) {
             return false;
@@ -610,7 +674,14 @@ export function useChatSessionState({
       top: container.scrollTop,
     };
 
-    const scrolledNearTop = container.scrollTop < 100;
+    // Measured from the first loaded message, below any space kept above it.
+    const contentTop = container.scrollTop - olderSpacerHeight();
+    if (hasMoreMessages && olderSpacerRef.current && olderSpacerHeight() === 0) refillOlderSpacer();
+    // Where older messages land in the space above, the reader seldom reaches
+    // the first loaded one, so the prompt appears once older pages start loading.
+    const scrolledNearTop = olderSpacerRef.current
+      ? contentTop < container.clientHeight * SAFARI_OLDER_PAGE_LEAD_SCREENS
+      : contentTop < 100;
 
     // "Load all" prompt: appear (with fade-in) when the user reaches the top
     if (scrolledNearTop && hasMoreMessages && !allMessagesLoadedRef.current) {
@@ -628,19 +699,23 @@ export function useChatSessionState({
       wasNearTopRef.current = false;
     }
 
-    // Older messages start loading a screen before the top, so they are
-    // usually in place before the reader gets there.
-    const shouldLoadOlder = container.scrollTop < Math.max(100, container.clientHeight);
+    // Older messages start loading ahead of the top, so they are usually in
+    // place before the reader gets there. Safari only adds a page once the
+    // scroll rests, and a fling crosses one screen before that, leaving the
+    // reader bouncing at the top until it settles; there it starts further out,
+    // so the page lands in a pause on the way up.
+    const leadScreens = usesScrollAnchorFallback() ? SAFARI_OLDER_PAGE_LEAD_SCREENS : 1;
+    const shouldLoadOlder = contentTop < Math.max(100, container.clientHeight * leadScreens);
     if (!allMessagesLoadedRef.current) {
       if (!shouldLoadOlder) { topLoadLockRef.current = false; return; }
       if (topLoadLockRef.current) {
-        if (container.scrollTop > 20) topLoadLockRef.current = false;
+        if (contentTop > 20) topLoadLockRef.current = false;
         return;
       }
       const didLoad = await loadOlderMessages(container);
       if (didLoad) topLoadLockRef.current = true;
     }
-  }, [hasMoreMessages, isActive, isNearBottom, loadOlderMessages]);
+  }, [hasMoreMessages, isActive, isNearBottom, loadOlderMessages, refillOlderSpacer]);
 
   const wasChatActiveRef = useRef(isActive);
   useLayoutEffect(() => {
@@ -651,14 +726,23 @@ export function useChatSessionState({
     const container = scrollContainerRef.current;
     if (pendingScrollRestoreRef.current) {
       const { height, top, anchor, anchorOffset } = pendingScrollRestoreRef.current;
-      if (anchor?.isConnected && anchorOffset !== null) {
-        const nextAnchorOffset = (
-          anchor.getBoundingClientRect().top
-          - container.getBoundingClientRect().top
-        );
-        container.scrollTop += nextAnchorOffset - anchorOffset;
-      } else {
-        container.scrollTop = top + Math.max(container.scrollHeight - height, 0);
+      const hasAnchor = Boolean(anchor?.isConnected) && anchorOffset !== null;
+      // How far what the reader is looking at moved down.
+      let shift = hasAnchor
+        ? anchor!.getBoundingClientRect().top - container.getBoundingClientRect().top - anchorOffset!
+        : top + Math.max(container.scrollHeight - height, 0) - container.scrollTop;
+      // Taken out of the space above instead (olderSpacerRef): it shrinks by
+      // what was added, so nothing moves and a fling carries on.
+      const spacer = olderSpacerRef.current;
+      if (spacer && shift > 0) {
+        lastOlderPageHeightRef.current = shift;
+        const absorbed = Math.min(shift, spacer.offsetHeight);
+        spacer.style.height = `${spacer.offsetHeight - absorbed}px`;
+        shift -= absorbed;
+        refillOlderSpacer();
+      }
+      if (Math.abs(shift) >= 0.5) {
+        container.scrollTop += shift;
       }
       pendingScrollRestoreRef.current = null;
       return;
@@ -669,7 +753,7 @@ export function useChatSessionState({
         ? scrollPositionRef.current.top
         : container.scrollHeight;
     }
-  }, [chatMessages.length, isActive, isUserScrolledUp, visibleMessageCount]);
+  }, [chatMessages.length, isActive, isUserScrolledUp, refillOlderSpacer, visibleMessageCount]);
 
   // Reset scroll/pagination state on session change
   useEffect(() => {
@@ -696,7 +780,16 @@ export function useChatSessionState({
     pendingScrollRestoreRef.current = null;
     wasNearTopRef.current = false;
     setIsUserScrolledUp(false);
+    // The space above belongs to the transcript being replaced.
+    if (olderSpacerRef.current) olderSpacerRef.current.style.height = '0px';
+    lastOlderPageHeightRef.current = null;
   }, [selectedProject?.projectId, selectedSession?.id]);
+
+  // The space above the oldest message appears once there is older history
+  // and goes once there is none (or all of it is loaded), each at rest.
+  useEffect(() => {
+    refillOlderSpacer();
+  }, [allMessagesLoaded, hasMoreMessages, isActive, refillOlderSpacer]);
 
   // Initial scroll to bottom — robust to lazy content reflow.
   // The previous implementation fired one scrollToBottom() at +200ms and
@@ -734,13 +827,15 @@ export function useChatSessionState({
         rafId = requestAnimationFrame(tick);
       } else {
         pendingInitialScrollRef.current = false;
+        // Now at the bottom, where adding the space above moves nothing.
+        refillOlderSpacer();
       }
     };
     rafId = requestAnimationFrame(tick);
     return () => {
       if (rafId) cancelAnimationFrame(rafId);
     };
-  }, [chatMessages.length, isActive, isLoadingSessionMessages, scrollToBottom]);
+  }, [chatMessages.length, isActive, isLoadingSessionMessages, refillOlderSpacer, scrollToBottom]);
 
   // Session replay/subscription remains active regardless of which main tab is
   // visible. Only persisted-history HTTP traffic is visibility-gated below.
@@ -1287,6 +1382,7 @@ export function useChatSessionState({
     showLoadAllOverlay,
     createDiff,
     scrollContainerRef,
+    olderSpacerRef,
     scrollToBottom,
     scrollToBottomAndReset,
     handleScroll,

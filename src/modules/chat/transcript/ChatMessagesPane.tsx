@@ -36,6 +36,8 @@ const MAX_ROWS_RENDERED_BEFORE_MEASURING = 300;
 
 type ChatMessagesPaneProps = {
   scrollContainerRef: RefObject<HTMLDivElement>;
+  /** Blank space above the oldest loaded message on Safari; useChatSessionState sizes it. */
+  olderSpacerRef: RefObject<HTMLDivElement>;
   onWheel: () => void;
   onTouchMove: () => void;
   isLoadingSessionMessages: boolean;
@@ -105,6 +107,7 @@ const getGroupedMessageKey = (message: ChatMessage): string =>
  */
 function ChatMessagesPane({
   scrollContainerRef,
+  olderSpacerRef,
   onWheel,
   onTouchMove,
   isLoadingSessionMessages,
@@ -215,7 +218,9 @@ function ChatMessagesPane({
           </div>
         </div>
       )}
-      <div ref={transcriptContentRef} className="mx-auto w-full max-w-[54.25rem] space-y-3 px-4 sm:space-y-4">
+      {/* Where older messages land mid-fling on Safari (useChatSessionState's olderSpacerRef). */}
+      {usesScrollAnchorFallback() && <div ref={olderSpacerRef} aria-hidden="true" />}
+            <div ref={transcriptContentRef} className="mx-auto w-full max-w-[54.25rem] space-y-3 px-4 sm:space-y-4">
       {(isLoadingSessionMessages || isProcessing) && chatMessages.length === 0 ? (
         <div className="mt-8 text-center text-gray-500 dark:text-gray-400">
           <div className="flex items-center justify-center space-x-2">

@@ -160,6 +160,7 @@ function ChatInterface({
     showLoadAllOverlay,
     createDiff,
     scrollContainerRef,
+    olderSpacerRef,
     scrollToBottom,
     scrollToBottomAndReset,
     handleScroll,
@@ -522,6 +523,7 @@ function ChatInterface({
           <TranscriptSessionContext.Provider value={transcriptSessionValue}>
             <ChatMessagesPane
               scrollContainerRef={scrollContainerRef}
+              olderSpacerRef={olderSpacerRef}
               // Not redundant with the `scroll` listener. A first page is 20 rows,
               // tool results fold into their calls, and the "load earlier" link is
               // hidden while more pages exist — so a short transcript is often not
