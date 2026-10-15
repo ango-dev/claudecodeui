@@ -37,6 +37,8 @@ type TraceState = {
   startedAt: number;
   lastBeat: number;
   lastSummary: number;
+  /** The page was hidden at some point since the last heartbeat; see beat(). */
+  hiddenSinceBeat: boolean;
   dirty: boolean;
   timers: Array<ReturnType<typeof setInterval>>;
 };
@@ -92,7 +94,13 @@ const beat = () => {
   if (!state) return;
   const now = performance.now();
   const gap = now - state.lastBeat;
-  if (gap > STALL_MS) push(`STALL main thread blocked ~${Math.round(gap - BEAT_MS)}ms`);
+  // iOS slows a hidden page's timers to one a second and suspends it outright
+  // in the background: a late heartbeat then says nothing about the page.
+  const hidden = document.visibilityState === 'hidden';
+  if (gap > STALL_MS && !hidden && !state.hiddenSinceBeat) {
+    push(`STALL main thread blocked ~${Math.round(gap - BEAT_MS)}ms`);
+  }
+  state.hiddenSinceBeat = hidden;
   state.lastBeat = now;
   if (now - state.lastSummary >= 1000) {
     state.lastSummary = now;
@@ -114,6 +122,7 @@ const pageListeners: Array<[string, (event: Event) => void]> = [
   ['pagehide', () => { push('pagehide'); if (state) state.dirty = true; persist(); writeStorage(ROW_KEY, null); }],
   ['visibilitychange', () => {
     push(`visibility ${document.visibilityState}`);
+    if (state && document.visibilityState === 'hidden') state.hiddenSinceBeat = true;
     persist();
     if (document.visibilityState === 'hidden') writeStorage(ROW_KEY, null);
   }],
@@ -122,9 +131,18 @@ const pageListeners: Array<[string, (event: Event) => void]> = [
 const start = () => {
   if (state || typeof window === 'undefined') return;
   const now = performance.now();
-  state = { lines: [], counters: new Map(), startedAt: now, lastBeat: now, lastSummary: now, dirty: true, timers: [] };
+  state = {
+    lines: [],
+    counters: new Map(),
+    startedAt: now,
+    lastBeat: now,
+    lastSummary: now,
+    hiddenSinceBeat: document.visibilityState === 'hidden',
+    dirty: true,
+    timers: [],
+  };
   state.timers.push(setInterval(beat, BEAT_MS), setInterval(persist, PERSIST_MS));
-  push(`start ${new Date().toISOString()} ${navigator.userAgent}`);
+  push(`start ${new Date().toISOString()} ${document.visibilityState} ${navigator.userAgent}`);
   for (const [type, listener] of pageListeners) window.addEventListener(type, listener);
   persist();
 };

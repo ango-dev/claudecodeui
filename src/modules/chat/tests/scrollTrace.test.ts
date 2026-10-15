@@ -88,6 +88,37 @@ it('does not skip a row when the page was left normally', async () => {
   expect(second.isRowSkipped('2026-10-13T00:00:00.000Z')).toBe(false);
 });
 
+it('does not take a hidden page\'s slowed timers for a stall, but still catches a real one', async () => {
+  vi.useFakeTimers();
+  let now = 0;
+  const clock = vi.spyOn(performance, 'now').mockImplementation(() => now);
+  const visibility = vi.spyOn(document, 'visibilityState', 'get');
+  try {
+    const trace = await import('@/modules/chat/utils/scrollTrace');
+    visibility.mockReturnValue('visible');
+    trace.setScrollTraceEnabled(true);
+    // Hidden: iOS runs the heartbeat once a second instead of every 200ms.
+    visibility.mockReturnValue('hidden');
+    for (let beat = 0; beat < 5; beat++) {
+      now += 1000;
+      vi.advanceTimersByTime(200);
+    }
+    visibility.mockReturnValue('visible');
+    now += 200;
+    vi.advanceTimersByTime(200);
+    expect(trace.readScrollTrace().current).not.toMatch(/STALL/);
+
+    // Visible, and a heartbeat a second late: the page really was blocked.
+    now += 1000;
+    vi.advanceTimersByTime(200);
+    expect(trace.readScrollTrace().current).toMatch(/STALL main thread blocked ~800ms/);
+  } finally {
+    clock.mockRestore();
+    visibility.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
 it('reports busy paths as per-second counts', async () => {
   vi.useFakeTimers();
   try {
