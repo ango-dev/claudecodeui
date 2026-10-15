@@ -1,11 +1,15 @@
 import { useRef, useState } from 'react';
 
 import {
+  SCROLL_EXPERIMENTS,
   clearScrollTrace,
+  isScrollExperimentOn,
   isScrollTraceEnabled,
   readScrollTrace,
+  setScrollExperiment,
   setScrollTraceEnabled,
 } from '@/modules/chat/utils/scrollTrace';
+import type { ScrollExperimentId } from '@/modules/chat/utils/scrollTrace';
 
 const buttonClass =
   'rounded-lg border border-border/60 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground';
@@ -29,6 +33,19 @@ export function ScrollDiagnostics() {
   const [enabled, setEnabled] = useState(isScrollTraceEnabled);
   const [report, setReport] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [experiments, setExperiments] = useState(
+    () => new Set(SCROLL_EXPERIMENTS.filter(({ id }) => isScrollExperimentOn(id)).map(({ id }) => id)),
+  );
+  const toggleExperiment = (id: ScrollExperimentId) => {
+    const on = !experiments.has(id);
+    setScrollExperiment(id, on);
+    setExperiments((previous) => {
+      const next = new Set(previous);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
   const textRef = useRef<HTMLTextAreaElement>(null);
 
   const toggle = () => {
@@ -79,6 +96,16 @@ export function ScrollDiagnostics() {
         </button>
       </div>
       {enabled && <p className="text-xs text-green-600 dark:text-green-400">Recording, also after a refresh.</p>}
+      <div className="space-y-1 pt-1">
+        <div className="text-xs font-medium text-foreground">Experiments on this device</div>
+        <p className="text-xs text-muted-foreground">Each turns one suspect off. Refresh after changing them.</p>
+        {SCROLL_EXPERIMENTS.map(({ id, label }) => (
+          <label key={id} className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input type="checkbox" checked={experiments.has(id)} onChange={() => toggleExperiment(id)} />
+            {label}
+          </label>
+        ))}
+      </div>
       {report && (
         <textarea
           ref={textRef}

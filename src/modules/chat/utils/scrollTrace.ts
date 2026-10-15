@@ -143,6 +143,7 @@ const start = () => {
   };
   state.timers.push(setInterval(beat, BEAT_MS), setInterval(persist, PERSIST_MS));
   push(`start ${new Date().toISOString()} ${document.visibilityState} ${navigator.userAgent}`);
+  if (experiments.size) push(`experiments on: ${[...experiments].join(', ')}`);
   for (const [type, listener] of pageListeners) window.addEventListener(type, listener);
   persist();
 };
@@ -165,6 +166,40 @@ const readPreviousRuns = (): string[] => {
 };
 
 /** On load: the last page's log joins the earlier runs, and recording resumes if it was on. */
+/**
+ * Layout experiments, switched on one device from the diagnostics panel to
+ * find what a freeze there needs: each turns one suspect off. The CSS ones
+ * work through a class on <html> (index.css); `whole-pages` is read by
+ * ChatMessagesPane.
+ */
+export const SCROLL_EXPERIMENTS = [
+  { id: 'no-hyphens', label: 'No hyphenation in messages' },
+  { id: 'no-break-all', label: 'No forced breaks inside code' },
+  { id: 'no-contain', label: 'No CSS containment on the transcript' },
+  { id: 'no-serif', label: 'Sans font for replies' },
+  { id: 'gradual-pages', label: 'Draw older pages gradually, not all at once' },
+] as const;
+export type ScrollExperimentId = (typeof SCROLL_EXPERIMENTS)[number]['id'];
+const EXPERIMENTS_KEY = 'cloudcli-scroll-experiments';
+let experiments = new Set<string>();
+
+const applyExperiments = () => {
+  if (typeof document === 'undefined') return;
+  for (const { id } of SCROLL_EXPERIMENTS) {
+    document.documentElement.classList.toggle(`exp-${id}`, experiments.has(id));
+  }
+};
+
+export const isScrollExperimentOn = (id: ScrollExperimentId): boolean => experiments.has(id);
+
+export function setScrollExperiment(id: ScrollExperimentId, on: boolean) {
+  if (on) experiments.add(id);
+  else experiments.delete(id);
+  writeStorage(EXPERIMENTS_KEY, experiments.size ? JSON.stringify([...experiments]) : null);
+  applyExperiments();
+  push(`experiment ${id} ${on ? 'on' : 'off'}`);
+}
+
 const readJson = <T>(key: string, fallback: T): T => {
   try {
     const raw = readStorage(key);
@@ -175,6 +210,8 @@ const readJson = <T>(key: string, fallback: T): T => {
 };
 
 function initScrollTrace() {
+  experiments = new Set(readJson<string[]>(EXPERIMENTS_KEY, []));
+  applyExperiments();
   skippedRows = readJson(SKIPPED_KEY, []);
   let last = readStorage(CURRENT_KEY);
   const lastRow = readJson<RowMark | null>(ROW_KEY, null);
@@ -183,7 +220,8 @@ function initScrollTrace() {
     // The row a freeze stopped in, with how far its drawing got.
     const parsed = readJson<{ lines?: string[] }>(CURRENT_KEY, {});
     const lastBeat = Number(readStorage(BEAT_KEY) ?? 0);
-    const finished = lastRow.steps.at(-1)?.endsWith('drawn; layout running') ?? false;
+    // Past the drawing, a freeze is the page's (layout, say), not this row's.
+    const finished = lastRow.steps.some((step) => step.endsWith('drawn; layout running'));
     // Still drawing it when the heartbeat stopped: that row froze the page.
     const froze = !finished && lastRow.at > lastBeat - 1000;
     if (froze && lastRow.timestamp && !skippedRows.some((row) => row.timestamp === lastRow.timestamp)) {
@@ -194,7 +232,11 @@ function initScrollTrace() {
       ...(parsed.lines ?? []),
       `last row drawn: ${lastRow.label}`,
       ...lastRow.steps.map((step) => `  step ${step}`),
-      froze ? '  -> the page froze in this row; it is skipped from now on (Draw it anyway brings it back)' : '  -> drawing finished; the page stopped later',
+      froze
+        ? '  -> the page froze in this row; it is skipped from now on (Draw it anyway brings it back)'
+        : finished && lastRow.at > lastBeat - 1000
+          ? '  -> the rows were drawn; the page froze after the last step above'
+          : '  -> drawing finished; the page stopped later',
     ];
     last = JSON.stringify(parsed);
   }

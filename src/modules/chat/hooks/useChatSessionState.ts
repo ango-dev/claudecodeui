@@ -9,7 +9,7 @@ import { createMessageHistoryRefreshCoordinator } from '@/modules/chat/utils/mes
 import { createCachedDiffCalculator } from '@/modules/chat/utils/messageTransforms';
 import { normalizedToChatMessages } from '@/modules/chat/hooks/useChatMessages';
 import { usesScrollAnchorFallback, waitForScrollRest } from '@/modules/chat/hooks/useScrollAnchorFallback';
-import { countScroll, traceScroll } from '@/modules/chat/utils/scrollTrace';
+import { countScroll, markScrollStep, traceScroll } from '@/modules/chat/utils/scrollTrace';
 import { findSearchTargetIndex, resolveSearchWindowSize } from '@/modules/chat/utils/searchTargetLocator';
 import { readSelectedProvider } from '@/shared/selectedProvider';
 import type { SearchTarget } from '@/modules/chat/utils/searchTargetLocator';
@@ -669,7 +669,10 @@ export function useChatSessionState({
     const container = scrollContainerRef.current;
     if (pendingScrollRestoreRef.current) {
       const { height, top, anchor, anchorOffset } = pendingScrollRestoreRef.current;
+      // Reading the position makes the browser lay out the rows just added.
+      markScrollStep('restore: laying out the new rows');
       const before = container.scrollTop;
+      markScrollStep('restore: laid out');
       if (anchor?.isConnected && anchorOffset !== null) {
         const nextAnchorOffset = (
           anchor.getBoundingClientRect().top

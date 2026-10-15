@@ -19,7 +19,7 @@ import ProviderSelectionEmptyState from '@/modules/chat/transcript/ProviderSelec
 import ToolGroupContainer from '@/modules/chat/transcript/ToolGroupContainer';
 import LoadAllMessagesOverlay from '@/modules/chat/transcript/LoadAllMessagesOverlay';
 import { BackgroundTasksStrip } from '@/modules/chat/transcript/BackgroundTasksStrip';
-import { countScroll, isScrollTraceEnabled, markScrollStep } from '@/modules/chat/utils/scrollTrace';
+import { countScroll, isScrollExperimentOn, isScrollTraceEnabled, markScrollStep } from '@/modules/chat/utils/scrollTrace';
 
 /**
  * How many of the newest rows mount with real content on the first commit,
@@ -308,7 +308,10 @@ function ChatMessagesPane({
           {(() => {
             let prevMessage: ChatMessage | null = null;
             const rowCount = groupedVisibleMessages.length;
-            const renderEveryRowFirst = usesScrollAnchorFallback() && rowCount <= MAX_ROWS_RENDERED_BEFORE_MEASURING;
+            const renderEveryRowFirst = usesScrollAnchorFallback()
+              && rowCount <= MAX_ROWS_RENDERED_BEFORE_MEASURING
+              // A diagnostics experiment: rows off screen start as placeholders, as elsewhere.
+              && !isScrollExperimentOn('gradual-pages');
             const tracing = isScrollTraceEnabled();
 
             return groupedVisibleMessages.map((item, index) => {

@@ -119,6 +119,31 @@ it('does not take a hidden page\'s slowed timers for a stall, but still catches 
   }
 });
 
+it('blames layout, not the row, when the page froze after drawing it', async () => {
+  const first = await import('@/modules/chat/utils/scrollTrace');
+  first.setScrollTraceEnabled(true);
+  first.markScrollRow('row 48/158 assistant(918 chars)', '2026-10-13T00:18:54.928Z');
+  first.markScrollStep('drawn; layout running');
+  first.markScrollStep('restore: laying out the new rows');
+  vi.resetModules();
+  const second = await import('@/modules/chat/utils/scrollTrace');
+  expect(second.readScrollTrace().previous[0]).toMatch(/restore: laying out the new rows\n.*the page froze after the last step above/);
+  expect(second.isRowSkipped('2026-10-13T00:18:54.928Z')).toBe(false);
+});
+
+it('keeps layout experiments across a refresh and marks them on the page', async () => {
+  const first = await import('@/modules/chat/utils/scrollTrace');
+  first.setScrollExperiment('no-hyphens', true);
+  expect(document.documentElement.classList.contains('exp-no-hyphens')).toBe(true);
+  document.documentElement.classList.remove('exp-no-hyphens');
+  vi.resetModules();
+  const second = await import('@/modules/chat/utils/scrollTrace');
+  expect(second.isScrollExperimentOn('no-hyphens')).toBe(true);
+  expect(document.documentElement.classList.contains('exp-no-hyphens')).toBe(true);
+  second.setScrollExperiment('no-hyphens', false);
+  expect(document.documentElement.classList.contains('exp-no-hyphens')).toBe(false);
+});
+
 it('reports busy paths as per-second counts', async () => {
   vi.useFakeTimers();
   try {
