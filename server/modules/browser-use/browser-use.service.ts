@@ -13,10 +13,10 @@ import { findApplicationRoot, getModuleDirectory } from '@/shared/utils.js';
 
 import { findPulseAudio, findWindowManager, findXvfb, getAudioServer, getVirtualDisplay, stopVirtualDisplay } from './browser-use-display.js';
 import {
-  forgetSandboxResults,
+  forgetLaunchResults,
   launchWithSandbox,
+  learnEngineDefaultSwitches,
   planLaunchFlags,
-  readEngineDefaultSwitches,
   reportLaunch,
 } from './browser-use-launch.js';
 import type { LaunchFlagPlan, LaunchReport } from './browser-use-launch.js';
@@ -395,6 +395,18 @@ function resolveEnginePackage(engine: BrowserUseEngine): string | null {
     return fs.existsSync(path.join(directory, 'package.json')) ? directory : null;
   } catch {
     return null;
+  }
+}
+
+/** The installed engine's version, so its learned defaults are learned again after an update. */
+function readEngineVersion(engine: BrowserUseEngine): string {
+  const packageDirectory = resolveEnginePackage(engine);
+  try {
+    return packageDirectory
+      ? String(JSON.parse(fs.readFileSync(path.join(packageDirectory, 'package.json'), 'utf8')).version ?? 'unknown')
+      : 'missing';
+  } catch {
+    return 'unknown';
   }
 }
 
@@ -1024,13 +1036,25 @@ async function buildLaunchOptions(settings: BrowserUseSettings, readiness: Runti
   if (settings.timezone) {
     env.TZ = settings.timezone;
   }
+  // Real Chrome, where chosen: readiness found it in its standard place or
+  // at the location set in Settings.
+  const executablePath = settings.browser === 'chrome' && readiness.chromiumExecutablePath
+    ? readiness.chromiumExecutablePath
+    : undefined;
+  // Which browser binary this is, for remembering where the sandbox fails.
+  const browserKey = executablePath ?? `${settings.engine}-chromium`;
   // The engine's own default switches, changed where CloudCLI needs to: its
   // feature lists are replaced whole, and each launch is checked afterwards.
-  const flagPlan = planLaunchFlags(
-    readEngineDefaultSwitches(resolveEnginePackage(settings.engine)),
-    useGpu ? GPU_FEATURES : [],
-    ENGINE_DEFAULT_FEATURES,
+  // Learned from a plain headless launch, once per engine version and browser.
+  const engineDefaults = await learnEngineDefaultSwitches(
+    `${settings.engine}@${readEngineVersion(settings.engine)}|${browserKey}`,
+    async () => (await launchWithSandbox(browserKey, (sandbox) => readiness.playwright.chromium.launch({
+      headless: true,
+      chromiumSandbox: sandbox,
+      ...(executablePath ? { executablePath } : {}),
+    }))).result,
   );
+  const flagPlan = planLaunchFlags(engineDefaults, useGpu ? GPU_FEATURES : [], ENGINE_DEFAULT_FEATURES);
   const launchOptions = {
     headless: !withWindow,
     args: [
@@ -1045,11 +1069,7 @@ async function buildLaunchOptions(settings: BrowserUseSettings, readiness: Runti
       ...flagPlan.args,
     ],
     ...(flagPlan.ignoreDefaultArgs.length > 0 ? { ignoreDefaultArgs: flagPlan.ignoreDefaultArgs } : {}),
-    // Real Chrome, where chosen: readiness found it in its standard place or
-    // at the location set in Settings.
-    ...(settings.browser === 'chrome' && readiness.chromiumExecutablePath
-      ? { executablePath: readiness.chromiumExecutablePath }
-      : {}),
+    ...(executablePath ? { executablePath } : {}),
     ...(Object.keys(env).length > 0 ? { env: { ...process.env, ...env } } : {}),
   };
   const contextOptions = {
@@ -1059,8 +1079,6 @@ async function buildLaunchOptions(settings: BrowserUseSettings, readiness: Runti
     serviceWorkers: 'block',
     ...(settings.timezone && process.platform !== 'linux' ? { timezoneId: settings.timezone } : {}),
   };
-  // Which browser binary this is, for remembering where the sandbox fails.
-  const browserKey = launchOptions.executablePath ?? `${settings.engine}-chromium`;
   return { launchOptions, contextOptions, flagPlan, browserKey };
 }
 
@@ -1426,14 +1444,14 @@ export const browserUseService = {
   async removeRuntime(engine: BrowserUseEngine, part: 'engine' | 'chromium') {
     const result = await removeRuntime(readEngine(engine), part, readSettings());
     // A different browser build may refuse or accept the sandbox differently.
-    forgetSandboxResults();
+    forgetLaunchResults();
     lastLaunchReport = null;
     return { ...result, status: await this.getStatus() };
   },
 
   async installRuntime() {
     const result = await installRuntime(readSettings());
-    forgetSandboxResults();
+    forgetLaunchResults();
     lastLaunchReport = null;
     return {
       ...result,

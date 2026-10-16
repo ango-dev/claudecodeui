@@ -1,7 +1,5 @@
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
-import { createRequire } from 'node:module';
-import path from 'node:path';
 
 /**
  * How CloudCLI starts Chrome differently from the engine's defaults, and the
@@ -11,9 +9,10 @@ import path from 'node:path';
  * CloudCLI changes a few of them, which Playwright only allows by naming the
  * exact default switch to leave out. That text changes between engine
  * versions, and a name that no longer matches is silently ignored. So the
- * defaults are read from the installed engine itself, and every launch reads
- * back the command line Chrome actually got: anything that did not take is
- * reported as a warning in Settings and to the agent, never passed over.
+ * defaults are learned from what the installed engine actually starts Chrome
+ * with, and every launch reads back the command line Chrome actually got:
+ * anything that did not take is reported as a warning in Settings and to the
+ * agent, never passed over.
  */
 
 /**
@@ -56,35 +55,42 @@ function featureNames(switchValue: string): string[] {
     .filter(Boolean);
 }
 
+/** The engine's default switches, learned per engine version and browser binary. */
+const learnedDefaults = new Map<string, string[]>();
+
 /**
- * The switches the installed engine starts Chrome with, read from its own
- * code, or null when that code is not where it used to be. Patchright is a
- * fork with the same layout under its own names.
+ * The switches the installed engine starts Chrome with, learned from the
+ * engine itself rather than its code: one headless browser started with no
+ * changes, and its command line read back. Engines bundle and rename their
+ * internals between versions (Patchright 1.63 folded the file that held them
+ * into one bundle), but the command line they produce is the ground truth.
+ *
+ * Learned once per `key` (engine version and browser binary) and kept for
+ * the server's life; a failure is not kept, so the next launch tries again.
+ * Null when the browser would not start or its command line cannot be read.
  */
-export function readEngineDefaultSwitches(enginePackageDirectory: string | null): string[] | null {
-  if (!enginePackageDirectory) {
-    return null;
+export async function learnEngineDefaultSwitches(
+  key: string,
+  launchPlain: () => Promise<any>,
+): Promise<string[] | null> {
+  const known = learnedDefaults.get(key);
+  if (known) {
+    return known;
   }
+  let browser: any;
   try {
-    const engineManifest = JSON.parse(fs.readFileSync(path.join(enginePackageDirectory, 'package.json'), 'utf8')) as {
-      dependencies?: Record<string, string>;
-    };
-    const coreName = Object.keys(engineManifest.dependencies ?? {}).find((name) => name.endsWith('-core'));
-    if (!coreName) {
+    browser = await launchPlain();
+    const commandLine = await readBrowserCommandLine(browser);
+    if (!commandLine) {
       return null;
     }
-    const requireFromEngine = createRequire(path.join(enginePackageDirectory, 'package.json'));
-    const coreDirectory = path.dirname(requireFromEngine.resolve(`${coreName}/package.json`));
-    // Required by file path: the package's export map does not list it.
-    const switchesModule = requireFromEngine(path.join(coreDirectory, 'lib', 'server', 'chromium', 'chromiumSwitches.js')) as {
-      chromiumSwitches?: (assistantMode?: boolean, channel?: string) => unknown;
-    };
-    const switches = switchesModule.chromiumSwitches?.(false, undefined);
-    return Array.isArray(switches) && switches.every((value) => typeof value === 'string')
-      ? (switches as string[]).filter(Boolean)
-      : null;
+    const switches = commandLine.filter((value) => value.startsWith('--'));
+    learnedDefaults.set(key, switches);
+    return switches;
   } catch {
     return null;
+  } finally {
+    await browser?.close?.().catch(() => undefined);
   }
 }
 
@@ -105,7 +111,7 @@ export function planLaunchFlags(
 
   if (!defaults) {
     plan.problems.push(
-      "CloudCLI could not read the browser engine's default Chrome flags, so HTTPS-Upgrades and third-party storage partitioning stay off.",
+      "CloudCLI could not learn the browser engine's default Chrome flags, so HTTPS-Upgrades and third-party storage partitioning stay off.",
     );
   }
 
@@ -220,9 +226,10 @@ export async function readBrowserCommandLine(browser: any): Promise<string[] | n
 /** Why the sandbox is off for a browser, by executable, once Chrome has refused it there. */
 const sandboxUnavailable = new Map<string, string>();
 
-/** Forgets what was learned about the sandbox; for a reinstalled or removed runtime. */
-export function forgetSandboxResults(): void {
+/** Forgets what launches have learned (sandbox refusals, engine defaults); for a reinstalled or removed runtime. */
+export function forgetLaunchResults(): void {
   sandboxUnavailable.clear();
+  learnedDefaults.clear();
 }
 
 /**

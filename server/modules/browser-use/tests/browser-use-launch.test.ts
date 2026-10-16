@@ -8,8 +8,8 @@ import test from 'node:test';
 import {
   checkLaunchedSwitches,
   launchWithSandbox,
+  learnEngineDefaultSwitches,
   planLaunchFlags,
-  readEngineDefaultSwitches,
   reportLaunch,
   REENABLED_FEATURES,
 } from '@/modules/browser-use/browser-use-launch.js';
@@ -53,7 +53,7 @@ test('defaults that cannot be read keep the old GPU handling and say so', () => 
   assert.deepEqual(plan.args, ['--enable-features=CDPScreenshotNewSurface,Vulkan']);
   assert.deepEqual(plan.expectNotDisabled, [], 'nothing was re-enabled, so nothing is expected');
   assert.equal(plan.problems.length, 1);
-  assert.match(plan.problems[0]!, /could not read the browser engine's default Chrome flags/);
+  assert.match(plan.problems[0]!, /could not learn the browser engine's default Chrome flags/);
 });
 
 test('the check reads the last of each repeated switch, as Chrome does', () => {
@@ -99,43 +99,87 @@ test('the sandbox is tried first, and a refusal is remembered for the next launc
   }
 });
 
-/** A Playwright install to launch a real Chromium with, if this machine has one. */
-function findPlaywright(): string | null {
-  const candidates = [
-    path.join(os.homedir(), '.cloudcli', 'browser-use', 'runtime', 'node_modules', 'playwright'),
-    '/opt/node-tools/node_modules/playwright',
+test('the engine\'s defaults are learned from a plain launch, once per key; a failure is not kept', async () => {
+  let launches = 0;
+  const fakeBrowser = (args: string[]) => ({
+    newBrowserCDPSession: async () => ({
+      send: async () => ({ arguments: args }),
+      detach: async () => undefined,
+    }),
+    close: async () => undefined,
+  });
+  const launchPlain = async () => {
+    launches += 1;
+    return fakeBrowser(['/usr/bin/chrome', '--disable-features=HttpsUpgrades', 'about:blank']);
+  };
+
+  assert.deepEqual(await learnEngineDefaultSwitches('engine@1|chromium', launchPlain), ['--disable-features=HttpsUpgrades']);
+  await learnEngineDefaultSwitches('engine@1|chromium', launchPlain);
+  assert.equal(launches, 1, 'learned once for the same engine and browser');
+  await learnEngineDefaultSwitches('engine@2|chromium', launchPlain);
+  assert.equal(launches, 2, 'learned again after an engine update');
+
+  let attempts = 0;
+  const failing = async () => { attempts += 1; throw new Error('no browser'); };
+  assert.equal(await learnEngineDefaultSwitches('broken@1|chromium', failing), null);
+  assert.equal(await learnEngineDefaultSwitches('broken@1|chromium', failing), null);
+  assert.equal(attempts, 2, 'a failure is tried again next time');
+});
+
+/**
+ * Engine installs to launch a real browser with, where this machine has them:
+ * the runtime CloudCLI installs, Playwright from the container's tools, and
+ * any extra engine folders listed in BROWSER_USE_TEST_ENGINES (comma-separated,
+ * each optionally `folder=chrome-executable`, for an engine whose own Chromium
+ * build is not installed).
+ */
+function findEngines(): Array<{ directory: string; executablePath?: string }> {
+  const candidates: Array<{ directory: string; executablePath?: string }> = [
+    { directory: path.join(os.homedir(), '.cloudcli', 'browser-use', 'runtime', 'node_modules', 'playwright') },
+    { directory: path.join(os.homedir(), '.cloudcli', 'browser-use', 'runtime', 'node_modules', 'patchright') },
+    { directory: '/opt/node-tools/node_modules/playwright' },
+    ...(process.env.BROWSER_USE_TEST_ENGINES ?? '').split(',').filter(Boolean).map((entry) => {
+      const [directory, executablePath] = entry.split('=');
+      return { directory: directory!, executablePath };
+    }),
   ];
-  return candidates.find((candidate) => fs.existsSync(path.join(candidate, 'package.json'))) ?? null;
+  return candidates.filter((candidate) => fs.existsSync(path.join(candidate.directory, 'package.json')));
 }
 
-const playwrightDirectory = findPlaywright();
+for (const engine of findEngines()) {
+  const name = `${path.basename(engine.directory)} ${JSON.parse(fs.readFileSync(path.join(engine.directory, 'package.json'), 'utf8')).version}`;
 
-test('a real launch gets the planned flags, and one without them is reported', { skip: !playwrightDirectory }, async () => {
-  const playwright = createRequire(import.meta.url)(playwrightDirectory!);
-  const defaults = readEngineDefaultSwitches(playwrightDirectory);
-  assert.ok(defaults && defaults.some((value) => value.startsWith('--disable-features=')), 'the engine\'s defaults are readable');
+  test(`${name}: a real launch gets the planned flags, and one without them is reported`, async () => {
+    const playwright = createRequire(import.meta.url)(engine.directory);
+    const launchWith = (options: Record<string, unknown>) => launchWithSandbox<any>(`integration-${name}`, (sandbox) =>
+      playwright.chromium.launch({
+        ...options,
+        chromiumSandbox: sandbox,
+        ...(engine.executablePath ? { executablePath: engine.executablePath } : {}),
+      }));
 
-  const plan = planLaunchFlags(defaults, [], []);
-  const launchWith = (options: Record<string, unknown>) => launchWithSandbox<any>('integration-chromium', (sandbox) =>
-    playwright.chromium.launch({ ...options, chromiumSandbox: sandbox }));
+    const defaults = await learnEngineDefaultSwitches(`integration-${name}`, async () => (await launchWith({})).result);
+    assert.ok(defaults?.some((value) => value.startsWith('--disable-features=')), 'the engine\'s defaults are learned');
 
-  const planned = await launchWith({ args: plan.args, ignoreDefaultArgs: plan.ignoreDefaultArgs });
-  try {
-    const report = await reportLaunch(planned.result, plan, planned);
-    assert.deepEqual(report.warnings, [], 'HTTPS-Upgrades and storage partitioning are on');
-  } finally {
-    await planned.result.close();
-  }
+    const plan = planLaunchFlags(defaults, [], []);
+    const planned = await launchWith({ args: plan.args, ignoreDefaultArgs: plan.ignoreDefaultArgs });
+    try {
+      const report = await reportLaunch(planned.result, plan, planned);
+      assert.deepEqual(report.warnings, [], 'HTTPS-Upgrades and storage partitioning are on');
+    } finally {
+      await planned.result.close();
+    }
 
-  // Chrome as the engine starts it: the changes did not take, and the check says so.
-  const unchanged = await launchWith({});
-  try {
-    const report = await reportLaunch(unchanged.result, plan, unchanged);
-    assert.deepEqual(report.warnings, [
-      'Chrome started with HttpsUpgrades still turned off.',
-      'Chrome started with ThirdPartyStoragePartitioning still turned off.',
-    ]);
-  } finally {
-    await unchanged.result.close();
-  }
-});
+    // Chrome as the engine starts it: the changes did not take, and the check says so.
+    const unchanged = await launchWith({});
+    try {
+      const report = await reportLaunch(unchanged.result, plan, unchanged);
+      assert.deepEqual(report.warnings, [
+        'Chrome started with HttpsUpgrades still turned off.',
+        'Chrome started with ThirdPartyStoragePartitioning still turned off.',
+      ]);
+    } finally {
+      await unchanged.result.close();
+    }
+  });
+}
