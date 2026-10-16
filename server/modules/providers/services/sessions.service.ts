@@ -15,7 +15,7 @@ import type {
   NormalizedMessage,
   WorkflowAgentActivity,
 } from '@/shared/types.js';
-import { AppError, sliceTailPage } from '@/shared/utils.js';
+import { AppError, buildCloudCliSessionName, sliceTailPage } from '@/shared/utils.js';
 
 /**
  * One session the running-sessions poll reports as busy.
@@ -93,12 +93,6 @@ type SessionDetails = {
   } | null;
 };
 
-const MAX_CLOUDCLI_SESSION_NAME_WORDS = 4;
-
-function buildCloudCliSessionName(initialMessage: string): string {
-  const words = initialMessage.trim().split(/\s+/).filter(Boolean);
-  return words.slice(0, MAX_CLOUDCLI_SESSION_NAME_WORDS).join(' ') || 'Untitled Session';
-}
 
 /**
  * Removes one file if it exists.
@@ -747,8 +741,14 @@ export const sessionsService = {
 
   /**
    * Renames one session by id without requiring the caller to pass provider.
+   *
+   * When the provider keeps titles in its transcript, the name is written
+   * there too, so the provider's own session lists show it. Once it is, the
+   * transcript is the record and session sync follows it, so a later rename
+   * from another tool shows up here as well. A session with no transcript
+   * yet, or a write that fails, keeps the name as one sync must not replace.
    */
-  renameSessionById(sessionId: string, summary: string): { sessionId: string; summary: string } {
+  async renameSessionById(sessionId: string, summary: string): Promise<{ sessionId: string; summary: string }> {
     const session = sessionsDb.getSessionById(sessionId);
     if (!session) {
       throw new AppError(`Session "${sessionId}" was not found.`, {
@@ -757,7 +757,22 @@ export const sessionsService = {
       });
     }
 
-    sessionsDb.updateSessionCustomName(sessionId, summary);
+    sessionsDb.updateSessionNameState(sessionId, summary, false);
+
+    const rename = providerRegistry.resolveProvider(session.provider as LLMProvider).rename;
+    if (rename && session.provider_session_id && session.jsonl_path) {
+      try {
+        await rename.renameSession({
+          providerSessionId: session.provider_session_id,
+          projectPath: session.project_path ?? '',
+          title: summary,
+        });
+        sessionsDb.updateSessionNameState(sessionId, summary, true);
+      } catch (error) {
+        console.warn(`[Sessions] Renamed "${sessionId}" here only; its transcript could not be retitled:`, error);
+      }
+    }
+
     return { sessionId, summary };
   },
 };

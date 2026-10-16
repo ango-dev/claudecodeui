@@ -74,6 +74,31 @@ export interface IProvider {
    * its absence is what makes "fork session" unavailable.
    */
   readonly fork?: IProviderFork;
+  /**
+   * Transcript retitling. Present only for providers whose transcript carries
+   * its own title, so a rename in CloudCLI reaches the provider's other tools.
+   */
+  readonly rename?: IProviderRename;
+}
+
+// ---------------------------
+//----------------- PROVIDER RENAME INTERFACE ------------
+/**
+ * Transcript-retitling contract for one provider.
+ */
+export interface IProviderRename {
+  /**
+   * Records `title` as the session's name in its own transcript, the way the
+   * provider's own rename command does, so every tool that lists the
+   * provider's sessions shows it. Throws when the transcript cannot be found
+   * or written.
+   */
+  renameSession(input: {
+    providerSessionId: string;
+    /** The session's working directory — how providers scope a session lookup. */
+    projectPath: string;
+    title: string;
+  }): Promise<void>;
 }
 
 // ---------------------------

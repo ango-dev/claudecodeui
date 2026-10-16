@@ -131,6 +131,11 @@ CREATE TABLE IF NOT EXISTS sessions (
     -- id mid-run, or equals \`session_id\` for sessions discovered on disk.
     provider_session_id TEXT,
     custom_name TEXT,
+    -- Whether \`custom_name\` is automatic: 1 while it is CloudCLI's placeholder
+    -- or the provider's own title, which session sync may update; 0 once the
+    -- user typed a name sync must keep; NULL for rows from before this column,
+    -- which sync decides from the transcript the first time it sees them.
+    custom_name_auto INTEGER,
     project_path TEXT,
     jsonl_path TEXT,
     -- Model and reasoning effort this session runs with. Written when the user

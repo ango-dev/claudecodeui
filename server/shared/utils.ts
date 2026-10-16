@@ -950,6 +950,21 @@ export function normalizeSessionName(rawValue: string | undefined, fallback: str
   return normalized.slice(0, 120);
 }
 
+const MAX_CLOUDCLI_SESSION_NAME_WORDS = 4;
+
+/**
+ * The placeholder name CloudCLI gives a chat it starts: the first four whole
+ * words of its first message, or "Untitled Session" when there are none.
+ *
+ * Used by the sessions service when it creates the row, and by the Claude
+ * session synchronizer to recognise a row still carrying that placeholder,
+ * so Claude's own title can replace it once the transcript has one.
+ */
+export function buildCloudCliSessionName(initialMessage: string): string {
+  const words = initialMessage.trim().split(/\s+/).filter(Boolean);
+  return words.slice(0, MAX_CLOUDCLI_SESSION_NAME_WORDS).join(' ') || 'Untitled Session';
+}
+
 // ---------------------------
 //----------------- PROVIDER SESSION VALUE NORMALIZATION UTILITIES ------------
 /**

@@ -431,6 +431,19 @@ const addForkedFromSessionIdColumn = (db: Database): void => {
 };
 
 /**
+ * Adds `custom_name_auto`, which says whether session sync may replace a
+ * session's name with the provider's own title.
+ *
+ * Left NULL for existing rows on purpose: whether an old name was typed by the
+ * user can only be told from the transcript, so session sync decides it the
+ * first time it reads each one.
+ */
+const addSessionNameAutoColumn = (db: Database): void => {
+  const columnNames = getTableInfo(db, 'sessions').map((column) => column.name);
+  addColumnToTableIfNotExists(db, 'sessions', columnNames, 'custom_name_auto', 'INTEGER');
+};
+
+/**
  * Adds the `model` column that records which model each session runs with.
  *
  * Left NULL for pre-existing rows on purpose: the model resolver falls back to
@@ -533,6 +546,7 @@ export const runMigrations = (db: Database) => {
     addSessionModelColumn(db);
     addSessionEffortColumn(db);
     addForkedFromSessionIdColumn(db);
+    addSessionNameAutoColumn(db);
     ensureProjectsForSessionPaths(db);
     db.exec(SCHEDULED_MESSAGES_TABLE_SCHEMA_SQL);
 
