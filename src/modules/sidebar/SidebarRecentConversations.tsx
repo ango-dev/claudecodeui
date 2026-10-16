@@ -286,9 +286,15 @@ export default function SidebarRecentConversations({
                     : 'text-foreground hover:bg-accent/60',
                 )}
               >
-                {showOtherAgents && <LLMProviderLogo provider={conversation.provider} className="h-3.5 w-3.5 flex-shrink-0" />}
+                {showOtherAgents && (
+                  <LLMProviderLogo
+                    provider={conversation.provider}
+                    className={cn('h-3.5 w-3.5 flex-shrink-0', sessionRename !== null && 'invisible')}
+                  />
+                )}
 
-                <span className="min-w-0 flex-1">
+                {/* Hidden, not removed, while the rename editor covers the row: the row keeps its height. */}
+                <span className={cn('min-w-0 flex-1', sessionRename !== null && 'invisible')}>
                   <span className="block truncate text-[13px] font-normal leading-4">
                     {conversation.sessionTitle}
                   </span>

@@ -114,7 +114,8 @@ export default function SessionOptions({
   };
 
   return (
-    <div ref={containerRef} className={cn('flex items-center gap-1', className)}>
+    // While renaming, the editor spans the row; the row hides its own text under it.
+    <div ref={containerRef} className={cn('flex items-center gap-1', className, isEditing && 'left-1')}>
       {isEditing ? (
         <>
           <input
@@ -130,7 +131,7 @@ export default function SessionOptions({
               }
             }}
             onClick={(event) => event.stopPropagation()}
-            className="w-32 rounded border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+            className="min-w-0 flex-1 rounded border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
             autoFocus
           />
           <button

@@ -195,7 +195,8 @@ function SidebarSessionItem({
           onContextMenu={openContextMenu}
           onKeyDown={isSelecting ? handleSelectionKeyDown : undefined}
         >
-          <div className="flex w-full min-w-0 items-center gap-2">
+          {/* Hidden, not removed, while the rename editor covers the row: the row keeps its height. */}
+          <div className={cn('flex w-full min-w-0 items-center gap-2', isEditing && 'invisible')}>
             {showOtherAgents && <LLMProviderLogo provider={session.__provider} className="h-3.5 w-3.5 flex-shrink-0" />}
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
