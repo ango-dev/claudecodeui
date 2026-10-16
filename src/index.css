@@ -519,9 +519,13 @@
     opacity: 1 !important;
   }
   
+  /* WebKit paints the placeholder with the textarea's -webkit-text-fill-color,
+     which the dark rules above set to the text colour, so reset it here or
+     every placeholder reads as typed text on Safari and iPad. */
   .dark textarea::placeholder {
     color: hsl(var(--muted-foreground)) !important;
     opacity: 1 !important;
+    -webkit-text-fill-color: hsl(var(--muted-foreground)) !important;
   }
   
   /* More specific selector for chat input textarea */
@@ -564,6 +568,7 @@
   .dark textarea::-webkit-input-placeholder {
     color: hsl(var(--muted-foreground)) !important;
     opacity: 1 !important;
+    -webkit-text-fill-color: hsl(var(--muted-foreground)) !important;
   }
   
   /* Mozilla specific placeholder styles */
