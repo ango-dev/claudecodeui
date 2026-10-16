@@ -35,7 +35,17 @@ type SettingsDependencies = {
     remove(endpoint: string): void;
   };
   getVapidPublicKey(): string | null;
+  preferences: {
+    getPreferences(userId: number): Record<string, unknown>;
+  };
 };
+
+/**
+ * The user-preferences key behind "Show these sessions in VS Code". The
+ * settings page writes it through the shared user-preferences store, like
+ * every other synced setting.
+ */
+const SHOW_SESSIONS_IN_VS_CODE_KEY = 'showSessionsInVsCode';
 
 function requiredString(value: unknown, fieldName: string, code: string): string {
   const normalizedValue = typeof value === 'string' ? value.trim() : '';
@@ -149,6 +159,18 @@ export function createSettingsService(dependencies: SettingsDependencies) {
     },
     getVapidPublicKey() {
       return { publicKey: dependencies.getVapidPublicKey() };
+    },
+    /**
+     * Whether "Show these sessions in VS Code" is on. Off unless the user has
+     * stored exactly `true`; a run with no signed-in user is always off.
+     */
+    isVsCodeSessionListingEnabled(userId: string | number | null | undefined): boolean {
+      // Chat writers carry the id as a string or a number depending on the auth path.
+      const numericUserId = typeof userId === 'string' && userId.trim() ? Number(userId) : userId;
+      if (typeof numericUserId !== 'number' || !Number.isInteger(numericUserId)) {
+        return false;
+      }
+      return dependencies.preferences.getPreferences(numericUserId)[SHOW_SESSIONS_IN_VS_CODE_KEY] === true;
     },
     subscribeToPush(userId: number, input: Record<string, unknown>) {
       const endpoint = requiredString(input.endpoint, 'Endpoint', 'PUSH_SUBSCRIPTION_REQUIRED');

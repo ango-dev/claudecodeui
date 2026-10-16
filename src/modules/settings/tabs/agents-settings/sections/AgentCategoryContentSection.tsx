@@ -4,6 +4,7 @@ import { ProviderSkills } from '@/modules/skills';
 import AccountContent from '@/modules/settings/tabs/agents-settings/sections/content/AccountContent';
 import PermissionsContent from '@/modules/settings/tabs/agents-settings/sections/content/PermissionsContent';
 import OtherAgentsSwitch from '@/modules/settings/tabs/agents-settings/sections/OtherAgentsSwitch';
+import VsCodeSessionsSwitch from '@/modules/settings/tabs/agents-settings/sections/VsCodeSessionsSwitch';
 
 type AgentCategoryContentSectionProps = {
   selectedAgent: AgentProvider;
@@ -40,6 +41,7 @@ export default function AgentCategoryContentSection({
             authStatus={agentContextById[selectedAgent].authStatus}
             onLogin={agentContextById[selectedAgent].onLogin}
           />
+          {selectedAgent === 'claude' && <VsCodeSessionsSwitch />}
           <OtherAgentsSwitch />
         </>
       )}

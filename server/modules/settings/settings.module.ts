@@ -3,6 +3,7 @@ import {
   credentialsDb,
   notificationPreferencesDb,
   pushSubscriptionsDb,
+  userPreferencesDb,
 } from '@/modules/database/index.js';
 import {
   createNotificationEvent,
@@ -44,7 +45,18 @@ const settingsService = createSettingsService({
     remove: (endpoint) => pushSubscriptionsDb.removeSubscription(endpoint),
   },
   getVapidPublicKey: getPublicKey,
+  preferences: {
+    getPreferences: (userId) => userPreferencesDb.getPreferences(userId),
+  },
 });
 
 /** Settings router assembled for the authenticated server mount. */
 export const settingsRoutes = createSettingsRouter(settingsService);
+
+/**
+ * Whether the user has "Show these sessions in VS Code" on. Used by the
+ * providers module's Claude runtime, which reads it as each run starts.
+ */
+export function isVsCodeSessionListingEnabled(userId: string | number | null | undefined): boolean {
+  return settingsService.isVsCodeSessionListingEnabled(userId);
+}

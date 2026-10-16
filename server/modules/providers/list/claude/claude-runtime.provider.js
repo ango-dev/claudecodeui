@@ -28,7 +28,9 @@ import {
   CLAUDE_PREDEFINED_MODELS,
   CLAUDE_ULTRACODE_EFFORT
 } from '@/modules/providers/list/claude/claude-models.provider.js';
+import { listClaudeSessionInVsCode } from '@/modules/providers/list/claude/claude-vscode-listing.provider.js';
 import { resolveClaudeCodeExecutablePath } from '@/shared/claude-cli-path.js';
+import { isVsCodeSessionListingEnabled } from '@/modules/settings/index.js';
 import {
   createNotificationEvent,
   notifyBackgroundWorkCompleted,
@@ -962,6 +964,32 @@ async function queryClaudeSDK(command, options = {}, ws, context) {
   // once the turn's result reports the real one.
   let lastAssistantBudget = null;
 
+  // "Show these sessions in VS Code", read once as the run starts. When on,
+  // every turn ends by patching the transcript so the VS Code panel lists it;
+  // a patch that fails says so in the chat instead of leaving it hidden quietly.
+  let listInVsCode = false;
+  try {
+    listInVsCode = isVsCodeSessionListingEnabled(ws?.userId);
+  } catch (error) {
+    console.warn('[Claude SDK] Unable to read the VS Code listing setting:', error);
+  }
+  const listTranscriptInVsCode = async () => {
+    if (!listInVsCode || !capturedSessionId) {
+      return;
+    }
+    try {
+      await listClaudeSessionInVsCode(capturedSessionId);
+    } catch (error) {
+      console.error('[Claude SDK] Could not list the session in VS Code:', error);
+      ws.send(createNormalizedMessage({
+        kind: 'error',
+        content: `Couldn't list this session in VS Code: ${error.message} Claude Code may have changed how it saves sessions. Turn off "Show these sessions in VS Code" in Settings → Agents, or ask to have it fixed.`,
+        sessionId: capturedSessionId || sessionId || null,
+        provider: 'claude',
+      }));
+    }
+  };
+
   // A new turn supersedes any earlier one still holding this session's process
   // open, so held runs cannot stack up across a conversation.
   if (sessionKey()) {
@@ -1317,6 +1345,9 @@ async function queryClaudeSDK(command, options = {}, ws, context) {
           heldForBackgroundWork = false;
           releasePromptStream();
         }
+        // Every turn, follow-ups included: when the panel reads the file's
+        // tail, the newest line is the one it sees.
+        await listTranscriptInVsCode();
       } else if (idleReleaseTimer) {
         // Background activity after the turn — push the countdown back out.
         scheduleRelease();

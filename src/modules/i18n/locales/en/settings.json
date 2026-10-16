@@ -436,6 +436,10 @@
       "description": "Cursor, Codex and OpenCode.",
       "warning": "Not tested with this app. They may not work properly.",
       "saveFailed": "Failed to save."
+    },
+    "vsCodeSessions": {
+      "label": "Show these sessions in VS Code",
+      "description": "Lets the VS Code Claude Code panel list the sessions you start here. Applies to new sessions."
     }
   },
   "permissions": {

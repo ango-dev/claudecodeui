@@ -30,6 +30,8 @@ export type UserPreferences = {
   selectedProvider: string;
   /** Chat messages fetched per request when a session opens or scrolls back. */
   messagesPerPage: number;
+  /** Lets the VS Code Claude Code panel list Claude sessions started here; the server reads it as each run starts. */
+  showSessionsInVsCode: boolean;
 };
 
 export type UserPreferenceKey = keyof UserPreferences;
@@ -71,6 +73,7 @@ const LEGACY_STORAGE_KEYS: Record<UserPreferenceKey, string> = {
   selectedProvider: 'selected-provider',
   // Newer than the move to auth.db; there is nothing to migrate.
   messagesPerPage: '',
+  showSessionsInVsCode: '',
 };
 
 const PREFERENCE_KEYS = Object.keys(LEGACY_STORAGE_KEYS) as UserPreferenceKey[];
