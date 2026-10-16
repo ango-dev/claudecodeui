@@ -326,8 +326,9 @@ function mapCliOptionsToSDK(options = {}) {
  * @param {Object} queryInstance - SDK query instance
  * @param {Object} writer - WebSocket writer for reconnect support
  * @param {Function} releaseInput - Closes the held stdin stream so the CLI can exit
+ * @param {Function} continueTurn - Sends a new turn to this process while it is held; see queryClaudeSDK
  */
-function addSession(sessionId, queryInstance, writer = null, releaseInput = null) {
+function addSession(sessionId, queryInstance, writer = null, releaseInput = null, continueTurn = null) {
   const existing = activeSessions.get(sessionId);
   // A different live instance under the same key means an earlier run was
   // superseded without being stopped (e.g. an abort that raced run setup and
@@ -358,7 +359,8 @@ function addSession(sessionId, queryInstance, writer = null, releaseInput = null
     status: 'active',
     writer,
     // Re-registered mid-run once the provider session id lands; keep the closer.
-    releaseInput: releaseInput || carried?.releaseInput || null
+    releaseInput: releaseInput || carried?.releaseInput || null,
+    continueTurn: continueTurn || carried?.continueTurn || null
   });
   // The history reader reports a background agent as running or stopped by
   // whether this entry exists, and the cached history does not see this map.
@@ -834,22 +836,49 @@ async function buildPromptMessages(command, images, files, cwd) {
  * of the run and kills anything still going in the background, so the iterable
  * has to stay pending until we actually want the process gone.
  *
+ * While it is parked, `push` hands the CLI more messages: the user's next turn
+ * goes to the process already running, as the VS Code extension does, so the
+ * background work it holds keeps going instead of being stopped for a new one.
+ *
  * @param {Array<Object>} messages - SDKUserMessage records to send
- * @returns {{ stream: AsyncIterable, release: () => void }} Stream plus its closer
+ * @returns {{ stream: AsyncIterable, release: () => void, push: (next: Array<Object>) => boolean, isOpen: () => boolean }}
+ *   Stream, its closer, a way to send more, and whether more can still be sent
  */
 function createHeldPromptStream(messages) {
-  let release;
-  const held = new Promise((resolve) => { release = resolve; });
+  const pending = [...messages];
+  let wake = null;
+  let released = false;
 
   const stream = (async function* () {
-    for (const message of messages) {
-      yield message;
+    for (;;) {
+      while (pending.length > 0) {
+        yield pending.shift();
+      }
+      // Keeps stdin open — the CLI stays alive until release() is called.
+      if (released) {
+        return;
+      }
+      await new Promise((resolve) => { wake = resolve; });
+      wake = null;
     }
-    // Keeps stdin open — the CLI stays alive until release() is called.
-    await held;
   })();
 
-  return { stream, release };
+  return {
+    stream,
+    release: () => {
+      released = true;
+      wake?.();
+    },
+    push: (next) => {
+      if (released) {
+        return false;
+      }
+      pending.push(...next);
+      wake?.();
+      return true;
+    },
+    isOpen: () => !released,
+  };
 }
 
 /**
@@ -918,7 +947,9 @@ async function loadMcpConfig(cwd) {
  * @returns {Promise<void>}
  */
 async function queryClaudeSDK(command, options = {}, ws, context) {
-  const { sessionId, sessionSummary } = options;
+  const { sessionId } = options;
+  // Reassigned, with `ws`, when the held process takes a later turn (continueTurn).
+  let { sessionSummary } = options;
   // Callers pass the stable app session id; the SDK only understands the
   // provider-native id recorded on the session row.
   const providerSessionId = context.resolveProviderSessionId(sessionId);
@@ -963,6 +994,14 @@ async function queryClaudeSDK(command, options = {}, ws, context) {
   // The newest main-thread reading and its model, kept to correct its window
   // once the turn's result reports the real one.
   let lastAssistantBudget = null;
+  // Callers waiting on a turn this process took while held (continueTurn);
+  // settled at the turn's `result`, or when the process ends first.
+  const turnWaiters = [];
+  const settleTurnWaiters = () => {
+    for (const resolve of turnWaiters.splice(0)) {
+      resolve();
+    }
+  };
 
   // "Show these sessions in VS Code", read once as the run starts. When on,
   // every turn ends by patching the transcript so the VS Code panel lists it;
@@ -990,9 +1029,19 @@ async function queryClaudeSDK(command, options = {}, ws, context) {
     }
   };
 
-  // A new turn supersedes any earlier one still holding this session's process
-  // open, so held runs cannot stack up across a conversation.
+  // A process held open for background work takes the session's next turn
+  // itself when it can, so that work carries on and can still report back
+  // (see continueTurn). Otherwise the new turn supersedes it, so held runs
+  // cannot stack up across a conversation.
   if (sessionKey()) {
+    const held = getSession(sessionKey());
+    const continued = held?.continueTurn
+      ? await held.continueTurn({ command, options, ws })
+      : null;
+    if (continued) {
+      await continued.done;
+      return;
+    }
     releaseHeldSession(sessionKey());
   }
 
@@ -1173,9 +1222,104 @@ async function queryClaudeSDK(command, options = {}, ws, context) {
       });
     }
 
+    // A process starts with its working directory and effort for good; only
+    // a fresh one can change them.
+    const spawnCwd = options.cwd;
+    const spawnEffort = resolveClaudeEffort(sdkOptions.model, options.effort, effortModels);
+
+    // Takes the user's next turn into this process while it is held open for
+    // background work, rather than a new process replacing it: the work keeps
+    // running and can still report back, as in the VS Code extension.
+    //
+    // Resolves to null when this process cannot take the turn, and the caller
+    // starts a fresh one as before: it is not idling in its hold, the turn
+    // edits an earlier message (which resumes the transcript partway), or it
+    // needs a working directory or effort the process was not started with.
+    // Model, permission mode and tool rules are switched on the live process.
+    const continueTurn = async ({ command: nextCommand, options: nextOptions, ws: nextWs }) => {
+      const canTakeTurn = () => heldForBackgroundWork
+        && turnCompleteSent
+        && heldPrompt.isOpen()
+        && !supersededInstances.has(queryInstance);
+      if (!canTakeTurn()) {
+        return null;
+      }
+      if (nextOptions.resumeAnchorId || nextOptions.resumeFromScratch || nextOptions.cwd !== spawnCwd) {
+        return null;
+      }
+
+      const nextModel = (await context.resolveResumeModel(sessionId, nextOptions.model)) || nextOptions.model;
+      const nextSdkOptions = mapCliOptionsToSDK({
+        ...nextOptions,
+        providerSessionId,
+        model: nextModel,
+        effortModels,
+      });
+      if (resolveClaudeEffort(nextSdkOptions.model, nextOptions.effort, effortModels) !== spawnEffort) {
+        return null;
+      }
+
+      let nextPrompt;
+      try {
+        if (nextSdkOptions.model !== sdkOptions.model) {
+          await queryInstance.setModel(nextSdkOptions.model);
+        }
+        const nextPermissionMode = nextSdkOptions.permissionMode ?? 'default';
+        if (nextPermissionMode !== (sdkOptions.permissionMode ?? 'default')) {
+          await queryInstance.setPermissionMode(nextPermissionMode);
+        }
+        nextPrompt = await buildPromptMessages(nextCommand, nextOptions.images, nextOptions.files, nextOptions.cwd);
+      } catch (error) {
+        console.warn('[Claude SDK] The held process could not take the next turn; starting a new one:', error?.message || error);
+        return null;
+      }
+      // The awaits above gave the hold time to end.
+      if (!canTakeTurn()) {
+        return null;
+      }
+
+      sdkOptions.model = nextSdkOptions.model;
+      sdkOptions.permissionMode = nextSdkOptions.permissionMode;
+      sdkOptions.allowedTools = nextSdkOptions.allowedTools;
+      sdkOptions.disallowedTools = nextSdkOptions.disallowedTools;
+
+      // From here this run streams to the new turn's writer, and every
+      // closure above (approvals, notifications) follows it.
+      ws = nextWs;
+      sessionSummary = nextOptions.sessionSummary;
+      try {
+        listInVsCode = isVsCodeSessionListingEnabled(ws?.userId);
+      } catch (error) {
+        console.warn('[Claude SDK] Unable to read the VS Code listing setting:', error);
+      }
+      const entry = getSession(sessionKey());
+      if (entry) {
+        entry.writer = nextWs;
+      }
+      if (capturedSessionId && typeof ws.setSessionId === 'function') {
+        ws.setSessionId(capturedSessionId);
+      }
+
+      // A turn of its own again: the hold, and what the last turn started, are
+      // decided afresh at this turn's `result`.
+      if (idleReleaseTimer) {
+        clearTimeout(idleReleaseTimer);
+        idleReleaseTimer = null;
+      }
+      heldForBackgroundWork = false;
+      turnCompleteSent = false;
+      backgroundWorkPending = false;
+      sawTaskEventThisTurn = false;
+      assistantBudgetSent = false;
+
+      const done = new Promise((resolve) => { turnWaiters.push(resolve); });
+      heldPrompt.push(nextPrompt);
+      return { done };
+    };
+
     // Track the query instance for abort capability
     if (sessionKey()) {
-      addSession(sessionKey(), queryInstance, ws, releasePromptStream);
+      addSession(sessionKey(), queryInstance, ws, releasePromptStream, continueTurn);
     }
 
     // Process streaming messages
@@ -1185,7 +1329,7 @@ async function queryClaudeSDK(command, options = {}, ws, context) {
       if (message.session_id && !capturedSessionId) {
 
         capturedSessionId = message.session_id;
-        addSession(sessionKey(), queryInstance, ws, releasePromptStream);
+        addSession(sessionKey(), queryInstance, ws, releasePromptStream, continueTurn);
 
         // Set session ID on writer
         if (ws.setSessionId && typeof ws.setSessionId === 'function') {
@@ -1317,6 +1461,9 @@ async function queryClaudeSDK(command, options = {}, ws, context) {
             sessionName: sessionSummary
           });
         }
+        // A caller that handed this process its turn (continueTurn) is done.
+        settleTurnWaiters();
+
         // Work started during this turn, or work from an earlier turn that
         // has not settled yet (a follow-up turn reports one task in while
         // another is still going), is still running. Hold the process open
@@ -1434,6 +1581,8 @@ async function queryClaudeSDK(command, options = {}, ws, context) {
       idleReleaseTimer = null;
     }
     releasePromptStream();
+    // A turn handed over by continueTurn ends with the process at the latest.
+    settleTurnWaiters();
   }
 }
 

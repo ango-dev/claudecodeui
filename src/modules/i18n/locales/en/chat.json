@@ -286,8 +286,8 @@
       "agent": "Agent {{description}}",
       "command": "Command {{description}}",
       "count": "{{count}} tasks",
-      "sendAnyway": "This session still has background work running:\n{{work}}\n\nA new message starts a new turn, which stops that work; anything it has not reported yet is lost. Send anyway?",
-      "sendAnywayConfirm": "Send anyway"
+      "editAnyway": "This session still has background work running:\n{{work}}\n\nEditing a message restarts the session, which stops that work; anything it has not reported yet is lost. Edit anyway?",
+      "editAnywayConfirm": "Edit anyway"
     },
     "controls": {
       "stopGeneration": "Stop Generation",

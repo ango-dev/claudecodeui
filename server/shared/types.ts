@@ -649,6 +649,9 @@ export type ProviderRuntimeContext = {
   createQuery?: (input: { prompt: AsyncIterable<unknown>; options: AnyRecord }) => AsyncIterable<unknown> & {
     interrupt(): Promise<void>;
     stopTask?(taskId: string): Promise<void>;
+    /** Live switches a held process takes when the next turn changes model or permission mode. */
+    setModel?(model?: string): Promise<void>;
+    setPermissionMode?(mode: string): Promise<void>;
   };
 };
 

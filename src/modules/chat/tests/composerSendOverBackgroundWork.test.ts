@@ -9,9 +9,10 @@ import type { PermissionMode, Project, ProjectSession, SessionActivityMap } from
 
 /**
  * A session whose turn has ended with background work still running keeps
- * its composer usable — but a new turn replaces the CLI process that work
- * runs under, so the work is stopped or finishes where nothing listens. The
- * composer says so and asks before sending; nothing else in the app does.
+ * its composer usable, and a new message goes to the process that work runs
+ * under, so the work carries on. An edit is different: it resumes the
+ * transcript partway in a new process, which stops the work, so the composer
+ * says so and asks before sending the edit.
  */
 
 const PROJECT: Project = { projectId: 'project-1', displayName: 'Project One', fullPath: '/tmp/project-one' };
@@ -32,7 +33,7 @@ const backgroundOnly: SessionActivityMap = new Map([[
   },
 ]]);
 
-const submit = async (processingSessions: SessionActivityMap) => {
+const submit = async (processingSessions: SessionActivityMap, { edit = false } = {}) => {
   const sent: Array<{ type: string }> = [];
   const view = renderHook(() =>
     useChatComposerState({
@@ -56,9 +57,17 @@ const submit = async (processingSessions: SessionActivityMap) => {
       setPendingPermissionRequests: () => undefined,
     }),
   );
+  if (edit) {
+    await act(async () => {
+      view.result.current.beginEditMessage({ type: 'user', content: 'earlier', transcriptAnchorId: 'u-anchor', timestamp: new Date() } as never);
+    });
+  }
   await act(async () => { view.result.current.setInput('hello'); });
   await act(async () => { await view.result.current.handleSubmit({ preventDefault: () => undefined } as never); });
-  return { sends: sent.filter((message) => message.type === 'chat.send'), view };
+  return {
+    sends: sent.filter((message) => message.type === 'chat.send' || message.type === 'chat.edit-send'),
+    view,
+  };
 };
 
 const confirm = vi.fn<(message?: string) => boolean>();
@@ -75,9 +84,16 @@ afterEach(() => {
   localStorage.clear();
 });
 
-test('sending on a session with background work asks first, naming the session\'s own tasks', async () => {
+test('a message on a session with background work is sent without asking: the work carries on', async () => {
+  const { sends } = await submit(backgroundOnly);
+
+  assert.equal(confirm.mock.calls.length, 0);
+  assert.equal(sends.length, 1);
+});
+
+test('editing a message while background work runs asks first, naming the session\'s own tasks', async () => {
   confirm.mockReturnValue(false);
-  const { sends, view } = await submit(backgroundOnly);
+  const { sends, view } = await submit(backgroundOnly, { edit: true });
 
   assert.equal(confirm.mock.calls.length, 1);
   assert.equal(
@@ -85,21 +101,22 @@ test('sending on a session with background work asks first, naming the session\'
     'This session still has background work running:\n'
     + '• Workflow frontend-architecture-audit\n'
     + '• Agent Survey the repo\n\n'
-    + 'A new message starts a new turn, which stops that work; anything it has not reported yet is lost. Send anyway?',
+    + 'Editing a message restarts the session, which stops that work; anything it has not reported yet is lost. Edit anyway?',
   );
   assert.equal(sends.length, 0, 'declined: nothing is sent');
   assert.equal(view.result.current.input, 'hello', 'and the draft stays in the composer');
 });
 
-test('confirming sends the message', async () => {
+test('confirming sends the edit', async () => {
   confirm.mockReturnValue(true);
-  const { sends } = await submit(backgroundOnly);
+  const { sends } = await submit(backgroundOnly, { edit: true });
 
   assert.equal(sends.length, 1);
+  assert.equal(sends[0]?.type, 'chat.edit-send');
 });
 
-test('a session with nothing in the background sends without asking', async () => {
-  const { sends } = await submit(new Map());
+test('an edit on a session with nothing in the background is sent without asking', async () => {
+  const { sends } = await submit(new Map(), { edit: true });
 
   assert.equal(confirm.mock.calls.length, 0);
   assert.equal(sends.length, 1);

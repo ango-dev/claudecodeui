@@ -868,20 +868,21 @@ export function useChatComposerState({
         });
       }
 
-      // A new turn replaces the CLI process a session's background work runs
-      // under: the agents, workflows and commands it still has going are
-      // stopped, or finish where nothing is listening. Sending is the user's
-      // call, but not one to make for them.
+      // A message goes to the process a session's background work runs under,
+      // so that work carries on. An edit cannot: it resumes the transcript
+      // partway, in a new process, and the agents, workflows and commands the
+      // old one still has going are stopped. Editing is the user's call, but
+      // not one to make for them.
       const backgroundActivity = processingSessionsRef.current?.get(targetSessionId);
-      if (backgroundActivity?.background) {
+      if (editingAnchorId && backgroundActivity?.background) {
         const work = ownBackgroundTasks(backgroundActivity.tasks ?? [])
           .map((task) => `• ${describeBackgroundTask(task, t)}`)
           .join('\n');
-        const confirmed = await confirmDialog(t('claudeStatus.backgroundTask.sendAnyway', {
+        const confirmed = await confirmDialog(t('claudeStatus.backgroundTask.editAnyway', {
           work,
-          defaultValue: 'This session still has background work running:\n{{work}}\n\nA new message starts a new turn, which stops that work; anything it has not reported yet is lost. Send anyway?',
+          defaultValue: 'This session still has background work running:\n{{work}}\n\nEditing a message restarts the session, which stops that work; anything it has not reported yet is lost. Edit anyway?',
         }), {
-          confirmLabel: t('claudeStatus.backgroundTask.sendAnywayConfirm', 'Send anyway'),
+          confirmLabel: t('claudeStatus.backgroundTask.editAnywayConfirm', 'Edit anyway'),
           destructive: true,
         });
         if (!confirmed) {
