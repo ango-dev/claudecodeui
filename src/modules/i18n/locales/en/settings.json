@@ -439,7 +439,7 @@
     },
     "vsCodeSessions": {
       "label": "Show these sessions in VS Code",
-      "description": "Lets the VS Code Claude Code panel list the sessions you start here. Applies to new sessions."
+      "description": "Lets the VS Code Claude Code panel and claude --resume list the sessions you start here. Applies from each session's next message; turning it off doesn't hide sessions already listed."
     }
   },
   "permissions": {
