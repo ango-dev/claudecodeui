@@ -334,6 +334,12 @@ export function getAudioServer(): Promise<string> {
   fs.mkdirSync(STATE_DIRECTORY, { recursive: true, mode: 0o700 });
   fs.writeFileSync(OWN_PULSE_DIRECTORY_FILE, socketDirectory);
   const socket = path.join(socketDirectory, 'pulse.sock');
+  // Kept off the desktop's session D-Bus: PulseAudio claims org.PulseAudio1
+  // there even with -n, and refuses to start when the desktop's own sound
+  // server (PulseAudio, or PipeWire's stand-in) already holds it. This one is
+  // reached only through its socket and needs no bus. DISPLAY goes too, or
+  // libdbus finds the desktop's bus through the X server instead.
+  const { DBUS_SESSION_BUS_ADDRESS: _sessionBus, DISPLAY: _display, ...audioEnv } = process.env;
   const child = spawn(binary, [
     // -n: none of the system's default modules (no real sound cards, no D-Bus).
     '-n', '--daemonize=no', '--exit-idle-time=-1', '--use-pid-file=false', '--log-target=stderr',
@@ -341,7 +347,7 @@ export function getAudioServer(): Promise<string> {
     '-L', 'module-null-sink sink_name=speakers sink_properties=device.description=Speakers',
     '-L', 'module-null-source source_name=microphone description=Microphone',
   ], {
-    env: { ...process.env, HOME: OWN_HOME, XDG_RUNTIME_DIR: socketDirectory, PULSE_RUNTIME_PATH: socketDirectory },
+    env: { ...audioEnv, HOME: OWN_HOME, XDG_RUNTIME_DIR: socketDirectory, PULSE_RUNTIME_PATH: socketDirectory },
     stdio: ['ignore', 'ignore', 'pipe'],
   });
   audioProcess = child;
