@@ -32,6 +32,8 @@ type BrowserGraphicsCheckProps = {
   /** Saving disabled while another settings change is in flight. */
   disabled: boolean;
   onGpuChange: (gpu: BrowserGpuStatus['setting']) => void;
+  /** Called after a check: it started a browser, so the launch report changed. */
+  onChecked?: () => void;
   t: TFunction;
 };
 
@@ -74,7 +76,7 @@ function stepsFor(gpu: BrowserGpuStatus, platform: string, t: TFunction): Step[]
  * fingerprinting. The check starts a browser exactly as a session would and
  * reports what WebGL shows; when that is not the GPU, it says what to change.
  */
-export default function BrowserGraphicsCheck({ gpu, platform, disabled, onGpuChange, t }: BrowserGraphicsCheckProps) {
+export default function BrowserGraphicsCheck({ gpu, platform, disabled, onGpuChange, onChecked, t }: BrowserGraphicsCheckProps) {
   // The last check's result, until settings change or it is run again.
   const [report, setReport] = useState<WebglReport | null>(null);
   // Guards the button while a browser starts for the check (a second or two).
@@ -94,6 +96,7 @@ export default function BrowserGraphicsCheck({ gpu, platform, disabled, onGpuCha
       setFailure(err instanceof ApiRequestError && typeof err.details === 'string' ? err.details : k('checkFailed'));
     } finally {
       setIsChecking(false);
+      onChecked?.();
     }
   };
 

@@ -931,6 +931,12 @@
       "install": "Install {{label}}",
       "installing": "Installing {{label}}...",
       "installFailed": "Failed to install {{label}}."
+    },
+    "launch": {
+      "sandboxOn": "Chrome's sandbox was on for the last browser started.",
+      "sandboxOff": "Chrome's sandbox was off for the last browser started: {{reason}} The browser still works, but a page that exploits a Chrome bug is less contained.",
+      "warningsTitle": "Chrome did not start with all of CloudCLI's flag changes:",
+      "warningsHint": "The browser engine may have changed how it starts Chrome. Ask to have CloudCLI updated."
     }
   },
   "mcpServersAdd": {

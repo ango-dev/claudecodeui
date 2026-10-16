@@ -11,6 +11,8 @@ import SettingsToggle from '@/modules/settings/SettingsToggle';
 import BrowserAdminRightsNotice from '@/modules/settings/tabs/browser-use-settings/BrowserAdminRightsNotice';
 import type { BrowserEngineChoice } from '@/modules/settings/tabs/browser-use-settings/BrowserAdminRightsNotice';
 import BrowserGraphicsCheck from '@/modules/settings/tabs/browser-use-settings/BrowserGraphicsCheck';
+import BrowserLaunchStatus from '@/modules/settings/tabs/browser-use-settings/BrowserLaunchStatus';
+import type { BrowserLaunchReport } from '@/modules/settings/tabs/browser-use-settings/BrowserLaunchStatus';
 import type { BrowserGpuStatus } from '@/modules/settings/tabs/browser-use-settings/BrowserGraphicsCheck';
 import BrowserInstalledEngines from '@/modules/settings/tabs/browser-use-settings/BrowserInstalledEngines';
 import BrowserMissingHelperNotice from '@/modules/settings/tabs/browser-use-settings/BrowserMissingHelperNotice';
@@ -44,6 +46,8 @@ type BrowserUseStatus = {
   engine: BrowserUseEngine;
   browser: BrowserUseBrowser;
   browserExecutablePath: string | null;
+  /** How the last browser started: Chrome's sandbox and any flag that did not take. */
+  launch: BrowserLaunchReport | null;
   isAdministrator: boolean;
   platform: string;
   /** The engine's CLI by full path, for the admin commands shown to run by hand. */
@@ -354,9 +358,12 @@ export default function BrowserUseSettingsTab() {
                 platform={status.platform}
                 disabled={isSaving}
                 onGpuChange={(gpu) => void updateSettings({ gpu })}
+                onChecked={() => void reloadStatus()}
                 t={t}
               />
             )}
+
+            {status && <BrowserLaunchStatus report={status.launch ?? null} t={t} />}
 
             {statusMatchesSettings && status && !(status.playwrightInstalled && status.chromiumInstalled) && (
               <BrowserAdminRightsNotice

@@ -12,6 +12,14 @@ import { providerMcpService } from '@/modules/providers/index.js';
 import { findApplicationRoot, getModuleDirectory } from '@/shared/utils.js';
 
 import { findPulseAudio, findWindowManager, findXvfb, getAudioServer, getVirtualDisplay, stopVirtualDisplay } from './browser-use-display.js';
+import {
+  forgetSandboxResults,
+  launchWithSandbox,
+  planLaunchFlags,
+  readEngineDefaultSwitches,
+  reportLaunch,
+} from './browser-use-launch.js';
+import type { LaunchFlagPlan, LaunchReport } from './browser-use-launch.js';
 import { getBrowserUseRuntime } from './browser-use-runtime.js';
 
 const require = createRequire(import.meta.url);
@@ -706,12 +714,9 @@ const GPU_ARGS = ['--use-angle=vulkan'];
 const GPU_FEATURES = ['Vulkan', 'DefaultANGLEVulkan', 'VulkanFromANGLE'];
 
 /**
- * The features Playwright and Patchright enable by default, in one
- * --enable-features flag of their own. Chrome keeps only the last
- * --enable-features it is given, so adding ours would silently drop theirs
- * (CDPScreenshotNewSurface, used for screenshots): their flag is left out and
- * its features join ours in one flag. Should an engine change its default,
- * leaving out no longer matches, and its flag simply comes first again.
+ * What Playwright and Patchright are assumed to enable by default when their
+ * own list cannot be read (see browser-use-launch.ts, which reads it and
+ * reports a launch whose flags did not take).
  */
 const ENGINE_DEFAULT_FEATURES = ['CDPScreenshotNewSurface'];
 
@@ -780,6 +785,8 @@ type WebglReport = {
   renderer: string | null;
   vendor: string | null;
   webgl2: boolean;
+  /** How the check's browser started: its sandbox, and any flag that did not take. */
+  launch?: LaunchReport;
 };
 
 /** Run in the page: WebGL's renderer as the page sees it (a string, as the server has no DOM types). */
@@ -1017,6 +1024,13 @@ async function buildLaunchOptions(settings: BrowserUseSettings, readiness: Runti
   if (settings.timezone) {
     env.TZ = settings.timezone;
   }
+  // The engine's own default switches, changed where CloudCLI needs to: its
+  // feature lists are replaced whole, and each launch is checked afterwards.
+  const flagPlan = planLaunchFlags(
+    readEngineDefaultSwitches(resolveEnginePackage(settings.engine)),
+    useGpu ? GPU_FEATURES : [],
+    ENGINE_DEFAULT_FEATURES,
+  );
   const launchOptions = {
     headless: !withWindow,
     args: [
@@ -1028,9 +1042,9 @@ async function buildLaunchOptions(settings: BrowserUseSettings, readiness: Runti
         ? [`--window-size=${BROWSER_WINDOW_SIZE.width},${BROWSER_WINDOW_SIZE.height}`, '--window-position=0,0']
         : []),
       ...(useGpu ? GPU_ARGS : []),
-      ...(useGpu ? [`--enable-features=${[...ENGINE_DEFAULT_FEATURES, ...GPU_FEATURES].join(',')}`] : []),
+      ...flagPlan.args,
     ],
-    ...(useGpu ? { ignoreDefaultArgs: [`--enable-features=${ENGINE_DEFAULT_FEATURES.join(',')}`] } : {}),
+    ...(flagPlan.ignoreDefaultArgs.length > 0 ? { ignoreDefaultArgs: flagPlan.ignoreDefaultArgs } : {}),
     // Real Chrome, where chosen: readiness found it in its standard place or
     // at the location set in Settings.
     ...(settings.browser === 'chrome' && readiness.chromiumExecutablePath
@@ -1045,7 +1059,43 @@ async function buildLaunchOptions(settings: BrowserUseSettings, readiness: Runti
     serviceWorkers: 'block',
     ...(settings.timezone && process.platform !== 'linux' ? { timezoneId: settings.timezone } : {}),
   };
-  return { launchOptions, contextOptions };
+  // Which browser binary this is, for remembering where the sandbox fails.
+  const browserKey = launchOptions.executablePath ?? `${settings.engine}-chromium`;
+  return { launchOptions, contextOptions, flagPlan, browserKey };
+}
+
+/** The last browser launch's report, for Settings; null until one has started. */
+let lastLaunchReport: LaunchReport | null = null;
+
+/**
+ * Starts a browser for a session or the WebGL check: sandboxed where Chrome
+ * allows it, then checked against the launch's flag plan. The report is kept
+ * for Settings and returned so the caller can pass any warning on.
+ */
+async function launchChecked<T>(
+  launchOptions: Record<string, unknown>,
+  flagPlan: LaunchFlagPlan,
+  browserKey: string,
+  launch: (options: Record<string, unknown>) => Promise<T>,
+  browserOf: (launched: T) => any,
+): Promise<{ launched: T; report: LaunchReport }> {
+  const { result, ...sandbox } = await launchWithSandbox(browserKey, (useSandbox) => launch({
+    ...launchOptions,
+    chromiumSandbox: useSandbox,
+  }));
+  const report = await reportLaunch(browserOf(result), flagPlan, sandbox);
+  lastLaunchReport = report;
+  if (report.warnings.length > 0) {
+    console.warn('[Browser] Chrome did not start as planned:', report.warnings.join(' '));
+  }
+  return { launched: result, report };
+}
+
+/** One line for the agent and the user when a launch's flags did not all take. */
+function launchWarningText(report: LaunchReport): string | null {
+  return report.warnings.length > 0
+    ? `Warning: ${report.warnings.join(' ')} The browser engine may have changed how it starts Chrome; ask to have CloudCLI updated.`
+    : null;
 }
 
 /**
@@ -1057,11 +1107,18 @@ async function probeWebgl(settings: BrowserUseSettings, readiness: RuntimeReadin
   let browser: any;
   launchesInProgress += 1;
   try {
-    const { launchOptions, contextOptions } = await buildLaunchOptions(settings, readiness);
-    browser = await readiness.playwright.chromium.launch(launchOptions);
+    const { launchOptions, contextOptions, flagPlan, browserKey } = await buildLaunchOptions(settings, readiness);
+    const { launched, report } = await launchChecked(
+      launchOptions,
+      flagPlan,
+      browserKey,
+      (options) => readiness.playwright.chromium.launch(options),
+      (launchedBrowser) => launchedBrowser,
+    );
+    browser = launched;
     const page = await (await browser.newContext(contextOptions)).newPage();
     await page.setContent('<!doctype html><title>WebGL check</title>');
-    return classifyWebgl(await page.evaluate(WEBGL_PROBE_SCRIPT));
+    return { ...classifyWebgl(await page.evaluate(WEBGL_PROBE_SCRIPT)), launch: report };
   } finally {
     await browser?.close().catch(() => undefined);
     launchesInProgress -= 1;
@@ -1267,6 +1324,8 @@ export const browserUseService = {
       engine: settings.engine,
       browser: settings.browser,
       browserExecutablePath: readiness.chromiumExecutablePath,
+      // How the last browser started: its sandbox, and any flag that did not take.
+      launch: lastLaunchReport,
       isAdministrator: isAdministrator(),
       platform: process.platform,
       engineCommand: engineCommand(settings.engine),
@@ -1366,11 +1425,16 @@ export const browserUseService = {
 
   async removeRuntime(engine: BrowserUseEngine, part: 'engine' | 'chromium') {
     const result = await removeRuntime(readEngine(engine), part, readSettings());
+    // A different browser build may refuse or accept the sandbox differently.
+    forgetSandboxResults();
+    lastLaunchReport = null;
     return { ...result, status: await this.getStatus() };
   },
 
   async installRuntime() {
     const result = await installRuntime(readSettings());
+    forgetSandboxResults();
+    lastLaunchReport = null;
     return {
       ...result,
       status: await this.getStatus(),
@@ -1437,19 +1501,36 @@ export const browserUseService = {
     let browser: any | undefined;
     let context: any | undefined;
     let page: any;
+    let launchReport: LaunchReport | null = null;
     launchesInProgress += 1;
 
     try {
-      const { launchOptions, contextOptions } = await buildLaunchOptions(settings, readiness);
+      const { launchOptions, contextOptions, flagPlan, browserKey } = await buildLaunchOptions(settings, readiness);
       if (profileName) {
         fs.mkdirSync(PROFILE_ROOT, { recursive: true });
-        context = await readiness.playwright.chromium.launchPersistentContext(getProfilePath(profileName), {
-          ...launchOptions,
-          ...contextOptions,
-        });
+        const started = await launchChecked(
+          launchOptions,
+          flagPlan,
+          browserKey,
+          (options) => readiness.playwright.chromium.launchPersistentContext(getProfilePath(profileName), {
+            ...options,
+            ...contextOptions,
+          }),
+          (persistentContext: any) => persistentContext.browser(),
+        );
+        context = started.launched;
+        launchReport = started.report;
         page = context.pages()[0] || await context.newPage();
       } else {
-        browser = await readiness.playwright.chromium.launch(launchOptions);
+        const started = await launchChecked(
+          launchOptions,
+          flagPlan,
+          browserKey,
+          (options) => readiness.playwright.chromium.launch(options),
+          (launchedBrowser) => launchedBrowser,
+        );
+        browser = started.launched;
+        launchReport = started.report;
         context = await browser.newContext(contextOptions);
         page = await context.newPage();
       }
@@ -1476,7 +1557,9 @@ export const browserUseService = {
       throw new Error('Settings changed while the browser was starting. Try again.');
     }
     session.status = 'ready';
-    session.message = 'Browser session is ready.';
+    // A flag that did not take is said here, where the agent will pass it on.
+    const launchWarning = launchReport ? launchWarningText(launchReport) : null;
+    session.message = launchWarning ? `Browser session is ready. ${launchWarning}` : 'Browser session is ready.';
     sessions.set(session.id, session);
     handles.set(session.id, { browser, context, page });
     await captureSession(session, page);
