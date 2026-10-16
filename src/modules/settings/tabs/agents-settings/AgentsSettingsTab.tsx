@@ -37,11 +37,15 @@ export default function AgentsSettingsTab({
   const showOtherAgents = useShowOtherAgents();
   const selectedAgent: AgentProvider = showOtherAgents ? chosenAgent : 'claude';
   const [selectedCategory, setSelectedCategory] = useState<AgentCategory>('account');
-  const visibleCategories = useMemo<AgentCategory[]>(() => (
-    selectedAgent === 'opencode'
-      ? ['account', 'permissions', 'mcp']
-      : ['account', 'permissions', 'mcp', 'skills']
-  ), [selectedAgent]);
+  const visibleCategories = useMemo<AgentCategory[]>(() => {
+    if (selectedAgent === 'opencode') {
+      return ['account', 'permissions', 'mcp'];
+    }
+    // Sessions holds Claude-only session settings (listing them in VS Code).
+    return selectedAgent === 'claude'
+      ? ['account', 'permissions', 'mcp', 'skills', 'sessions']
+      : ['account', 'permissions', 'mcp', 'skills'];
+  }, [selectedAgent]);
 
   const visibleAgents = useMemo<AgentProvider[]>(() => (
     showOtherAgents ? ['claude', 'cursor', 'codex', 'opencode'] : ['claude']

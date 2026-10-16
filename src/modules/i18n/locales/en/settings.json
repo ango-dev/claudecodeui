@@ -5,6 +5,7 @@
     "permissions": "Permissions",
     "mcpServers": "MCP Servers",
     "skills": "Skills",
+    "sessions": "Sessions",
     "appearance": "Appearance"
   },
   "account": {
@@ -439,7 +440,7 @@
     },
     "vsCodeSessions": {
       "label": "Show these sessions in VS Code",
-      "description": "Lets the VS Code Claude Code panel and claude --resume list the sessions you start here. Applies from each session's next message; turning it off doesn't hide sessions already listed."
+      "description": "Lets the VS Code Claude Code panel and <cmd>claude --resume</cmd> list the sessions you start here. Applies from each session's next message; turning it off doesn't hide sessions already listed."
     }
   },
   "permissions": {

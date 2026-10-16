@@ -41,7 +41,6 @@ export default function AgentCategoryContentSection({
             authStatus={agentContextById[selectedAgent].authStatus}
             onLogin={agentContextById[selectedAgent].onLogin}
           />
-          {selectedAgent === 'claude' && <VsCodeSessionsSwitch />}
           <OtherAgentsSwitch />
         </>
       )}
@@ -103,6 +102,8 @@ export default function AgentCategoryContentSection({
           }))}
         />
       )}
+
+      {selectedCategory === 'sessions' && selectedAgent === 'claude' && <VsCodeSessionsSwitch />}
 
       {selectedCategory === 'skills' && selectedAgent !== 'opencode' && (
         <ProviderSkills
