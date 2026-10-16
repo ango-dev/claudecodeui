@@ -32,6 +32,7 @@ import { describeBackgroundTask, ownBackgroundTasks } from '@/modules/chat/utils
 import { useFileMentions } from '@/modules/chat/hooks/useFileMentions';
 import { useInputHistory } from '@/modules/chat/hooks/useInputHistory';
 import { useSlashCommands } from '@/modules/chat/hooks/useSlashCommands';
+import { confirmDialog } from '@/shared/ui';
 
 type UseChatComposerStateArgs = {
   selectedProject: Project | null;
@@ -386,8 +387,9 @@ export function useChatComposerState({
     const { content, hasBashCommands } = result;
 
     if (hasBashCommands) {
-      const confirmed = window.confirm(
+      const confirmed = await confirmDialog(
         'This command contains bash commands that will be executed. Do you want to proceed?',
+        { confirmLabel: 'Run' },
       );
       if (!confirmed) {
         addMessage({
@@ -875,10 +877,13 @@ export function useChatComposerState({
         const work = ownBackgroundTasks(backgroundActivity.tasks ?? [])
           .map((task) => `• ${describeBackgroundTask(task, t)}`)
           .join('\n');
-        const confirmed = window.confirm(t('claudeStatus.backgroundTask.sendAnyway', {
+        const confirmed = await confirmDialog(t('claudeStatus.backgroundTask.sendAnyway', {
           work,
           defaultValue: 'This session still has background work running:\n{{work}}\n\nA new message starts a new turn, which stops that work; anything it has not reported yet is lost. Send anyway?',
-        }));
+        }), {
+          confirmLabel: t('claudeStatus.backgroundTask.sendAnywayConfirm', 'Send anyway'),
+          destructive: true,
+        });
         if (!confirmed) {
           return;
         }

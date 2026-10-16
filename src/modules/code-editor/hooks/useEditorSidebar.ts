@@ -3,6 +3,7 @@ import type { MouseEvent as ReactMouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { Project,CodeEditorDiffInfo,CodeEditorFile } from '@/shared/types';
+import { confirmDialog } from '@/shared/ui';
 
 type UseEditorSidebarOptions = {
   selectedProject: Project | null;
@@ -41,8 +42,10 @@ export const useEditorSidebar = ({
 
   // Returns whether the file was opened, i.e. false when the user kept the
   // unsaved buffer, so callers can skip follow-ups such as switching tabs.
+  // Synchronous unless there are unsaved changes to ask about; then the
+  // answer arrives as a promise once the user has replied.
   const handleFileOpen = useCallback(
-    (filePath: string, diffInfo: CodeEditorDiffInfo | null = null, line: number | null = null): boolean => {
+    (filePath: string, diffInfo: CodeEditorDiffInfo | null = null, line: number | null = null): boolean | Promise<boolean> => {
       // Only the open file of the same project (nested projects share absolute
       // paths) without a diff payload reuses the buffer; any other open reloads
       // it and would lose unsaved edits, so it asks like closing does.
@@ -52,30 +55,32 @@ export const useEditorSidebar = ({
         && openFile.projectId === selectedProject?.projectId
         && !openFile.diffInfo
         && !diffInfo;
-      if (
-        openFile !== null
-        && !reusesBuffer
-        && hasUnsavedChangesRef.current
+      const open = () => {
+        const normalizedPath = filePath.replace(/\\/g, '/');
+        const fileName = normalizedPath.split('/').pop() || filePath;
+
+        setEditingFile({
+          name: fileName,
+          path: filePath,
+          // DB projectId is forwarded to the editor so it can read/save files
+          // via `/api/file-tree/projects/:projectId/file` endpoints.
+          projectId: selectedProject?.projectId,
+          diffInfo,
+          line,
+        });
+        return true;
+      };
+
+      if (openFile !== null && !reusesBuffer && hasUnsavedChangesRef.current) {
         // No inline fallback here on purpose: CodeEditor's `requestClose` owns
         // the one for this key, and two copies would eventually disagree.
-        && !window.confirm(t('unsavedChanges.confirmClose'))
-      ) {
-        return false;
+        return confirmDialog(t('unsavedChanges.confirmClose'), {
+          confirmLabel: t('unsavedChanges.discard', 'Discard'),
+          destructive: true,
+        }).then((discard) => (discard ? open() : false));
       }
 
-      const normalizedPath = filePath.replace(/\\/g, '/');
-      const fileName = normalizedPath.split('/').pop() || filePath;
-
-      setEditingFile({
-        name: fileName,
-        path: filePath,
-        // DB projectId is forwarded to the editor so it can read/save files
-        // via `/api/file-tree/projects/:projectId/file` endpoints.
-        projectId: selectedProject?.projectId,
-        diffInfo,
-        line,
-      });
-      return true;
+      return open();
     },
     [selectedProject?.projectId, t],
   );

@@ -11,6 +11,7 @@ import {
   isMcpScope,
   isMcpTransport,
 } from '@/modules/mcp/utils/mcpFormatting';
+import { confirmDialog } from '@/shared/ui';
 
 type GlobalMcpServerResult = {
   provider: McpProvider;
@@ -486,7 +487,10 @@ export function useMcpServers({ selectedProvider, currentProjects }: UseMcpServe
 
   const deleteServer = useCallback(
     async (server: ProviderMcpServer) => {
-      if (!window.confirm(t('mcpServersAddErrors.deleteConfirm'))) {
+      if (!(await confirmDialog(t('mcpServersAddErrors.deleteConfirm'), {
+        confirmLabel: t('common:buttons.delete', 'Delete'),
+        destructive: true,
+      }))) {
         return;
       }
 

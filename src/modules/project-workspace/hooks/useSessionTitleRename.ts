@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent, RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { alertDialog } from '@/shared/ui';
+
 type UseSessionTitleRenameArgs = {
   /** The open session's id, or null when the header is not naming a session. */
   sessionId: string | null;
@@ -97,11 +99,11 @@ export function useSessionTitleRename({
     try {
       const renamed = await onRenameSession(targetSessionId, trimmed);
       if (!renamed) {
-        alert(t('sidebar:messages.renameSessionFailed'));
+        void alertDialog(t('sidebar:messages.renameSessionFailed'));
       }
     } catch (error) {
       console.error('[Workspace] Error renaming session:', error);
-      alert(t('sidebar:messages.renameSessionError'));
+      void alertDialog(t('sidebar:messages.renameSessionError'));
     } finally {
       // Only close this session's editor; a draft opened for another session
       // while the save was in flight belongs to that session.

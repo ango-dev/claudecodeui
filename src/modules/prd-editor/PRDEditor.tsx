@@ -9,6 +9,7 @@ import { ensurePrdExtension } from '@/modules/prd-editor/utils/fileName';
 import OverwriteConfirmModal from '@/modules/prd-editor/modals/OverwriteConfirmModal';
 import PrdEditorLoadingState from '@/modules/prd-editor/PrdEditorLoadingState';
 import PrdEditorWorkspace from '@/modules/prd-editor/PrdEditorWorkspace';
+import { alertDialog } from '@/shared/ui';
 
 type PRDEditorProps = {
   file?: PrdEditorFile | null;
@@ -87,7 +88,7 @@ export default function PRDEditor({
       }
 
       if (result.status === 'failed') {
-        alert(result.message);
+        void alertDialog(result.message);
       }
     },
     [content, fileName, savePrd],

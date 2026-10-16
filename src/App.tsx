@@ -9,6 +9,7 @@ import { WebSocketProvider } from '@/shared/context/WebSocketContext';
 import { PluginsProvider } from '@/modules/plugins';
 import { ProjectWorkspaceRoute } from '@/modules/project-workspace';
 import { i18n } from '@/modules/i18n';
+import { AppDialogHost } from '@/shared/ui';
 
 const DEPLOYMENT_ASSET_DIRECTORIES = new Set(['assets', 'static', 'icons', 'images']);
 
@@ -131,6 +132,8 @@ export default function App() {
             </PluginsProvider>
           </WebSocketProvider>
         </AuthProvider>
+        {/* Draws confirmDialog / alertDialog in the app's theme, instead of the browser's. */}
+        <AppDialogHost />
         </UiPreferencesProvider>
       </ThemeProvider>
     </I18nextProvider>

@@ -20,6 +20,7 @@ import CodeEditorLoadingState from '@/modules/code-editor/CodeEditorLoadingState
 import CodeEditorSurface from '@/modules/code-editor/CodeEditorSurface';
 import CodeEditorBinaryFile from '@/modules/code-editor/CodeEditorBinaryFile';
 import CodeEditorMediaPreview from '@/modules/code-editor/CodeEditorMediaPreview';
+import { confirmDialog } from '@/shared/ui';
 
 type CodeEditorProps = {
   file: CodeEditorFile;
@@ -81,10 +82,13 @@ export default function CodeEditor({
 
   // Every way of closing (Escape, the header X, the binary and media views)
   // goes through here: a dirty buffer asks first, a clean one closes at once.
-  const requestClose = useCallback(() => {
+  const requestClose = useCallback(async () => {
     if (
       hasUnsavedChanges
-      && !window.confirm(t('unsavedChanges.confirmClose', 'You have unsaved changes. Close this file and discard them?'))
+      && !(await confirmDialog(
+        t('unsavedChanges.confirmClose', 'You have unsaved changes. Close this file and discard them?'),
+        { confirmLabel: t('unsavedChanges.discard', 'Discard'), destructive: true },
+      ))
     ) {
       return;
     }

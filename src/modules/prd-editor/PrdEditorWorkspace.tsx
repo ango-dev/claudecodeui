@@ -6,6 +6,7 @@ import GenerateTasksModal from '@/modules/prd-editor/modals/GenerateTasksModal';
 import PrdEditorBody from '@/modules/prd-editor/PrdEditorBody';
 import PrdEditorFooter from '@/modules/prd-editor/PrdEditorFooter';
 import PrdEditorHeader from '@/modules/prd-editor/PrdEditorHeader';
+import { alertDialog } from '@/shared/ui';
 
 type PrdEditorWorkspaceProps = {
   content: string;
@@ -43,7 +44,7 @@ export default function PrdEditorWorkspace({
 
   const handleOpenGenerateTasks = () => {
     if (!content.trim()) {
-      alert('Please add content to the PRD before generating tasks.');
+      void alertDialog('Please add content to the PRD before generating tasks.');
       return;
     }
 

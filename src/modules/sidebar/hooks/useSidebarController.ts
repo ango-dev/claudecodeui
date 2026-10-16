@@ -15,6 +15,7 @@ import {
   readLegacyStarredProjectIds,
   readProjectSortOrder,
 } from '@/modules/sidebar/utils/sidebarStoredPreferences';
+import { alertDialog } from '@/shared/ui';
 
 
 type ArchivedSessionsApiPayload = {
@@ -645,7 +646,7 @@ export function useSidebarController({
           return next;
         });
         console.error('[Sidebar] Failed to toggle project star:', error);
-        alert(t('messages.updateProjectError'));
+        void alertDialog(t('messages.updateProjectError'));
       }
     };
 
@@ -684,7 +685,7 @@ export function useSidebarController({
       await onLoadMoreSessions(projectId);
     } catch (error) {
       console.error('[Sidebar] Failed to load more sessions:', error);
-      alert(t('messages.refreshError'));
+      void alertDialog(t('messages.refreshError'));
     } finally {
       setLoadingMoreProjects((previous) => {
         const next = new Set(previous);
@@ -890,11 +891,11 @@ export function useSidebarController({
           status: response.status,
           error: errorText,
         });
-        alert(t('messages.deleteSessionFailed'));
+        void alertDialog(t('messages.deleteSessionFailed'));
       }
     } catch (error) {
       console.error('[Sidebar] Error deleting session:', error);
-      alert(t('messages.deleteSessionError'));
+      void alertDialog(t('messages.deleteSessionError'));
     }
   }, [fetchArchivedSessions, onSessionDelete, pendingDeletion, t]);
 
@@ -1011,7 +1012,7 @@ export function useSidebarController({
           (current) => current ?? { projectId: selectionProjectId, sessionIds: new Set(failedSessionIds) },
         );
       }
-      alert(
+      void alertDialog(
         t('messages.deleteSessionsPartialFailure', {
           count: failedSessionIds.length,
           total: sessionIds.length,
@@ -1075,11 +1076,11 @@ export function useSidebarController({
         const err = data.error;
         const message =
           typeof err === 'string' ? err : err && typeof err === 'object' && err.message ? err.message : t('messages.deleteProjectFailed');
-        alert(message);
+        void alertDialog(message);
       }
     } catch (error) {
       console.error('Error deleting project:', error);
-      alert(t('messages.deleteProjectError'));
+      void alertDialog(t('messages.deleteProjectError'));
     } finally {
       setDeletingProjects((prev) => {
         const next = new Set(prev);
@@ -1131,7 +1132,7 @@ export function useSidebarController({
           status: response.status,
           error: errorText,
         });
-        alert(t('messages.restoreProjectFailed', 'Failed to restore project. Please try again.'));
+        void alertDialog(t('messages.restoreProjectFailed', 'Failed to restore project. Please try again.'));
         return;
       }
 
@@ -1141,7 +1142,7 @@ export function useSidebarController({
       ]);
     } catch (error) {
       console.error('[Sidebar] Error restoring project:', error);
-      alert(t('messages.restoreProjectError', 'Error restoring project. Please try again.'));
+      void alertDialog(t('messages.restoreProjectError', 'Error restoring project. Please try again.'));
     }
   }, [fetchArchivedSessions, onRefresh, t]);
 
@@ -1154,7 +1155,7 @@ export function useSidebarController({
           status: response.status,
           error: errorText,
         });
-        alert(t('messages.restoreSessionFailed', 'Failed to restore session. Please try again.'));
+        void alertDialog(t('messages.restoreSessionFailed', 'Failed to restore session. Please try again.'));
         return;
       }
 
@@ -1164,7 +1165,7 @@ export function useSidebarController({
       ]);
     } catch (error) {
       console.error('[Sidebar] Error restoring session:', error);
-      alert(t('messages.restoreSessionError', 'Error restoring session. Please try again.'));
+      void alertDialog(t('messages.restoreSessionError', 'Error restoring session. Please try again.'));
     }
   }, [fetchArchivedSessions, onRefresh, t]);
 
@@ -1188,7 +1189,7 @@ export function useSidebarController({
     ]);
     if (failedSessionIds.length > 0) {
       console.error('[Sidebar] Failed to restore sessions:', failedSessionIds);
-      alert(t('messages.restoreSessionsPartialFailure', {
+      void alertDialog(t('messages.restoreSessionsPartialFailure', {
         count: failedSessionIds.length,
         total: sessionIds.length,
         defaultValue: 'Could not restore {{count}} of {{total}} sessions. Please try again.',
@@ -1235,11 +1236,11 @@ export function useSidebarController({
           await onRefresh();
         } else {
           console.error('[Sidebar] Failed to rename session:', response.status);
-          alert(t('messages.renameSessionFailed'));
+          void alertDialog(t('messages.renameSessionFailed'));
         }
       } catch (error) {
         console.error('[Sidebar] Error renaming session:', error);
-        alert(t('messages.renameSessionError'));
+        void alertDialog(t('messages.renameSessionError'));
       } finally {
         setActiveRename(null);
       }
@@ -1271,7 +1272,7 @@ export function useSidebarController({
         } as ProjectSession);
       } catch (error) {
         console.error('[Sidebar] Error forking session:', error);
-        alert(t('messages.forkSessionError'));
+        void alertDialog(t('messages.forkSessionError'));
       }
     },
     [onSessionSelect, t],

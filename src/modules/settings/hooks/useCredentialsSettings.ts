@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/shared/api';
 import type { ApiKeyItem, CreatedApiKey, GithubCredentialItem } from '@/shared/types';
 import { copyTextToClipboard } from '@/shared/utils';
+import { confirmDialog } from '@/shared/ui';
 
 type ApiKeysResponse = {
   apiKeys?: ApiKeyItem[];
@@ -95,7 +96,7 @@ export function useCredentialsSettings({
   }, [fetchData, newKeyName]);
 
   const deleteApiKey = useCallback(async (keyId: string) => {
-    if (!window.confirm(confirmDeleteApiKeyText)) {
+    if (!(await confirmDialog(confirmDeleteApiKeyText, { confirmLabel: 'Delete', destructive: true }))) {
       return;
     }
 
@@ -161,7 +162,7 @@ export function useCredentialsSettings({
   }, [fetchData, newGithubDescription, newGithubName, newGithubToken]);
 
   const deleteGithubCredential = useCallback(async (credentialId: string) => {
-    if (!window.confirm(confirmDeleteGithubCredentialText)) {
+    if (!(await confirmDialog(confirmDeleteGithubCredentialText, { confirmLabel: 'Delete', destructive: true }))) {
       return;
     }
 

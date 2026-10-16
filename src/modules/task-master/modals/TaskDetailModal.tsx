@@ -18,6 +18,7 @@ import { cn,copyTextToClipboard } from '@/shared/utils';
 import { api } from '@/shared/api';
 import { useTaskMaster } from '@/modules/task-master/context/TaskMasterContext';
 import type { TaskId, TaskMasterTask, TaskReference } from '@/shared/types';
+import { alertDialog } from '@/shared/ui';
 
 type TaskDetailModalProps = {
   task: TaskMasterTask | null;
@@ -120,7 +121,7 @@ export default function TaskDetailModal({
       onEdit?.(editableTask);
     } catch (error) {
       console.error('Failed to save task changes:', error);
-      alert(error instanceof Error ? error.message : 'Failed to update task');
+      void alertDialog(error instanceof Error ? error.message : 'Failed to update task');
     } finally {
       setIsSaving(false);
     }
@@ -142,7 +143,7 @@ export default function TaskDetailModal({
       onStatusChange?.(task.id, nextStatus);
     } catch (error) {
       console.error('Failed to update task status:', error);
-      alert(error instanceof Error ? error.message : 'Failed to update task status');
+      void alertDialog(error instanceof Error ? error.message : 'Failed to update task status');
     }
   };
 

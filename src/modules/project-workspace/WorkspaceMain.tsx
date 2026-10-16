@@ -116,8 +116,14 @@ function WorkspaceMain({
   }, [setActiveTab]);
 
   const openFile = useCallback((filePath: string) => {
-    if (handleFileOpen(filePath)) {
+    // A promise means the editor is first asking about unsaved changes.
+    const opened = handleFileOpen(filePath);
+    if (opened === true) {
       setActiveTab('files');
+    } else if (opened !== false) {
+      void opened.then((didOpen) => {
+        if (didOpen) setActiveTab('files');
+      });
     }
   }, [handleFileOpen, setActiveTab]);
 

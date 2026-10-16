@@ -87,6 +87,8 @@ test('Escape with unsaved edits closes once the user accepts', async () => {
 
   typeInto(editor, 'hello edited');
   pressEscape();
+  // The answer arrives as a promise, as from the app's themed dialog.
+  await act(async () => {});
 
   assert.equal(confirm.mock.calls.length, 1);
   assert.equal(onClose.mock.calls.length, 1);
@@ -373,14 +375,15 @@ test('dirtiness is reported upward and reset when the editor unmounts', async ()
 
 const project: Project = { projectId: 'p1', displayName: 'repo', fullPath: '/repo', path: '/repo' };
 
-test('switching to another file while dirty asks first and keeps the current one when declined', () => {
+test('switching to another file while dirty asks first and keeps the current one when declined', async () => {
   const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
   const { result } = renderHook(() => useEditorSidebar({ selectedProject: project, isMobile: false }));
 
   act(() => result.current.handleFileOpen('/repo/a.txt'));
   act(() => result.current.handleUnsavedChangesChange(true));
   let opened: boolean | null = null;
-  act(() => { opened = result.current.handleFileOpen('/repo/b.txt'); });
+  // Asking makes the answer a promise, settled once the user replies.
+  await act(async () => { opened = await result.current.handleFileOpen('/repo/b.txt'); });
 
   assert.equal(confirm.mock.calls.length, 1);
   // Reported so the command palette does not switch tabs for a declined open.
@@ -388,7 +391,7 @@ test('switching to another file while dirty asks first and keeps the current one
   assert.equal(result.current.editingFile?.path, '/repo/a.txt');
 
   confirm.mockReturnValue(true);
-  act(() => { opened = result.current.handleFileOpen('/repo/b.txt'); });
+  await act(async () => { opened = await result.current.handleFileOpen('/repo/b.txt'); });
 
   assert.equal(confirm.mock.calls.length, 2);
   assert.equal(opened, true);
@@ -416,19 +419,19 @@ test('re-opening the open file, or opening while clean, never asks', () => {
   assert.equal(result.current.editingFile?.path, '/repo/b.txt');
 });
 
-test('re-opening the open path with a diff payload reloads the buffer, so it asks first', () => {
+test('re-opening the open path with a diff payload reloads the buffer, so it asks first', async () => {
   const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
   const { result } = renderHook(() => useEditorSidebar({ selectedProject: project, isMobile: false }));
 
   act(() => result.current.handleFileOpen('/repo/a.txt'));
   act(() => result.current.handleUnsavedChangesChange(true));
-  act(() => result.current.handleFileOpen('/repo/a.txt', { old_string: 'a', new_string: 'b' }));
+  await act(async () => { await result.current.handleFileOpen('/repo/a.txt', { old_string: 'a', new_string: 'b' }); });
 
   assert.equal(confirm.mock.calls.length, 1);
   assert.equal(result.current.editingFile?.diffInfo, null);
 });
 
-test('the same path in another project is a different file, so it asks first', () => {
+test('the same path in another project is a different file, so it asks first', async () => {
   const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
   // Nested projects list the same absolute paths, and the editor re-reads the
   // file whenever its project changes.
@@ -441,12 +444,12 @@ test('the same path in another project is a different file, so it asks first', (
   act(() => result.current.handleFileOpen('/repo/sub/a.txt'));
   act(() => result.current.handleUnsavedChangesChange(true));
   rerender({ selectedProject: nestedProject });
-  act(() => result.current.handleFileOpen('/repo/sub/a.txt'));
+  await act(async () => { await result.current.handleFileOpen('/repo/sub/a.txt'); });
 
   assert.equal(confirm.mock.calls.length, 1);
   assert.equal(result.current.editingFile?.projectId, 'p1');
 
   confirm.mockReturnValue(true);
-  act(() => result.current.handleFileOpen('/repo/sub/a.txt'));
+  await act(async () => { await result.current.handleFileOpen('/repo/sub/a.txt'); });
   assert.equal(result.current.editingFile?.projectId, 'p2');
 });

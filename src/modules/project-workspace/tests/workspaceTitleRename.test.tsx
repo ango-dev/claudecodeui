@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, test, vi } from 'vitest';
 
 import type { Project, ProjectSession } from '@/shared/types';
+import type * as SharedUi from '@/shared/ui';
 
 /**
  * The chat header's session title can be renamed in place: double-click opens
@@ -26,7 +27,9 @@ vi.mock('@/modules/plugins', () => ({
   usePlugins: () => ({ plugins: [] }),
 }));
 
-vi.mock('@/shared/ui', () => ({
+// Only the logo is stubbed; alertDialog stays real so a refusal reaches window.alert.
+vi.mock('@/shared/ui', async (importOriginal) => ({
+  ...(await importOriginal<typeof SharedUi>()),
   LLMProviderLogo: () => null,
 }));
 
