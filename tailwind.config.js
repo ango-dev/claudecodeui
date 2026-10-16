@@ -66,7 +66,7 @@ export default {
         // elsewhere in the app (ClaudeLogo), for every CloudCLI logo surface.
         brand: {
           DEFAULT: '#d77655',
-          foreground: '#fcf2ee',
+          foreground: '#faf9f5',
         },
         gray: warmNeutral,
         slate: warmNeutral,

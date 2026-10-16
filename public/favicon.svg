@@ -3,7 +3,7 @@
   <rect x="0" y="0" width="64" height="64" rx="16" fill="#d77655"/>
   
   <!-- MessageSquare icon - exact same as sidebar -->
-  <g transform="translate(32, 32) scale(1.333) translate(-12, -12)" stroke="#fcf2ee" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <g transform="translate(32, 32) scale(1.333) translate(-12, -12)" stroke="#faf9f5" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
   </g>
 </svg>

@@ -13,7 +13,7 @@ function renderSvg(entrySize) {
   <rect width="${entrySize}" height="${entrySize}" fill="#d77655"/>
   <path
     d="M${8 * scale} ${9 * scale}C${8 * scale} ${8.44772 * scale} ${8.44772 * scale} ${8 * scale} ${9 * scale} ${8 * scale}H${23 * scale}C${23.5523 * scale} ${8 * scale} ${24 * scale} ${8.44772 * scale} ${24 * scale} ${9 * scale}V${18 * scale}C${24 * scale} ${18.5523 * scale} ${23.5523 * scale} ${19 * scale} ${23 * scale} ${19 * scale}H${12 * scale}L${8 * scale} ${23 * scale}V${9 * scale}Z"
-    stroke="#fcf2ee"
+    stroke="#faf9f5"
     stroke-width="${2 * scale}"
     stroke-linecap="round"
     stroke-linejoin="round"
