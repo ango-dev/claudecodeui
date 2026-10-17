@@ -1,7 +1,7 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
-import type { Project, ProjectSession, SlashCommand } from '@/shared/types';
+import type { PastedText, Project, ProjectSession, SlashCommand } from '@/shared/types';
 
 //----------------- DEPLOYMENT MODE ------------
 
@@ -276,6 +276,21 @@ export const isSkillCommand = (command: SlashCommand): boolean =>
  */
 export const isPromptCommand = (command: SlashCommand): boolean =>
   isSkillCommand(command) || command.type === 'cli' || command.metadata?.type === 'cli';
+
+// ---------------------------
+
+//----------------- CHAT COMPOSER ------------
+
+/**
+ * The text a chat composer sends: each pasted-text card, in paste order, then
+ * what was typed, joined by a blank line (blank parts are left out). Used by
+ * chat when sending or queueing a message and when scheduling one.
+ */
+export const withPastedTexts = (pastedTexts: PastedText[], typed: string): string => (
+  [...pastedTexts.map((pasted) => pasted.text), typed]
+    .filter((part) => part.trim())
+    .join('\n\n')
+);
 
 // ---------------------------
 

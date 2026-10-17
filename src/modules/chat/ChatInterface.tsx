@@ -10,6 +10,7 @@ import PermissionContext from '@/modules/chat/context/PermissionContext';
 import { MarkdownWorkspaceContext } from '@/modules/chat/context/MarkdownWorkspaceContext';
 import { TranscriptSessionContext } from '@/modules/chat/context/TranscriptSessionContext';
 import { api } from '@/shared/api';
+import { withPastedTexts } from '@/shared/utils';
 import type {
   ChatMessage,
   Project,
@@ -210,6 +211,10 @@ function ChatInterface({
     renderInputWithMentions,
     selectFile,
     attachedFiles,
+    pastedTexts,
+    setPastedTexts,
+    updatePastedText,
+    removePastedText,
     setAttachedFiles,
     fileErrors,
     getRootProps,
@@ -380,7 +385,8 @@ function ChatInterface({
    * the box as a send would — the message has left the composer either way.
    */
   const handleScheduleMessage = useCallback(async (scheduledFor: Date) => {
-    const content = input.trim();
+    // Pasted-text cards are part of the message, ahead of the typed text, as on send.
+    const content = withPastedTexts(pastedTexts, input).trim();
     if (!content) return;
 
     const scheduled = await scheduleMessage({
@@ -390,8 +396,9 @@ function ChatInterface({
     });
     if (scheduled) {
       setInput('');
+      setPastedTexts([]);
     }
-  }, [currentProviderEffort, currentProviderModel, input, permissionMode, scheduleMessage, setInput]);
+  }, [currentProviderEffort, currentProviderModel, input, pastedTexts, permissionMode, scheduleMessage, setInput, setPastedTexts]);
 
   // A plan whose request is gone is answered with a new message. Leaving plan
   // mode first takes a render, so the message is sent once the mode reads right.
@@ -630,6 +637,9 @@ function ChatInterface({
           onEditQueuedDraft={editQueuedDraft}
           onDeleteQueuedDraft={deleteQueuedDraft}
           attachedFiles={attachedFiles}
+          pastedTexts={pastedTexts}
+          onChangePastedText={updatePastedText}
+          onRemovePastedText={removePastedText}
           onRemoveAttachment={(index) =>
             setAttachedFiles((previous) =>
               previous.filter((_, currentIndex) => currentIndex !== index),

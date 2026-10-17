@@ -14,7 +14,7 @@ import { PlusIcon, Loader2, ArrowUpIcon, PencilIcon } from 'lucide-react';
 
 import { useVoiceInput } from '@/modules/chat/hooks/useVoiceInput';
 import { useVoiceAvailable } from '@/modules/chat/hooks/useVoiceAvailable';
-import type { QueuedDraft, ScheduledMessage, SlashCommand,SessionActivity,PendingPermissionRequest,PermissionMode,ProviderModelOption } from '@/shared/types';
+import type { PastedText, QueuedDraft, ScheduledMessage, SlashCommand,SessionActivity,PendingPermissionRequest,PermissionMode,ProviderModelOption } from '@/shared/types';
 import { formatShortcut } from '@/shared/utils';
 import {
   PromptInput,
@@ -33,6 +33,7 @@ import VoiceInputButton from '@/modules/chat/composer/VoiceInputButton';
 import PermissionRequestsBanner from '@/modules/chat/composer/PermissionRequestsBanner';
 import TokenUsageSummary from '@/modules/chat/composer/TokenUsageSummary';
 import QueuedMessageRow from '@/modules/chat/composer/QueuedMessageRow';
+import PastedTextAttachment from '@/modules/chat/composer/PastedTextAttachment';
 import { ScheduleMessagePopover } from '@/modules/chat/composer/ScheduleMessagePopover';
 import { ScheduledMessageList } from '@/modules/chat/composer/ScheduledMessageList';
 import ComposerModelMenu from '@/modules/chat/composer/ComposerModelMenu';
@@ -82,6 +83,10 @@ type ChatComposerProps = {
   onDeleteQueuedDraft: (id: string) => void;
   attachedFiles: File[];
   onRemoveAttachment: (index: number) => void;
+  /** Long pastes shown as cards; sent ahead of the typed text. */
+  pastedTexts: PastedText[];
+  onChangePastedText: (id: string, text: string) => void;
+  onRemovePastedText: (id: string) => void;
   fileErrors: Map<string, string>;
   showFileDropdown: boolean;
   filteredFiles: MentionableFile[];
@@ -152,6 +157,9 @@ export default function ChatComposer({
   onEditQueuedDraft,
   onDeleteQueuedDraft,
   attachedFiles,
+  pastedTexts,
+  onChangePastedText,
+  onRemovePastedText,
   onRemoveAttachment,
   fileErrors,
   showFileDropdown,
@@ -250,7 +258,9 @@ export default function ChatComposer({
   const hasActivityIndicator = Boolean(activity && !hasPendingPermissions);
 
   // Enter while a reply is running always adds another message to the queue.
-  const canQueueDraft = isLoading && Boolean(input.trim() || attachedFiles.length > 0);
+  // Anything to send besides the typed text: attached files or pasted texts.
+  const hasAttachments = attachedFiles.length > 0 || pastedTexts.length > 0;
+  const canQueueDraft = isLoading && Boolean(input.trim() || hasAttachments);
   const submitHint = canQueueDraft
     ? t('input.hintText.queue', { defaultValue: 'Enter to queue your next message' })
     : sendByCtrlEnter
@@ -362,7 +372,7 @@ export default function ChatComposer({
           <div
             data-slot="prompt-input-box"
             // Read by a pending plan's ⌘↩ / Ctrl+Enter: with nothing to send here, the keys build the plan.
-            data-composer-empty={!input.trim() && attachedFiles.length === 0 ? 'true' : 'false'}
+            data-composer-empty={!input.trim() && !hasAttachments ? 'true' : 'false'}
             className={[
               'relative rounded-[var(--radius)] border',
               isTextareaExpanded ? 'chat-input-expanded' : '',
@@ -385,10 +395,18 @@ export default function ChatComposer({
             </div>
           )}
 
-          {attachedFiles.length > 0 && (
+          {hasAttachments && (
             <PromptInputHeader>
               <div className="rounded-xl bg-muted/40 p-2">
                 <div className="flex flex-wrap gap-2">
+                  {pastedTexts.map((pasted) => (
+                    <PastedTextAttachment
+                      key={pasted.id}
+                      text={pasted.text}
+                      onChange={(text) => onChangePastedText(pasted.id, text)}
+                      onRemove={() => onRemovePastedText(pasted.id)}
+                    />
+                  ))}
                   {attachedFiles.map((file, index) => (
                     <ComposerAttachment
                       key={`${file.name}-${file.lastModified}-${index}`}
@@ -453,7 +471,7 @@ export default function ChatComposer({
                     ? false
                     : isTranscribing
                       ? true
-                      : !input.trim() && attachedFiles.length === 0
+                      : !input.trim() && !hasAttachments
               }
               aria-label={submitAriaLabel}
               title={submitAriaLabel}
@@ -495,7 +513,7 @@ export default function ChatComposer({
             {exportControl}
 
             <ScheduleMessagePopover
-              disabled={!input.trim()}
+              disabled={!input.trim() && pastedTexts.length === 0}
               onSchedule={onScheduleMessage}
             />
 

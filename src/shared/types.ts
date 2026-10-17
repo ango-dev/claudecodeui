@@ -783,6 +783,13 @@ export type QueuedDraft = {
   options?: QueuedSendOptions;
 };
 
+/** A long paste the chat composer shows as a card instead of in the message box; its text is sent ahead of the typed message. */
+export type PastedText = {
+  /** Identifies the card while it is edited or removed. */
+  id: string;
+  text: string;
+};
+
 /** Viewport-relative placement box (a left or right offset, bottom, max height and width) computed for a composer popover so the model and permission menus stay inside the window. */
 export type ComposerMenuAnchor = {
   /** Set for a trigger in the left half of the window: the menu opens rightward from it. */

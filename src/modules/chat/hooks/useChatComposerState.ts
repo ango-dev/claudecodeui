@@ -15,8 +15,8 @@ import { useTranslation } from 'react-i18next';
 import { api } from '@/shared/api';
 import { PROVIDER_PERMISSION_PREFERENCE_KEYS } from '@/shared/constants';
 import { readUserPreference } from '@/shared/userSettings';
-import { isPromptCommand } from '@/shared/utils';
-import type { CommandModalPayload, CostCommandData, HelpCommandData, MarkSessionProcessing, ModelCommandData, QueuedDraft, SessionActivityMap, StatusCommandData,QueuedSendOptions,ChatAttachment,ChatMessage,PendingPermissionRequest,PermissionMode,SessionEstablishedContext,Project,ProjectSession,LLMProvider,SlashCommand } from '@/shared/types';
+import { isPromptCommand, withPastedTexts } from '@/shared/utils';
+import type { CommandModalPayload, CostCommandData, HelpCommandData, MarkSessionProcessing, ModelCommandData, PastedText, QueuedDraft, SessionActivityMap, StatusCommandData,QueuedSendOptions,ChatAttachment,ChatMessage,PendingPermissionRequest,PermissionMode,SessionEstablishedContext,Project,ProjectSession,LLMProvider,SlashCommand } from '@/shared/types';
 import { grantClaudeToolPermission } from '@/modules/chat/utils/chatPermissions';
 import {
   appendQueuedMessage,
@@ -153,8 +153,19 @@ const sameQueuedDrafts = (left: QueuedDraft[], right: QueuedDraft[]): boolean =>
   && left.every((draft, index) => draft.id === right[index]?.id && draft.content === right[index]?.content)
 );
 
-/** A queue id that is unique across devices without asking the server. */
-const createQueuedMessageId = (): string => (
+/**
+ * A paste this long becomes a card, as Claude does, instead of filling the
+ * message box: past this it is easier to read and edit on its own.
+ */
+const PASTE_CARD_MIN_CHARACTERS = 1_000;
+const PASTE_CARD_MIN_LINES = 15;
+
+const isLongPaste = (text: string): boolean => (
+  text.length >= PASTE_CARD_MIN_CHARACTERS || text.split('\n').length >= PASTE_CARD_MIN_LINES
+);
+
+/** An id that is unique across devices without asking the server; for queued messages and pasted texts. */
+const createLocalId = (): string => (
   typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
     ? crypto.randomUUID()
     : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
@@ -248,6 +259,9 @@ export function useChatComposerState({
   });
   const input = inputState.value;
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  // Long pastes shown as cards rather than in the message box; sent ahead of
+  // the typed text and cleared with it, like attached files.
+  const [pastedTexts, setPastedTexts] = useState<PastedText[]>([]);
   const [fileErrors, setFileErrors] = useState<Map<string, string>>(new Map());
   const [isTextareaExpanded, setIsTextareaExpanded] = useState(false);
   const [commandModalPayload, setCommandModalPayload] = useState<CommandModalPayload | null>(null);
@@ -619,6 +633,12 @@ export function useChatComposerState({
     (event: ClipboardEvent<HTMLTextAreaElement>) => {
       const items = Array.from(event.clipboardData.items);
 
+      const pastedText = event.clipboardData.getData('text/plain');
+      if (pastedText && isLongPaste(pastedText)) {
+        event.preventDefault();
+        setPastedTexts((previous) => [...previous, { id: createLocalId(), text: pastedText }]);
+      }
+
       items.forEach((item) => {
         if (!item.type.startsWith('image/')) {
           return;
@@ -639,6 +659,14 @@ export function useChatComposerState({
     },
     [handleAttachmentFiles],
   );
+
+  const updatePastedText = useCallback((id: string, text: string) => {
+    setPastedTexts((previous) => previous.map((pasted) => (pasted.id === id ? { ...pasted, text } : pasted)));
+  }, []);
+
+  const removePastedText = useCallback((id: string) => {
+    setPastedTexts((previous) => previous.filter((pasted) => pasted.id !== id));
+  }, []);
 
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     maxSize: MAX_ATTACHMENT_SIZE,
@@ -694,7 +722,7 @@ export function useChatComposerState({
       queuedSubmission?: ComposerSubmission,
     ) => {
       event.preventDefault();
-      const currentInput = queuedSubmission?.content ?? inputValueRef.current;
+      const currentInput = queuedSubmission?.content ?? withPastedTexts(pastedTexts, inputValueRef.current);
       const currentAttachments = queuedSubmission?.attachments ?? attachedFiles;
       const previouslyUploadedAttachments = queuedSubmission?.uploadedAttachments ?? [];
       if (
@@ -738,7 +766,7 @@ export function useChatComposerState({
         // Added to the end of the queue: the server sends them one per turn,
         // oldest first. The card shows at once; the store takes it back out
         // if the server refuses it.
-        const id = createQueuedMessageId();
+        const id = createLocalId();
         queuedFilesRef.current.set(id, currentAttachments);
         void appendQueuedMessage(queuedSessionKey, {
           id,
@@ -772,6 +800,7 @@ export function useChatComposerState({
         setInput('');
         inputValueRef.current = '';
         setAttachedFiles([]);
+        setPastedTexts([]);
         setFileErrors(new Map());
         resetCommandMenuState();
         setIsTextareaExpanded(false);
@@ -809,6 +838,7 @@ export function useChatComposerState({
           setInput('');
           inputValueRef.current = '';
           setAttachedFiles([]);
+          setPastedTexts([]);
           setFileErrors(new Map());
           resetCommandMenuState();
           setIsTextareaExpanded(false);
@@ -967,6 +997,7 @@ export function useChatComposerState({
       inputValueRef.current = '';
       resetCommandMenuState();
       setAttachedFiles([]);
+      setPastedTexts([]);
       setFileErrors(new Map());
       setIsTextareaExpanded(false);
 
@@ -981,6 +1012,7 @@ export function useChatComposerState({
     [
       selectedSession,
       attachedFiles,
+      pastedTexts,
       buildSendOptions,
       currentSessionId,
       editingAnchorId,
@@ -1344,6 +1376,10 @@ export function useChatComposerState({
     selectFile,
     attachedFiles,
     setAttachedFiles,
+    pastedTexts,
+    setPastedTexts,
+    updatePastedText,
+    removePastedText,
     fileErrors,
     getRootProps,
     getInputProps,

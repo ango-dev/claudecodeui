@@ -162,6 +162,16 @@
       "attachments_other": "{{count}} files",
       "edit": "Edit queued message",
       "delete": "Delete queued message"
+    },
+    "pasted": {
+      "label": "Pasted",
+      "title": "Pasted text",
+      "edit": "Edit pasted text",
+      "remove": "Remove pasted text",
+      "save": "Save",
+      "cancel": "Cancel",
+      "size_one": "{{count}} line · {{characters}} characters",
+      "size_other": "{{count}} lines · {{characters}} characters"
     }
   },
   "composer": {

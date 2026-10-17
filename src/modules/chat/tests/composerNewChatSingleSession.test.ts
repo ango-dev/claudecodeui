@@ -156,7 +156,7 @@ test('submitting again while an attachment uploads sends the message once', asyn
   await act(async () => {
     view.result.current.setInput('look at this');
     view.result.current.handlePaste({
-      clipboardData: { items: [{ type: 'image/png', getAsFile: () => image }], files: [] },
+      clipboardData: { items: [{ type: 'image/png', getAsFile: () => image }], files: [], getData: () => '' },
     } as never);
   });
 
