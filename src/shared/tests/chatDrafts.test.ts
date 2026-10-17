@@ -11,12 +11,16 @@ import { afterEach, beforeEach, test, vi } from 'vitest';
  * mirror once at module scope.
  */
 
-type SavedDraft = { scope: string; text: string; queuedMessage?: unknown };
+type SavedDraft = { scope: string; text: string };
 
 const savedDrafts: SavedDraft[] = [];
 const deletedScopes: string[] = [];
+const queueRequests: unknown[][] = [];
 let serverDrafts: unknown[] = [];
 let draftsRequestFailed = false;
+let queueStatus = 200;
+/** Holds the next queue request open until released, to test a hydrate that overtakes it. */
+let holdQueueRequest: Promise<void> | null = null;
 
 vi.mock('@/shared/api', () => ({
   api: {
@@ -30,8 +34,17 @@ vi.mock('@/shared/api', () => ({
           headers: { 'Content-Type': 'application/json' },
         });
       },
-      saveDraft: async (scope: string, draft: { text: string; queuedMessage?: unknown }) => {
+      saveDraft: async (scope: string, draft: { text: string }) => {
         savedDrafts.push({ scope, ...draft });
+        return new Response('{}', { status: 200 });
+      },
+      queueMessage: async (scope: string, message: unknown) => {
+        queueRequests.push(['queue', scope, message]);
+        await holdQueueRequest;
+        return new Response('{}', { status: queueStatus });
+      },
+      unqueueMessage: async (scope: string, id: string) => {
+        queueRequests.push(['unqueue', scope, id]);
         return new Response('{}', { status: 200 });
       },
       deleteDraft: async (scope: string) => {
@@ -51,8 +64,11 @@ beforeEach(() => {
   localStorage.clear();
   savedDrafts.length = 0;
   deletedScopes.length = 0;
+  queueRequests.length = 0;
   serverDrafts = [];
   draftsRequestFailed = false;
+  queueStatus = 200;
+  holdQueueRequest = null;
   vi.useFakeTimers();
 });
 
@@ -70,7 +86,7 @@ test('a draft is readable synchronously and reaches the server after the debounc
 
   await vi.advanceTimersByTimeAsync(1_500);
   assert.deepEqual(savedDrafts, [
-    { scope: 'session-a', text: 'half a thought', queuedMessage: null },
+    { scope: 'session-a', text: 'half a thought' },
   ]);
 });
 
@@ -93,7 +109,7 @@ test('a chat with no session yet is scoped to its project', async () => {
   assert.equal(store.readDraftText('session-a'), '');
 });
 
-test('clearing a draft deletes it on the server instead of storing an empty one', async () => {
+test('clearing a draft saves empty text, which the server drops, without touching the queue', async () => {
   const store = await loadStore();
   store.writeDraftText('session-a', 'typed');
   await vi.advanceTimersByTimeAsync(1_500);
@@ -102,8 +118,9 @@ test('clearing a draft deletes it on the server instead of storing an empty one'
   store.writeDraftText('session-a', '');
   await vi.advanceTimersByTimeAsync(1_500);
 
-  assert.deepEqual(savedDrafts, []);
-  assert.deepEqual(deletedScopes, ['session-a']);
+  // Deleting the row would also drop messages queued from another device.
+  assert.deepEqual(savedDrafts, [{ scope: 'session-a', text: '' }]);
+  assert.deepEqual(deletedScopes, []);
 });
 
 test('a draft written in one page load is readable synchronously in the next', async () => {
@@ -117,7 +134,7 @@ test('a draft written in one page load is readable synchronously in the next', a
 });
 
 test('hydrate brings in a draft typed on another device', async () => {
-  serverDrafts = [{ scope: 'session-a', text: 'typed on the laptop', queuedMessage: null }];
+  serverDrafts = [{ scope: 'session-a', text: 'typed on the laptop', queuedMessages: [] }];
 
   const store = await loadStore();
   await store.hydrateChatDrafts();
@@ -125,19 +142,42 @@ test('hydrate brings in a draft typed on another device', async () => {
   assert.equal(store.readDraftText('session-a'), 'typed on the laptop');
 });
 
-test('hydrate removes a mirrored queue after the server claims it', async () => {
+test('hydrate removes a queued message after the server sends it', async () => {
   const store = await loadStore();
-  store.writeQueuedMessage('session-a', { content: 'server-owned queue' });
-  assert.equal(store.readQueuedMessage('session-a')?.content, 'server-owned queue');
+  await store.appendQueuedMessage('session-a', { id: 'q1', content: 'first' });
+  await store.appendQueuedMessage('session-a', { id: 'q2', content: 'second' });
 
-  serverDrafts = [];
+  serverDrafts = [{ scope: 'session-a', text: '', queuedMessages: [{ id: 'q2', content: 'second' }] }];
   await store.hydrateChatDrafts();
 
-  assert.equal(store.readQueuedMessage('session-a'), null);
+  assert.deepEqual(store.readQueuedMessages('session-a').map((message) => message.id), ['q2']);
+});
+
+test('a hydrate that overtakes a queue request keeps the queued message', async () => {
+  const store = await loadStore();
+  let release = () => undefined as void;
+  holdQueueRequest = new Promise<void>((resolve) => { release = resolve; });
+  const queued = store.appendQueuedMessage('session-a', { id: 'q1', content: 'in flight' });
+
+  // The server has not stored it yet, so its copy is missing it.
+  serverDrafts = [];
+  await store.hydrateChatDrafts();
+  assert.deepEqual(store.readQueuedMessages('session-a').map((message) => message.id), ['q1']);
+
+  release();
+  assert.equal(await queued, true);
+});
+
+test('a message the server refuses to queue is taken back out', async () => {
+  const store = await loadStore();
+  queueStatus = 413;
+
+  assert.equal(await store.appendQueuedMessage('session-a', { id: 'q1', content: 'one too many' }), false);
+  assert.deepEqual(store.readQueuedMessages('session-a'), []);
 });
 
 test('hydrate does not overwrite a scope the user is typing into right now', async () => {
-  serverDrafts = [{ scope: 'session-a', text: 'stale server copy', queuedMessage: null }];
+  serverDrafts = [{ scope: 'session-a', text: 'stale server copy', queuedMessages: [] }];
 
   const store = await loadStore();
   store.writeDraftText('session-a', 'what I am writing');
@@ -157,50 +197,54 @@ test('a failed hydrate keeps the mirrored draft rather than blanking the compose
   assert.equal(store.readDraftText('session-a'), 'local work');
 });
 
-test('a queued message round-trips alongside the draft text', async () => {
+test('queued messages go to the server one at a time, at once, oldest first', async () => {
   const store = await loadStore();
 
   store.writeDraftText('session-a', 'still editing');
-  store.writeQueuedMessage('session-a', { content: 'send this next', attachments: [] });
+  await store.appendQueuedMessage('session-a', { id: 'q1', content: 'send this next', attachments: [] });
+  await store.appendQueuedMessage('session-a', { id: 'q2', content: 'and then this' });
 
   assert.equal(store.readDraftText('session-a'), 'still editing');
-  assert.deepEqual(store.readQueuedMessage('session-a'), {
-    content: 'send this next',
-    attachments: [],
-  });
-  assert.equal(savedDrafts.length, 1, 'queue actions persist without waiting for the draft debounce');
-  assert.deepEqual(savedDrafts, [{
-    scope: 'session-a',
-    text: 'still editing',
-    queuedMessage: { content: 'send this next', attachments: [] },
-  }]);
+  assert.deepEqual(store.readQueuedMessages('session-a'), [
+    { id: 'q1', content: 'send this next', attachments: [] },
+    { id: 'q2', content: 'and then this', attachments: [] },
+  ]);
+  assert.deepEqual(queueRequests, [
+    ['queue', 'session-a', { id: 'q1', content: 'send this next', attachments: [] }],
+    ['queue', 'session-a', { id: 'q2', content: 'and then this' }],
+  ], 'queue actions persist without waiting for the draft debounce');
+  assert.deepEqual(savedDrafts, [], 'and are not part of the text save');
 });
 
 test('a queued message with neither text nor attachments reads as absent', async () => {
   const store = await loadStore();
 
-  store.writeQueuedMessage('session-a', { content: '   ', attachments: [] });
+  await store.appendQueuedMessage('session-a', { id: 'q1', content: '   ', attachments: [] });
 
-  assert.equal(store.readQueuedMessage('session-a'), null);
+  assert.deepEqual(store.readQueuedMessages('session-a'), []);
 });
 
-test('legacy image-only descriptors are still readable as attachments', async () => {
+test('a single queued message mirrored before the queue took several is read as a queue of one', async () => {
+  localStorage.setItem('chat-drafts', JSON.stringify({
+    'session-a': { text: '', queuedMessage: { content: '', images: [{ name: 'shot.png' }] } },
+  }));
   const store = await loadStore();
 
-  store.writeQueuedMessage('session-a', { content: '', images: [{ name: 'shot.png' }] });
-
-  assert.deepEqual(store.readQueuedMessage('session-a')?.attachments, [{ name: 'shot.png' }]);
+  const [legacy] = store.readQueuedMessages('session-a');
+  assert.deepEqual(legacy?.attachments, [{ name: 'shot.png' }], 'legacy image-only descriptors read as attachments');
 });
 
-test('clearing the queued message leaves the draft text alone', async () => {
+test('removing one queued message leaves the others and the draft text alone', async () => {
   const store = await loadStore();
   store.writeDraftText('session-a', 'keep me');
-  store.writeQueuedMessage('session-a', { content: 'queued' });
+  await store.appendQueuedMessage('session-a', { id: 'q1', content: 'one' });
+  await store.appendQueuedMessage('session-a', { id: 'q2', content: 'two' });
 
-  store.clearQueuedMessage('session-a');
+  store.removeQueuedMessage('session-a', 'q1');
 
-  assert.equal(store.readQueuedMessage('session-a'), null);
+  assert.deepEqual(store.readQueuedMessages('session-a').map((message) => message.id), ['q2']);
   assert.equal(store.readDraftText('session-a'), 'keep me');
+  assert.deepEqual(queueRequests.at(-1), ['unqueue', 'session-a', 'q1']);
 });
 
 test('subscribers are notified on a write', async () => {

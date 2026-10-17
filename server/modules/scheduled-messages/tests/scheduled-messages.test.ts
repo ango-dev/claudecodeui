@@ -40,6 +40,11 @@ async function withIsolatedDatabase(runTest: (userId: number) => void | Promise<
   }
 }
 
+/** The contents of the session's queue, oldest first. */
+function contents(userId: number): string[] {
+  return (sessionDraftsDb.getDrafts(userId)[0]?.queuedMessages ?? []).map((message) => (message as { content: string }).content);
+}
+
 type RunCall = { provider: string; command: string; options: Record<string, unknown> };
 
 function createRuntime(
@@ -88,11 +93,11 @@ test('a queued message is sent by the server without a browser connection', asyn
   await withIsolatedDatabase(async (userId) => {
     sessionDraftsDb.saveDraft(userId, SESSION_ID, {
       text: '',
-      queuedMessage: {
+      queuedMessages: [{
         content: 'continue on the VPS',
         options: { model: 'claude-opus-5' },
         attachments: [{ path: '/tmp/upload.png' }],
-      },
+      }],
     });
 
     const runs: RunCall[] = [];
@@ -109,7 +114,7 @@ test('a queued message stays pending while its session is busy', async () => {
   await withIsolatedDatabase(async (userId) => {
     sessionDraftsDb.saveDraft(userId, SESSION_ID, {
       text: '',
-      queuedMessage: { content: 'send after this run' },
+      queuedMessages: [{ content: 'send after this run' }],
     });
     chatRunRegistry.startRun({
       appSessionId: SESSION_ID,
@@ -122,9 +127,7 @@ test('a queued message stays pending while its session is busy', async () => {
     const runs: RunCall[] = [];
     assert.equal(await dispatchQueuedMessages(createRuntime(runs)), 0);
     assert.equal(runs.length, 0);
-    assert.deepEqual(sessionDraftsDb.getDrafts(userId)[0]?.queuedMessage, {
-      content: 'send after this run',
-    });
+    assert.deepEqual(contents(userId), ['send after this run']);
   });
 });
 
@@ -132,7 +135,7 @@ test('a queued message goes as soon as the reply it waited on ends, not on the n
   await withIsolatedDatabase(async (userId) => {
     sessionDraftsDb.saveDraft(userId, SESSION_ID, {
       text: '',
-      queuedMessage: { content: 'and then this' },
+      queuedMessages: [{ content: 'and then this' }],
     });
     chatRunRegistry.startRun({
       appSessionId: SESSION_ID,
@@ -154,21 +157,80 @@ test('a queued message goes as soon as the reply it waited on ends, not on the n
       await new Promise((resolve) => setTimeout(resolve, 1_600));
       assert.equal(runs.length, 1);
       assert.equal(runs[0].command, 'and then this');
-      assert.equal(sessionDraftsDb.getDrafts(userId)[0]?.queuedMessage ?? null, null);
+      assert.deepEqual(sessionDraftsDb.getDrafts(userId)[0]?.queuedMessages ?? [], []);
     } finally {
       closeScheduledMessageDispatcher();
     }
   });
 });
 
-test('a queued message waits for background work its session\'s last turn left running', async () => {
+test('queued messages go one per turn, oldest first', async () => {
+  await withIsolatedDatabase(async (userId) => {
+    sessionDraftsDb.saveDraft(userId, SESSION_ID, {
+      text: 'still typing',
+      queuedMessages: [{ content: 'first' }, { content: 'second' }, { content: 'third' }],
+    });
+
+    const runs: RunCall[] = [];
+    const runtime = createRuntime(runs);
+
+    assert.equal(await dispatchQueuedMessages(runtime), 1);
+    assert.deepEqual(runs.map((run) => run.command), ['first']);
+    assert.deepEqual(contents(userId), ['second', 'third']);
+
+    // The turn the first one started is still running: the rest wait for it.
+    const running = chatRunRegistry.startRun({
+      appSessionId: SESSION_ID,
+      provider: 'claude',
+      providerSessionId: null,
+      connection: null,
+      userId,
+    });
+    assert.equal(await dispatchQueuedMessages(runtime), 0);
+
+    running!.writer.sendComplete({ exitCode: 0 });
+    assert.equal(await dispatchQueuedMessages(runtime), 1);
+    assert.equal(await dispatchQueuedMessages(runtime), 1);
+    assert.deepEqual(runs.map((run) => run.command), ['first', 'second', 'third']);
+
+    // The draft text was never part of the queue and is kept.
+    assert.deepEqual(sessionDraftsDb.getDrafts(userId).map((draft) => [draft.text, draft.queuedMessages.length]), [['still typing', 0]]);
+  });
+});
+
+test('a queue edited after it was listed is not claimed from the stale copy', async () => {
+  await withIsolatedDatabase(async (userId) => {
+    sessionDraftsDb.saveDraft(userId, SESSION_ID, { text: '', queuedMessages: [{ content: 'old' }] });
+    const [stale] = sessionDraftsDb.listQueuedMessages();
+    sessionDraftsDb.saveDraft(userId, SESSION_ID, { text: '', queuedMessages: [{ content: 'edited' }] });
+
+    assert.equal(sessionDraftsDb.claimNextQueuedMessage(stale!), null);
+    assert.deepEqual(contents(userId), ['edited']);
+  });
+});
+
+test('a turn put back after a lost race goes ahead of what was queued meanwhile', async () => {
+  await withIsolatedDatabase(async (userId) => {
+    sessionDraftsDb.saveDraft(userId, SESSION_ID, { text: '', queuedMessages: [{ content: 'a' }, { content: 'b' }] });
+    const [candidate] = sessionDraftsDb.listQueuedMessages();
+    const claimed = sessionDraftsDb.claimNextQueuedMessage(candidate!);
+    assert.equal((claimed as { content: string }).content, 'a');
+    sessionDraftsDb.appendQueuedMessage(userId, SESSION_ID, { id: 'c', content: 'c' }, 50);
+
+    sessionDraftsDb.restoreQueuedMessage(userId, SESSION_ID, claimed);
+    assert.deepEqual(contents(userId), ['a', 'b', 'c']);
+  });
+});
+
+test('a queued message does not wait for background work its session\'s last turn left running', async () => {
   await withIsolatedDatabase(async (userId) => {
     sessionDraftsDb.saveDraft(userId, SESSION_ID, {
       text: '',
-      queuedMessage: { content: 'send after the background job' },
+      queuedMessages: [{ content: 'send while the background job runs' }],
     });
     // Turn A ended, so its run is completed, but it backgrounded a command
-    // that is still running under A's CLI process.
+    // that is still running under A's CLI process. That process takes the
+    // next turn itself, so the command keeps running.
     const runA = chatRunRegistry.startRun({
       appSessionId: SESSION_ID,
       provider: 'claude',
@@ -177,24 +239,12 @@ test('a queued message waits for background work its session\'s last turn left r
       userId,
     });
     runA!.writer.sendComplete({ exitCode: 0 });
-    assert.equal(chatRunRegistry.isProcessing(SESSION_ID), false);
 
-    let backgroundWork = true;
     const runs: RunCall[] = [];
-    const runtime = createRuntime(runs, 'ok', [], (sessionId) => sessionId === SESSION_ID && backgroundWork);
+    const runtime = createRuntime(runs, 'ok', [], (sessionId) => sessionId === SESSION_ID);
 
-    // Starting B now would replace that process and stop the command.
-    assert.equal(await dispatchQueuedMessages(runtime), 0);
-    assert.equal(runs.length, 0);
-    assert.deepEqual(sessionDraftsDb.getDrafts(userId)[0]?.queuedMessage, {
-      content: 'send after the background job',
-    });
-
-    // Once the work has reported back, B goes on the next pass.
-    backgroundWork = false;
     assert.equal(await dispatchQueuedMessages(runtime), 1);
-    assert.equal(runs.length, 1);
-    assert.equal(runs[0].command, 'send after the background job');
+    assert.equal(runs[0]?.command, 'send while the background job runs');
     assert.equal(sessionDraftsDb.getDrafts(userId).length, 0);
   });
 });

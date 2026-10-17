@@ -164,8 +164,7 @@
     "hintText": {
       "ctrlEnter": "{{send}} pro odeslání • {{newLine}} pro nový řádek • Tab pro změnu režimu • / pro příkazy s lomítkem",
       "enter": "Enter pro odeslání • {{newLine}} pro nový řádek • Tab pro změnu režimu • / pro příkazy s lomítkem",
-      "queue": "Enter pro zařazení další zprávy do fronty",
-      "updateQueued": "Enter pro aktualizaci zprávy ve frontě"
+      "queue": "Enter pro zařazení další zprávy do fronty"
     },
     "clickToChangeMode": "Kliknutím změníte režim oprávnění (nebo stiskněte Tab ve vstupním poli)",
     "showAllCommands": "Zobrazit všechny příkazy",
@@ -173,7 +172,6 @@
     "scrollToBottom": "Posunout na konec",
     "queue": {
       "sendNext": "Zařadit další zprávu do fronty",
-      "update": "Aktualizovat zprávu ve frontě",
       "label": "Ve frontě",
       "willSend": "Odešle se po dokončení",
       "edit": "Upravit zprávu ve frontě",

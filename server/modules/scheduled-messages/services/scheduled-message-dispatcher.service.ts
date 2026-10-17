@@ -12,7 +12,7 @@ import type { ProviderRuntimeGateway } from '@/modules/websocket/index.js';
  */
 const POLL_INTERVAL_MS = 30_000;
 /**
- * How long after a run ends its session's queued message is sent. The run's
+ * How long after a run ends its session's next queued message is sent. The run's
  * CLI process is still exiting when its `complete` arrives; a moment's grace
  * lets it finish before the next turn resumes the same conversation.
  */
@@ -63,9 +63,10 @@ function readQueuedMessage(value: unknown): StoredQueuedMessage | null {
 
 async function sendClaimedQueuedMessage(
   candidate: QueuedSessionMessageRecord,
+  claimed: unknown,
   runtime: ProviderRuntimeGateway,
 ): Promise<void> {
-  const message = readQueuedMessage(candidate.queuedMessage);
+  const message = readQueuedMessage(claimed);
   if (!message) {
     sessionDraftsDb.deleteEmptyDraft(candidate.userId, candidate.sessionId);
     return;
@@ -82,41 +83,45 @@ async function sendClaimedQueuedMessage(
   );
 
   // The registry check and run reservation are separate operations. If a run
-  // wins that tiny race, put the turn back so the next poll tries again.
+  // wins that tiny race, put the turn back at the front so the next pass
+  // tries it again before anything queued behind it.
   if (!result.started && result.error === 'A run was already in progress for this session.') {
-    sessionDraftsDb.restoreQueuedMessage(candidate);
+    sessionDraftsDb.restoreQueuedMessage(candidate.userId, candidate.sessionId, claimed);
     return;
   }
   sessionDraftsDb.deleteEmptyDraft(candidate.userId, candidate.sessionId);
 }
 
 /**
- * Whether a queued turn has to keep waiting for the session.
- *
- * A turn that ends with background work still going (a backgrounded command,
- * agent or workflow) is marked completed, but its CLI process stays open so
- * that work can report back. A new turn replaces that process and stops the
- * work, which is why the composer asks before an interactive send. A queued
- * turn was promised to go "when this finishes", so it waits for that work too.
+ * Whether a queued turn has to keep waiting for the session: only while a
+ * turn is running. A turn that ends with background work still going (a
+ * backgrounded command, agent or workflow) keeps its CLI process open, and
+ * the next turn is handed to that same process, so the work keeps running
+ * and the queued turn need not wait for it.
  */
-function isSessionBusy(sessionId: string, runtime: ProviderRuntimeGateway): boolean {
-  return chatRunRegistry.isProcessing(sessionId) || runtime.hasBackgroundWork(sessionId);
+function isSessionBusy(sessionId: string): boolean {
+  return chatRunRegistry.isProcessing(sessionId);
 }
 
-/** Sends every persisted queued turn whose session is currently idle. */
+/**
+ * Sends the oldest queued turn of every session that is currently idle. One
+ * per session per pass: the turn it starts makes the session busy, and the
+ * next in line goes when that turn ends.
+ */
 export async function dispatchQueuedMessages(runtime: ProviderRuntimeGateway): Promise<number> {
   const candidates = sessionDraftsDb.listQueuedMessages();
   let claimed = 0;
 
   await Promise.all(candidates.map(async (candidate) => {
-    if (isSessionBusy(candidate.sessionId, runtime)) {
+    if (isSessionBusy(candidate.sessionId)) {
       return;
     }
-    if (!sessionDraftsDb.claimQueuedMessage(candidate)) {
+    const next = sessionDraftsDb.claimNextQueuedMessage(candidate);
+    if (next === null) {
       return;
     }
     claimed += 1;
-    await sendClaimedQueuedMessage(candidate, runtime);
+    await sendClaimedQueuedMessage(candidate, next, runtime);
   }));
 
   return claimed;
@@ -220,8 +225,8 @@ export function initializeScheduledMessageDispatcher(runtime: ProviderRuntimeGat
   pollTimer.unref?.();
 
   // A message queued behind a reply goes when that reply ends, not up to a
-  // poll interval later. The poll still covers a session that stays busy
-  // with background work after its run ends.
+  // poll interval later; the next one in the queue goes when its own turn
+  // ends. The poll still covers a missed or failed pass.
   unsubscribeRunCompleted = chatRunRegistry.onRunCompleted(() => {
     setTimeout(poll, AFTER_RUN_DELAY_MS).unref?.();
   });

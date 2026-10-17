@@ -1,14 +1,16 @@
+import { createHash } from 'node:crypto';
+
 import { getConnection } from '@/modules/database/connection.js';
 
 /**
  * One chat scope's unsent state: the text still in the composer, plus the
- * message queued behind an in-flight turn. Both are optional — a scope can
- * hold only a draft, only a queued message, or both.
+ * messages queued behind an in-flight turn, oldest first. Both are optional —
+ * a scope can hold only a draft, only queued messages, or both.
  */
 export type SessionDraftRecord = {
   scope: string;
   text: string;
-  queuedMessage: unknown | null;
+  queuedMessages: unknown[];
   updatedAt: string;
 };
 
@@ -19,11 +21,14 @@ type DraftRow = {
   updated_at: string;
 };
 
-/** A server-owned queued turn together with the exact stored value used to claim it once. */
+/**
+ * A session's server-owned queued turns, oldest first, together with the exact
+ * stored value its next turn is claimed against, so it is claimed only once.
+ */
 export type QueuedSessionMessageRecord = {
   userId: number;
   sessionId: string;
-  queuedMessage: unknown;
+  queuedMessages: unknown[];
   claimToken: string;
 };
 
@@ -33,24 +38,53 @@ type QueuedMessageRow = {
   queued_message: string;
 };
 
-/** A queued message that no longer parses is treated as absent, not fatal. */
-function parseQueuedMessage(raw: string | null): unknown | null {
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+);
+
+/**
+ * A queued message's id. Messages queued before the queue took several have
+ * none, so theirs is derived from their content: the same message always
+ * gets the same id, which is what lets a client remove it.
+ */
+function queuedMessageId(message: Record<string, unknown>): string {
+  if (typeof message.id === 'string' && message.id) {
+    return message.id;
+  }
+  return `legacy-${createHash('sha256').update(JSON.stringify(message)).digest('hex').slice(0, 16)}`;
+}
+
+/**
+ * The queued turns stored for a scope, oldest first, each with its id. The
+ * column held a single message before the queue took several, so a stored
+ * object reads as a queue of one. A value that no longer parses is treated
+ * as empty, not fatal.
+ */
+function parseQueuedMessages(raw: string | null): Array<Record<string, unknown>> {
   if (!raw) {
-    return null;
+    return [];
   }
 
   try {
-    return JSON.parse(raw) as unknown;
+    const parsed = JSON.parse(raw) as unknown;
+    const messages = Array.isArray(parsed) ? parsed : [parsed];
+    return messages
+      .filter(isRecord)
+      .map((message) => ({ ...message, id: queuedMessageId(message) }));
   } catch {
-    return null;
+    return [];
   }
+}
+
+function serializeQueuedMessages(messages: unknown[]): string | null {
+  return messages.length === 0 ? null : JSON.stringify(messages);
 }
 
 function toRecord(row: DraftRow): SessionDraftRecord {
   return {
     scope: row.draft_scope,
     text: row.draft_text,
-    queuedMessage: parseQueuedMessage(row.queued_message),
+    queuedMessages: parseQueuedMessages(row.queued_message),
     updatedAt: row.updated_at,
   };
 }
@@ -91,32 +125,104 @@ export const sessionDraftsDb = {
     return rows.map((row) => ({
       userId: row.user_id,
       sessionId: row.draft_scope,
-      queuedMessage: parseQueuedMessage(row.queued_message),
+      queuedMessages: parseQueuedMessages(row.queued_message),
       claimToken: row.queued_message,
     }));
   },
 
-  /** Atomically removes a queued turn only if it has not been edited since listing. */
-  claimQueuedMessage(candidate: QueuedSessionMessageRecord): boolean {
+  /**
+   * Atomically takes the oldest queued turn off the session's queue, only if
+   * the queue has not been edited since listing. Returns the turn, or null
+   * when the queue changed (or was empty) and nothing was taken.
+   */
+  claimNextQueuedMessage(candidate: QueuedSessionMessageRecord): unknown | null {
+    const [next, ...rest] = candidate.queuedMessages;
+    if (next === undefined) {
+      return null;
+    }
     const result = getConnection()
       .prepare(
         `UPDATE session_drafts
-         SET queued_message = NULL, updated_at = CURRENT_TIMESTAMP
+         SET queued_message = ?, updated_at = CURRENT_TIMESTAMP
          WHERE user_id = ? AND draft_scope = ? AND queued_message = ?`
       )
-      .run(candidate.userId, candidate.sessionId, candidate.claimToken);
-    return result.changes > 0;
+      .run(serializeQueuedMessages(rest), candidate.userId, candidate.sessionId, candidate.claimToken);
+    return result.changes > 0 ? next : null;
   },
 
-  /** Restores a claim lost to the narrow race where another run starts first. */
-  restoreQueuedMessage(candidate: QueuedSessionMessageRecord): void {
-    getConnection()
-      .prepare(
+  /**
+   * Puts a claimed turn back at the front of its session's queue, for the
+   * narrow race where another run starts first. Turns queued meanwhile stay
+   * behind it.
+   */
+  restoreQueuedMessage(userId: number, scope: string, message: unknown): void {
+    const db = getConnection();
+    db.transaction(() => {
+      const row = db
+        .prepare('SELECT queued_message FROM session_drafts WHERE user_id = ? AND draft_scope = ?')
+        .get(userId, scope) as { queued_message: string | null } | undefined;
+      const queue = serializeQueuedMessages([message, ...parseQueuedMessages(row?.queued_message ?? null)]);
+      db.prepare(
+        `INSERT INTO session_drafts (user_id, draft_scope, draft_text, queued_message, updated_at)
+         VALUES (?, ?, '', ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(user_id, draft_scope) DO UPDATE SET
+           queued_message = excluded.queued_message,
+           updated_at = CURRENT_TIMESTAMP`
+      ).run(userId, scope, queue);
+    })();
+  },
+
+  /**
+   * Adds a turn to the end of the scope's queue. A message whose id is already
+   * queued is not added twice, so a retried request is harmless. Returns false,
+   * adding nothing, when the queue already holds `maxLength` turns.
+   */
+  appendQueuedMessage(userId: number, scope: string, message: Record<string, unknown>, maxLength: number): boolean {
+    const db = getConnection();
+    return db.transaction(() => {
+      const row = db
+        .prepare('SELECT queued_message FROM session_drafts WHERE user_id = ? AND draft_scope = ?')
+        .get(userId, scope) as { queued_message: string | null } | undefined;
+      const queue = parseQueuedMessages(row?.queued_message ?? null);
+      if (queue.some((queued) => queued.id === message.id)) {
+        return true;
+      }
+      if (queue.length >= maxLength) {
+        return false;
+      }
+      db.prepare(
+        `INSERT INTO session_drafts (user_id, draft_scope, draft_text, queued_message, updated_at)
+         VALUES (?, ?, '', ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(user_id, draft_scope) DO UPDATE SET
+           queued_message = excluded.queued_message,
+           updated_at = CURRENT_TIMESTAMP`
+      ).run(userId, scope, serializeQueuedMessages([...queue, message]));
+      return true;
+    })();
+  },
+
+  /**
+   * Takes one turn out of the scope's queue by id, leaving the rest in order.
+   * A turn the server has already sent is gone, so removing it does nothing.
+   */
+  removeQueuedMessage(userId: number, scope: string, id: string): void {
+    const db = getConnection();
+    db.transaction(() => {
+      const row = db
+        .prepare('SELECT queued_message FROM session_drafts WHERE user_id = ? AND draft_scope = ?')
+        .get(userId, scope) as { queued_message: string | null } | undefined;
+      const queue = parseQueuedMessages(row?.queued_message ?? null);
+      const rest = queue.filter((queued) => queued.id !== id);
+      if (rest.length === queue.length) {
+        return;
+      }
+      db.prepare(
         `UPDATE session_drafts
          SET queued_message = ?, updated_at = CURRENT_TIMESTAMP
-         WHERE user_id = ? AND draft_scope = ? AND queued_message IS NULL`
-      )
-      .run(candidate.claimToken, candidate.userId, candidate.sessionId);
+         WHERE user_id = ? AND draft_scope = ?`
+      ).run(serializeQueuedMessages(rest), userId, scope);
+      sessionDraftsDb.deleteEmptyDraft(userId, scope);
+    })();
   },
 
   /** Removes the placeholder row left after its last queued turn is claimed. */
@@ -130,7 +236,10 @@ export const sessionDraftsDb = {
   },
 
   /**
-   * Writes one scope's draft, or deletes the row when nothing is left to keep.
+   * Writes one scope's composer text, or deletes the row when nothing is left
+   * to keep. The queue is left as it is unless `queuedMessages` is given: it
+   * changes through append and remove, so a text save from a tab that has not
+   * yet seen the server send a queued turn cannot put that turn back.
    *
    * Deleting on empty is what stops the table growing a permanent row for every
    * session the user ever opened and typed a character into.
@@ -138,11 +247,23 @@ export const sessionDraftsDb = {
   saveDraft(
     userId: number,
     scope: string,
-    draft: { text: string; queuedMessage: unknown | null }
+    draft: { text: string; queuedMessages?: unknown[] }
   ): void {
     const db = getConnection();
 
-    if (!draft.text && draft.queuedMessage === null) {
+    if (draft.queuedMessages === undefined) {
+      db.prepare(
+        `INSERT INTO session_drafts (user_id, draft_scope, draft_text, updated_at)
+         VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(user_id, draft_scope) DO UPDATE SET
+           draft_text = excluded.draft_text,
+           updated_at = CURRENT_TIMESTAMP`
+      ).run(userId, scope, draft.text);
+      sessionDraftsDb.deleteEmptyDraft(userId, scope);
+      return;
+    }
+
+    if (!draft.text && draft.queuedMessages.length === 0) {
       db.prepare('DELETE FROM session_drafts WHERE user_id = ? AND draft_scope = ?')
         .run(userId, scope);
       return;
@@ -159,7 +280,7 @@ export const sessionDraftsDb = {
       userId,
       scope,
       draft.text,
-      draft.queuedMessage === null ? null : JSON.stringify(draft.queuedMessage)
+      serializeQueuedMessages(draft.queuedMessages)
     );
   },
 

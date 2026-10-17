@@ -5,11 +5,11 @@ type GitConfig = {
   git_email: string | null;
 };
 
-/** One chat scope's unsent composer text and queued message. */
+/** One chat scope's unsent composer text and queued messages, oldest first. */
 type DraftRecord = {
   scope: string;
   text: string;
-  queuedMessage: unknown | null;
+  queuedMessages: unknown[];
   updatedAt: string;
 };
 
@@ -26,7 +26,9 @@ type UserDependencies = {
   };
   drafts: {
     getDrafts(userId: number): DraftRecord[];
-    saveDraft(userId: number, scope: string, draft: { text: string; queuedMessage: unknown | null }): void;
+    saveDraft(userId: number, scope: string, draft: { text: string; queuedMessages?: unknown[] }): void;
+    appendQueuedMessage(userId: number, scope: string, message: Record<string, unknown>, maxLength: number): boolean;
+    removeQueuedMessage(userId: number, scope: string, id: string): void;
     deleteDraft(userId: number, scope: string): void;
   };
   readSystemGitConfig(): Promise<GitConfig>;
@@ -56,6 +58,58 @@ const readDraftScope = (value: unknown): string => {
     });
   }
   return scope;
+};
+
+/** Keeps a forgotten queue from growing without end; far more than anyone queues by hand. */
+const MAX_QUEUED_MESSAGES = 50;
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+);
+
+/**
+ * A replacement queue in a draft save, or undefined to leave the queue alone.
+ * Only a tab still running the client from before the queue took several
+ * messages sends one: a single `queuedMessage` (or null), which reads as a
+ * queue of one (or none). Current clients append and remove instead.
+ */
+const readLegacyQueue = (payload: Record<string, unknown>): unknown[] | undefined => {
+  if (!('queuedMessage' in payload)) {
+    return undefined;
+  }
+  return isRecord(payload.queuedMessage) ? [payload.queuedMessage] : [];
+};
+
+/** A queued message as a client sends it: an id it chose, plus text, send options and uploaded attachments. */
+const readQueuedMessage = (value: unknown): Record<string, unknown> => {
+  const message = isRecord(value) ? value : {};
+  const id = typeof message.id === 'string' ? message.id.trim() : '';
+  if (!id || id.length > MAX_KEY_LENGTH) {
+    throw new AppError('A queued message needs an id of 1-200 characters', {
+      code: 'INVALID_QUEUED_MESSAGE',
+      statusCode: 400,
+    });
+  }
+  const content = typeof message.content === 'string' ? message.content : '';
+  const attachments = Array.isArray(message.attachments) ? message.attachments : [];
+  if (!content.trim() && attachments.length === 0) {
+    throw new AppError('A queued message needs text or attachments', {
+      code: 'INVALID_QUEUED_MESSAGE',
+      statusCode: 400,
+    });
+  }
+  if (content.length > MAX_DRAFT_TEXT_LENGTH) {
+    throw new AppError('Queued message is too long to store', {
+      code: 'DRAFT_TEXT_TOO_LONG',
+      statusCode: 413,
+    });
+  }
+  return {
+    id,
+    content,
+    options: isRecord(message.options) ? message.options : {},
+    attachments,
+  };
 };
 
 const readPreferenceUpdates = (body: unknown): Record<string, unknown> => {
@@ -165,7 +219,7 @@ export function createUserService(dependencies: UserDependencies) {
 
     saveDraft(userId: number, scopeInput: unknown, body: unknown) {
       const scope = readDraftScope(scopeInput);
-      const payload = (body ?? {}) as { text?: unknown; queuedMessage?: unknown };
+      const payload = isRecord(body) ? body : {};
       const text = typeof payload.text === 'string' ? payload.text : '';
 
       if (text.length > MAX_DRAFT_TEXT_LENGTH) {
@@ -177,8 +231,35 @@ export function createUserService(dependencies: UserDependencies) {
 
       dependencies.drafts.saveDraft(userId, scope, {
         text,
-        queuedMessage: payload.queuedMessage ?? null,
+        queuedMessages: readLegacyQueue(payload),
       });
+      return { success: true };
+    },
+
+    /** Adds a message to the end of a session's queue; the server sends it when its turn comes. */
+    queueMessage(userId: number, scopeInput: unknown, messageInput: unknown) {
+      const scope = readDraftScope(scopeInput);
+      const message = readQueuedMessage(messageInput);
+      if (!dependencies.drafts.appendQueuedMessage(userId, scope, message, MAX_QUEUED_MESSAGES)) {
+        throw new AppError(`At most ${MAX_QUEUED_MESSAGES} messages can be queued`, {
+          code: 'TOO_MANY_QUEUED_MESSAGES',
+          statusCode: 413,
+        });
+      }
+      return { success: true };
+    },
+
+    /** Takes a message out of a session's queue; one already sent is gone, which is not an error. */
+    unqueueMessage(userId: number, scopeInput: unknown, idInput: unknown) {
+      const scope = readDraftScope(scopeInput);
+      const id = typeof idInput === 'string' ? idInput : '';
+      if (!id) {
+        throw new AppError('A queued message id is required', {
+          code: 'INVALID_QUEUED_MESSAGE',
+          statusCode: 400,
+        });
+      }
+      dependencies.drafts.removeQueuedMessage(userId, scope, id);
       return { success: true };
     },
 

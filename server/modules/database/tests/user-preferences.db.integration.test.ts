@@ -93,28 +93,66 @@ test('one unreadable preference value does not cost the user the others', async 
   });
 });
 
-test('drafts round-trip text and queued message per scope', async () => {
+test('drafts round-trip text and queued messages per scope', async () => {
   await withDatabase(() => {
-    sessionDraftsDb.saveDraft(USER_ID, 'session-a', { text: 'half typed', queuedMessage: null });
+    sessionDraftsDb.saveDraft(USER_ID, 'session-a', { text: 'half typed', queuedMessages: [] });
     sessionDraftsDb.saveDraft(USER_ID, 'project:p1', {
       text: '',
-      queuedMessage: { content: 'run it' },
+      queuedMessages: [{ content: 'run it' }, { content: 'then this' }],
     });
 
     const drafts = sessionDraftsDb.getDrafts(USER_ID);
     const byScope = new Map(drafts.map((draft) => [draft.scope, draft]));
 
     assert.equal(byScope.get('session-a')?.text, 'half typed');
-    assert.equal(byScope.get('session-a')?.queuedMessage, null);
+    assert.deepEqual(byScope.get('session-a')?.queuedMessages, []);
     assert.equal(byScope.get('project:p1')?.text, '');
-    assert.deepEqual(byScope.get('project:p1')?.queuedMessage, { content: 'run it' });
+    assert.deepEqual(byScope.get('project:p1')?.queuedMessages.map((message) => (message as { content: string }).content), ['run it', 'then this']);
+  });
+});
+
+test('a single queued message stored before the queue took several reads as a queue of one', async () => {
+  await withDatabase(() => {
+    getConnection()
+      .prepare(`INSERT INTO session_drafts (user_id, draft_scope, draft_text, queued_message) VALUES (?, ?, '', ?)`)
+      .run(USER_ID, 'session-old', JSON.stringify({ content: 'from before' }));
+
+    const [legacy] = sessionDraftsDb.getDrafts(USER_ID)[0]!.queuedMessages as Array<{ id: string; content: string }>;
+    assert.equal(legacy?.content, 'from before');
+    assert.match(legacy?.id ?? '', /^legacy-/, 'given a stable id so it can be removed');
+
+    sessionDraftsDb.removeQueuedMessage(USER_ID, 'session-old', legacy!.id);
+    assert.deepEqual(sessionDraftsDb.getDrafts(USER_ID), []);
+  });
+});
+
+test('queued messages are appended and removed one at a time, and a text save leaves them alone', async () => {
+  await withDatabase(() => {
+    assert.equal(sessionDraftsDb.appendQueuedMessage(USER_ID, 'session-a', { id: 'q1', content: 'one' }, 3), true);
+    assert.equal(sessionDraftsDb.appendQueuedMessage(USER_ID, 'session-a', { id: 'q2', content: 'two' }, 3), true);
+    assert.equal(sessionDraftsDb.appendQueuedMessage(USER_ID, 'session-a', { id: 'q2', content: 'two' }, 3), true, 'a retry is harmless');
+    assert.equal(sessionDraftsDb.appendQueuedMessage(USER_ID, 'session-a', { id: 'q3', content: 'three' }, 3), true);
+    assert.equal(sessionDraftsDb.appendQueuedMessage(USER_ID, 'session-a', { id: 'q4', content: 'four' }, 3), false, 'the queue is full');
+
+    sessionDraftsDb.saveDraft(USER_ID, 'session-a', { text: 'typing' });
+    const ids = () => sessionDraftsDb.getDrafts(USER_ID)[0]?.queuedMessages.map((message) => (message as { id: string }).id);
+    assert.deepEqual(ids(), ['q1', 'q2', 'q3']);
+
+    sessionDraftsDb.removeQueuedMessage(USER_ID, 'session-a', 'q2');
+    sessionDraftsDb.removeQueuedMessage(USER_ID, 'session-a', 'gone');
+    assert.deepEqual(ids(), ['q1', 'q3']);
+
+    sessionDraftsDb.removeQueuedMessage(USER_ID, 'session-a', 'q1');
+    sessionDraftsDb.removeQueuedMessage(USER_ID, 'session-a', 'q3');
+    sessionDraftsDb.saveDraft(USER_ID, 'session-a', { text: '' });
+    assert.deepEqual(sessionDraftsDb.getDrafts(USER_ID), [], 'nothing left, so no row');
   });
 });
 
 test('saving an empty draft deletes the row rather than keeping a blank one', async () => {
   await withDatabase(() => {
-    sessionDraftsDb.saveDraft(USER_ID, 'session-a', { text: 'typed', queuedMessage: null });
-    sessionDraftsDb.saveDraft(USER_ID, 'session-a', { text: '', queuedMessage: null });
+    sessionDraftsDb.saveDraft(USER_ID, 'session-a', { text: 'typed', queuedMessages: [] });
+    sessionDraftsDb.saveDraft(USER_ID, 'session-a', { text: '', queuedMessages: [] });
 
     assert.deepEqual(sessionDraftsDb.getDrafts(USER_ID), []);
   });
@@ -122,8 +160,8 @@ test('saving an empty draft deletes the row rather than keeping a blank one', as
 
 test('deleteDraft removes only the named scope', async () => {
   await withDatabase(() => {
-    sessionDraftsDb.saveDraft(USER_ID, 'session-a', { text: 'a', queuedMessage: null });
-    sessionDraftsDb.saveDraft(USER_ID, 'session-b', { text: 'b', queuedMessage: null });
+    sessionDraftsDb.saveDraft(USER_ID, 'session-a', { text: 'a', queuedMessages: [] });
+    sessionDraftsDb.saveDraft(USER_ID, 'session-b', { text: 'b', queuedMessages: [] });
 
     sessionDraftsDb.deleteDraft(USER_ID, 'session-a');
 

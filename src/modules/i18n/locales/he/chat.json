@@ -128,8 +128,7 @@
     "hintText": {
       "ctrlEnter": "{{send}} לשליחה • {{newLine}} לשורה חדשה • Tab להחלפת מצב • / לפקודות סלאש",
       "enter": "Enter לשליחה • {{newLine}} לשורה חדשה • Tab להחלפת מצב • / לפקודות סלאש",
-      "queue": "Enter להוספת ההודעה הבאה לתור",
-      "updateQueued": "Enter לעדכון ההודעה שבתור"
+      "queue": "Enter להוספת ההודעה הבאה לתור"
     },
     "clickToChangeMode": "לחיצה להחלפת מצב ההרשאות (או Tab בשדה הקלט)",
     "showAllCommands": "הצגת כל הפקודות",
@@ -137,7 +136,6 @@
     "scrollToBottom": "גלילה לסוף",
     "queue": {
       "sendNext": "הוספת ההודעה הבאה לתור",
-      "update": "עדכון ההודעה שבתור",
       "label": "בתור",
       "willSend": "תישלח כשזה יסתיים",
       "edit": "עריכת ההודעה שבתור",

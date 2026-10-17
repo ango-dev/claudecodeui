@@ -766,8 +766,10 @@ export type CommandModalPayload = {
   data: HelpCommandData | ModelCommandData | CostCommandData | StatusCommandData;
 };
 
-/** A composer message queued while its session is still busy, holding the text, the in-memory and already-uploaded attachments and the send options snapshotted at queue time so it can be auto-sent unchanged once the session goes idle. */
+/** One composer message queued while its session is still busy, holding the text, the in-memory and already-uploaded attachments and the send options snapshotted at queue time so the server can send it unchanged when its turn comes. A session can queue several; they go one per turn, oldest first. */
 export type QueuedDraft = {
+  /** Stable across devices and reloads; how a card is edited or removed without touching the others. */
+  id: string;
   content: string;
   /** Browser files retained while this composer stays mounted, for editing. */
   attachments: File[];

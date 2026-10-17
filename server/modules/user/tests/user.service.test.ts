@@ -20,6 +20,8 @@ function createDependencies(overrides: Partial<UserDependencies> = {}): UserDepe
     drafts: {
       getDrafts: () => [],
       saveDraft: () => undefined,
+      appendQueuedMessage: () => true,
+      removeQueuedMessage: () => undefined,
       deleteDraft: () => undefined,
     },
     readSystemGitConfig: async () => ({ git_name: null, git_email: null }),
@@ -97,41 +99,79 @@ test('savePreferences rejects an over-long preference key', () => {
   assert.throws(() => service.savePreferences(3, { ['k'.repeat(201)]: 1 }), /1-200/);
 });
 
-test('saveDraft stores the text and queued message under the given scope', () => {
+test('saveDraft stores the text and leaves the queue alone', () => {
   const saved: unknown[][] = [];
   const service = createUserService(createDependencies({
     drafts: {
-      getDrafts: () => [],
+      ...createDependencies().drafts,
       saveDraft: (...args) => saved.push(args),
-      deleteDraft: () => undefined,
     },
   }));
 
-  service.saveDraft(5, 'session-1', {
-    scope: 'session-1',
-    text: 'half a thought',
-    queuedMessage: { content: 'later' },
-  });
+  service.saveDraft(5, 'session-1', { scope: 'session-1', text: 'half a thought' });
+  service.saveDraft(5, 'session-1', { scope: 'session-1' });
 
-  assert.deepEqual(saved, [[5, 'session-1', {
-    text: 'half a thought',
-    queuedMessage: { content: 'later' },
-  }]]);
+  assert.deepEqual(saved, [
+    [5, 'session-1', { text: 'half a thought', queuedMessages: undefined }],
+    [5, 'session-1', { text: '', queuedMessages: undefined }],
+  ]);
 });
 
-test('saveDraft defaults a missing queued message to null rather than dropping the row', () => {
+test('saveDraft reads a single queuedMessage from an older client as a queue of one', () => {
   const saved: unknown[][] = [];
   const service = createUserService(createDependencies({
     drafts: {
-      getDrafts: () => [],
+      ...createDependencies().drafts,
       saveDraft: (...args) => saved.push(args),
-      deleteDraft: () => undefined,
     },
   }));
 
-  service.saveDraft(5, 'session-1', { scope: 'session-1', text: 'typing' });
+  service.saveDraft(5, 'session-1', { text: '', queuedMessage: { content: 'later' } });
+  service.saveDraft(5, 'session-1', { text: '', queuedMessage: null });
 
-  assert.deepEqual(saved, [[5, 'session-1', { text: 'typing', queuedMessage: null }]]);
+  assert.deepEqual(saved, [
+    [5, 'session-1', { text: '', queuedMessages: [{ content: 'later' }] }],
+    [5, 'session-1', { text: '', queuedMessages: [] }],
+  ]);
+});
+
+test('queueMessage appends the message with its id, options and attachments', () => {
+  const appended: unknown[][] = [];
+  const service = createUserService(createDependencies({
+    drafts: {
+      ...createDependencies().drafts,
+      appendQueuedMessage: (...args) => {
+        appended.push(args);
+        return true;
+      },
+    },
+  }));
+
+  service.queueMessage(5, 'session-1', { id: 'q1', content: 'next', options: { model: 'm' }, extra: 'dropped' });
+
+  assert.deepEqual(appended, [[5, 'session-1', { id: 'q1', content: 'next', options: { model: 'm' }, attachments: [] }, 50]]);
+});
+
+test('queueMessage refuses a message without an id or anything to send, and a full queue', () => {
+  const service = createUserService(createDependencies());
+  assert.throws(() => service.queueMessage(5, 'session-1', { content: 'no id' }), /id/);
+  assert.throws(() => service.queueMessage(5, 'session-1', { id: 'q1', content: '   ' }), /text or attachments/);
+
+  const full = createUserService(createDependencies({
+    drafts: { ...createDependencies().drafts, appendQueuedMessage: () => false },
+  }));
+  assert.throws(() => full.queueMessage(5, 'session-1', { id: 'q1', content: 'one more' }), /At most 50/);
+});
+
+test('unqueueMessage removes by id', () => {
+  const removed: unknown[][] = [];
+  const service = createUserService(createDependencies({
+    drafts: { ...createDependencies().drafts, removeQueuedMessage: (...args) => removed.push(args) },
+  }));
+
+  service.unqueueMessage(5, 'session-1', 'q2');
+  assert.deepEqual(removed, [[5, 'session-1', 'q2']]);
+  assert.throws(() => service.unqueueMessage(5, 'session-1', ''), /id is required/);
 });
 
 test('saveDraft rejects a blank or over-long scope', () => {

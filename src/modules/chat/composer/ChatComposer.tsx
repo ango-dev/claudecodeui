@@ -32,7 +32,7 @@ import ComposerAttachment from '@/modules/chat/composer/ComposerAttachment';
 import VoiceInputButton from '@/modules/chat/composer/VoiceInputButton';
 import PermissionRequestsBanner from '@/modules/chat/composer/PermissionRequestsBanner';
 import TokenUsageSummary from '@/modules/chat/composer/TokenUsageSummary';
-import QueuedMessageCard from '@/modules/chat/composer/QueuedMessageCard';
+import QueuedMessageRow from '@/modules/chat/composer/QueuedMessageRow';
 import { ScheduleMessagePopover } from '@/modules/chat/composer/ScheduleMessagePopover';
 import { ScheduledMessageList } from '@/modules/chat/composer/ScheduledMessageList';
 import ComposerModelMenu from '@/modules/chat/composer/ComposerModelMenu';
@@ -69,7 +69,8 @@ type ChatComposerProps = {
   slashCommandsCount: number;
   onSubmit: (event: FormEvent<HTMLFormElement> | MouseEvent<HTMLButtonElement> | TouchEvent<HTMLButtonElement>) => void;
   isDragActive: boolean;
-  queuedDraft: QueuedDraft | null;
+  /** Messages queued behind the running turn, oldest (sent next) first. */
+  queuedDrafts: QueuedDraft[];
   /** Set while the composer is replacing an already-sent message. */
   isEditingSentMessage: boolean;
   onCancelEditMessage: () => void;
@@ -77,8 +78,8 @@ type ChatComposerProps = {
   scheduledMessages: ScheduledMessage[];
   onScheduleMessage: (scheduledFor: Date) => void;
   onCancelScheduledMessage: (id: string) => void;
-  onEditQueuedDraft: () => void;
-  onDeleteQueuedDraft: () => void;
+  onEditQueuedDraft: (id: string) => void;
+  onDeleteQueuedDraft: (id: string) => void;
   attachedFiles: File[];
   onRemoveAttachment: (index: number) => void;
   fileErrors: Map<string, string>;
@@ -117,7 +118,7 @@ type ChatComposerProps = {
 
 /**
  * Rendered by chat's ChatInterface as the whole input area: textarea, pending
- * attachments, queued message, permission banner, voice input and the
+ * attachments, queued messages, permission banner, voice input and the
  * model/permission popovers that drive the next turn.
  */
 export default function ChatComposer({
@@ -142,7 +143,7 @@ export default function ChatComposer({
   onShowTokenUsage,
   onSubmit,
   isDragActive,
-  queuedDraft,
+  queuedDrafts,
   isEditingSentMessage,
   onCancelEditMessage,
   scheduledMessages,
@@ -248,19 +249,15 @@ export default function ChatComposer({
   const hasPendingPermissions = pendingPermissionRequests.length > 0;
   const hasActivityIndicator = Boolean(activity && !hasPendingPermissions);
 
-  const hasQueuedDraft = Boolean(queuedDraft);
+  // Enter while a reply is running always adds another message to the queue.
   const canQueueDraft = isLoading && Boolean(input.trim() || attachedFiles.length > 0);
   const submitHint = canQueueDraft
-    ? hasQueuedDraft
-      ? t('input.hintText.updateQueued', { defaultValue: 'Enter to update queued message' })
-      : t('input.hintText.queue', { defaultValue: 'Enter to queue your next message' })
+    ? t('input.hintText.queue', { defaultValue: 'Enter to queue your next message' })
     : sendByCtrlEnter
       ? t('input.hintText.ctrlEnter', { send: formatShortcut('Mod', 'Enter'), newLine: formatShortcut('Shift', 'Enter') })
       : t('input.hintText.enter', { newLine: formatShortcut('Shift', 'Enter') });
   const submitAriaLabel = canQueueDraft
-    ? hasQueuedDraft
-      ? t('input.queue.update', { defaultValue: 'Update queued message' })
-      : t('input.queue.sendNext', { defaultValue: 'Queue next message' })
+    ? t('input.queue.sendNext', { defaultValue: 'Queue next message' })
     : isLoading
       ? t('input.stop')
       : t('input.send');
@@ -306,16 +303,11 @@ export default function ChatComposer({
         </div>
       )}
 
-      {queuedDraft && (
-        <QueuedMessageCard
-          content={queuedDraft.content}
-          attachmentCount={
-            queuedDraft.uploadedAttachments?.length ?? queuedDraft.attachments.length
-          }
-          onEdit={onEditQueuedDraft}
-          onDelete={onDeleteQueuedDraft}
-        />
-      )}
+      <QueuedMessageRow
+        queuedDrafts={queuedDrafts}
+        onEdit={onEditQueuedDraft}
+        onDelete={onDeleteQueuedDraft}
+      />
 
       {!hasQuestionPanel && <div className="relative mx-auto max-w-[54.25rem]">
         {showFileDropdown && filteredFiles.length > 0 && (

@@ -517,8 +517,13 @@ export const api = {
     savePreferences: (updates: Record<string, unknown>) =>
       patch('/api/user/preferences', updates),
     drafts: () => get('/api/user/drafts'),
-    saveDraft: (scope: string, draft: { text: string; queuedMessage?: unknown }) =>
+    saveDraft: (scope: string, draft: { text: string }) =>
       put('/api/user/drafts', { scope, ...draft }),
+    // A session's queue changes one message at a time; see chatDrafts.
+    queueMessage: (scope: string, message: unknown) =>
+      post('/api/user/drafts/queue', { scope, message }),
+    unqueueMessage: (scope: string, id: string) =>
+      del('/api/user/drafts/queue', { scope, id }),
     deleteDraft: (scope: string) => del('/api/user/drafts', { scope }),
   },
 

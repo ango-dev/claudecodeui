@@ -150,8 +150,7 @@
     "hintText": {
       "ctrlEnter": "{{send}} para enviar • {{newLine}} para nova linha • Tab para alternar modos • / para slash commands",
       "enter": "Enter para enviar • {{newLine}} para nova linha • Tab para alternar modos • / para slash commands",
-      "queue": "Enter para enfileirar sua próxima mensagem",
-      "updateQueued": "Enter para atualizar mensagem enfileirada"
+      "queue": "Enter para enfileirar sua próxima mensagem"
     },
     "clickToChangeMode": "Clique para alterar modo de permissão (ou pressione Tab na entrada)",
     "showAllCommands": "Mostrar todos os comandos",
@@ -159,7 +158,6 @@
     "scrollToBottom": "Rolar para o final",
     "queue": {
       "sendNext": "Enfileirar próxima mensagem",
-      "update": "Atualizar mensagem enfileirada",
       "label": "Enfileirado",
       "willSend": "Enviará quando isto terminar",
       "edit": "Editar mensagem enfileirada",

@@ -81,6 +81,26 @@ export function createUserRouter(service: ReturnType<typeof createUserService>):
     }
   });
 
+  // A session's queue changes one message at a time, so a device that has not
+  // yet seen the server send the oldest one cannot write it back.
+  router.post('/drafts/queue', (req, res, next) => {
+    try {
+      const body = req.body as { scope?: unknown; message?: unknown };
+      res.json(service.queueMessage(readUserId(req), body?.scope, body?.message));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete('/drafts/queue', (req, res, next) => {
+    try {
+      const body = req.body as { scope?: unknown; id?: unknown };
+      res.json(service.unqueueMessage(readUserId(req), body?.scope, body?.id));
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.delete('/drafts', (req, res, next) => {
     try {
       const body = req.body as { scope?: unknown };
