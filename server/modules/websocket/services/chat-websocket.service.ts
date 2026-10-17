@@ -18,6 +18,7 @@ import type {
   LLMProvider,
   ProviderPermissionDecision,
   ProviderRuntimeWriter,
+  SendBackgroundWorkImpact,
 } from '@/shared/types.js';
 import { parseIncomingJsonObject } from '@/shared/utils.js';
 
@@ -76,6 +77,17 @@ export type ProviderRuntimeGateway = {
   stopBackgroundTask(provider: LLMProvider, sessionId: string, taskId: string): Promise<boolean>;
   /** Whether a provider runtime still holds background work for the session after its turn ended. */
   hasBackgroundWork(sessionId: string): boolean;
+  /**
+   * Previews whether running a turn with these runtime options would stop the
+   * session's background work (its held process could not take the turn).
+   */
+  wouldStopBackgroundWork(
+    provider: LLMProvider,
+    sessionId: string,
+    options: AnyRecord,
+  ): Promise<SendBackgroundWorkImpact>;
+  /** Calls `listener` when a process held open for a session's background work ends; returns the unsubscribe. */
+  onBackgroundWorkEnded(listener: (sessionId: string) => void): () => void;
   resolveToolApproval(requestId: string, payload: ProviderPermissionDecision): void;
   getPendingApprovalsForSession(sessionId: string): unknown[];
 };
@@ -203,6 +215,33 @@ function resolveSendTarget(
 }
 
 /**
+ * The runtime options a turn runs with, apart from its attachments (which
+ * dispatchRun re-validates and adds). Shared by dispatchRun and the send
+ * preview (checkSendStopsBackgroundWork) so the preview asks the runtime about
+ * exactly the options the send would hand it.
+ *
+ * The provider runtimes receive the stable app session id. When their CLI/SDK
+ * needs the provider-native id for resume, they resolve it from the session
+ * row themselves (sessionsService.resolveProviderSessionId). Brand-new
+ * sessions have no provider id yet, so the runtime starts fresh and announces
+ * one, which the gateway writer captures and maps back to the app session id.
+ */
+function buildTurnRuntimeOptions(
+  sessionId: string,
+  session: NonNullable<ReturnType<typeof sessionsDb.getSessionById>>,
+  clientOptions: AnyRecord,
+  extraRuntimeOptions: AnyRecord = {},
+): AnyRecord {
+  return {
+    ...clientOptions,
+    ...extraRuntimeOptions,
+    sessionId,
+    cwd: clientOptions.cwd ?? session.project_path ?? undefined,
+    projectPath: session.project_path ?? clientOptions.projectPath,
+  };
+}
+
+/**
  * Registers the run and hands the turn to the provider runtime.
  *
  * `extraRuntimeOptions` is how an edited message asks the provider to resume
@@ -263,23 +302,13 @@ async function dispatchRun(
     (descriptor, index, all) => all.findIndex((candidate) => candidate.path === descriptor.path) === index,
   );
 
-  // The provider runtimes receive the stable app session id. When their
-  // CLI/SDK needs the provider-native id for resume, they resolve it from the
-  // session row themselves (sessionsService.resolveProviderSessionId).
-  // Brand-new sessions have no provider id yet, so the runtime starts fresh
-  // and announces one, which the gateway writer captures and maps back to the
-  // app session id.
   const runtimeOptions: AnyRecord = {
-    ...clientOptions,
-    ...extraRuntimeOptions,
+    ...buildTurnRuntimeOptions(sessionId, session, clientOptions, extraRuntimeOptions),
     // Attachments are re-validated server-side: only direct children of the
     // global upload store may reach provider runtimes or their file tools.
     attachments: uniqueAttachments,
     images: uniqueAttachments.filter(isImageAttachmentDescriptor),
     files: uniqueAttachments.filter((descriptor) => !isImageAttachmentDescriptor(descriptor)),
-    sessionId,
-    cwd: clientOptions.cwd ?? session.project_path ?? undefined,
-    projectPath: session.project_path ?? clientOptions.projectPath,
   };
 
   let failure: string | null = null;
@@ -651,6 +680,40 @@ export async function runDetachedChatTurn(
     session,
     { sessionId: input.sessionId, content: input.content, options: input.options ?? {} },
     dependencies,
+  );
+}
+
+/**
+ * Previews whether a `chat.send` with these client options would stop the
+ * session's background work, because the process holding it could not take
+ * the turn and a new one would replace it. Nothing is sent or recorded.
+ *
+ * Consumed by the scheduled-messages dispatcher, so a queued turn waits for
+ * the work instead of stopping it, and by the providers module's send-check
+ * route, which asks before the composer sends. Options are built exactly as
+ * dispatchRun builds them for the real send.
+ *
+ * Resolves null when the session does not exist.
+ */
+export async function checkSendStopsBackgroundWork(
+  input: { sessionId: string; options?: AnyRecord },
+  dependencies: ChatWebSocketDependencies,
+): Promise<SendBackgroundWorkImpact | null> {
+  const session = sessionsDb.getSessionById(input.sessionId);
+  if (!session) {
+    return null;
+  }
+
+  const provider = session.provider as LLMProvider;
+  // The send itself would be refused, so it cannot stop anything.
+  if (!dependencies.runtime.hasRuntime(provider)) {
+    return { stops: false };
+  }
+
+  return dependencies.runtime.wouldStopBackgroundWork(
+    provider,
+    input.sessionId,
+    buildTurnRuntimeOptions(input.sessionId, session, input.options ?? {}),
   );
 }
 

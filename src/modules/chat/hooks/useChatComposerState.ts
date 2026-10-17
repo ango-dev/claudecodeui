@@ -16,7 +16,7 @@ import { api } from '@/shared/api';
 import { PROVIDER_PERMISSION_PREFERENCE_KEYS } from '@/shared/constants';
 import { readUserPreference } from '@/shared/userSettings';
 import { isPromptCommand, withPastedTexts } from '@/shared/utils';
-import type { CommandModalPayload, CostCommandData, HelpCommandData, MarkSessionProcessing, ModelCommandData, PastedText, QueuedDraft, SessionActivityMap, StatusCommandData,QueuedSendOptions,ChatAttachment,ChatMessage,PendingPermissionRequest,PermissionMode,SessionEstablishedContext,Project,ProjectSession,LLMProvider,SlashCommand } from '@/shared/types';
+import type { BackgroundSendChoice, BackgroundSendPrompt, BackgroundStopReason, CommandModalPayload, CostCommandData, HelpCommandData, MarkSessionProcessing, ModelCommandData, PastedText, QueuedDraft, SessionActivityMap, StatusCommandData,QueuedSendOptions,ChatAttachment,ChatMessage,PendingPermissionRequest,PermissionMode,SessionEstablishedContext,Project,ProjectSession,LLMProvider,SlashCommand } from '@/shared/types';
 import { grantClaudeToolPermission } from '@/modules/chat/utils/chatPermissions';
 import {
   appendQueuedMessage,
@@ -173,6 +173,31 @@ const PASTE_CARD_MIN_LINES = 15;
 const isLongPaste = (text: string): boolean => (
   text.length >= PASTE_CARD_MIN_CHARACTERS || text.split('\n').length >= PASTE_CARD_MIN_LINES
 );
+
+/**
+ * Asks the server whether sending with these options would stop the
+ * session's background work, and why: only the server knows what the process
+ * holding that work was started with. A check that fails says it would, so
+ * the user is asked rather than the work stopped unasked.
+ */
+const readBackgroundStopReason = async (
+  sessionId: string,
+  options: QueuedSendOptions,
+): Promise<BackgroundStopReason | null> => {
+  try {
+    const response = await api.providers.sendCheck(sessionId, options);
+    if (!response.ok) {
+      return 'unavailable';
+    }
+    const body = await response.json() as { data?: { stopsBackgroundWork?: boolean; reason?: BackgroundStopReason | null } };
+    if (!body.data?.stopsBackgroundWork) {
+      return null;
+    }
+    return body.data.reason ?? 'unavailable';
+  } catch {
+    return 'unavailable';
+  }
+};
 
 /** An id that is unique across devices without asking the server; for queued messages and pasted texts. */
 const createLocalId = (): string => (
@@ -737,6 +762,95 @@ export function useChatComposerState({
     processingSessionsRef.current = processingSessions;
   }, [processingSessions]);
 
+  // Sending over background work, when that would stop it, asks first. The
+  // dialog is rendered by the composer; the submit awaits the user's choice
+  // through this resolver.
+  const [backgroundSendPrompt, setBackgroundSendPrompt] = useState<BackgroundSendPrompt | null>(null);
+  const backgroundSendResolverRef = useRef<((choice: BackgroundSendChoice) => void) | null>(null);
+
+  const askBeforeSendingOverBackgroundWork = useCallback(
+    (prompt: BackgroundSendPrompt) => new Promise<BackgroundSendChoice>((resolve) => {
+      // Only one prompt at a time: a stale one is answered "cancel".
+      backgroundSendResolverRef.current?.('cancel');
+      backgroundSendResolverRef.current = resolve;
+      setBackgroundSendPrompt(prompt);
+    }),
+    [],
+  );
+
+  const resolveBackgroundSendPrompt = useCallback((choice: BackgroundSendChoice) => {
+    const resolve = backgroundSendResolverRef.current;
+    backgroundSendResolverRef.current = null;
+    setBackgroundSendPrompt(null);
+    resolve?.(choice);
+  }, []);
+
+  // An unmounted composer cannot answer; let the pending submit finish.
+  useEffect(() => () => {
+    backgroundSendResolverRef.current?.('cancel');
+    backgroundSendResolverRef.current = null;
+  }, []);
+
+  // Adds a composed message to the end of a session's queue (the server sends
+  // them one per turn, oldest first) and clears the composer it came from.
+  // Used while a turn is in flight and when the user chooses to queue behind
+  // background work. Attachments must already be uploaded.
+  const queueMessage = useCallback(
+    (
+      queuedSessionKey: string,
+      message: { content: string; options: QueuedSendOptions; uploadedAttachments: unknown[]; files: File[] },
+      fromComposerInput: boolean,
+    ) => {
+      // The card shows at once; the store takes it back out if the server
+      // refuses it.
+      const id = createLocalId();
+      queuedFilesRef.current.set(id, message.files);
+      void appendQueuedMessage(queuedSessionKey, {
+        id,
+        content: message.content,
+        options: message.options,
+        attachments: message.uploadedAttachments,
+      }).then((kept) => {
+        if (kept) {
+          return;
+        }
+        queuedFilesRef.current.delete(id);
+        addMessage({
+          type: 'error',
+          content: 'Could not queue your message. Press Up in the message box to get it back, then try again.',
+          timestamp: new Date(),
+        });
+      });
+
+      // Recorded under the session the message was queued FOR, and before
+      // the session-switch return below — the queued text must be
+      // recallable even when it dispatches without this composer.
+      recordSentMessage(message.content, queuedSessionKey);
+
+      // A plan follow-up is not the composer's input, and if the user
+      // changed sessions during upload the input now belongs to another
+      // session: either way it is left as it is.
+      if (!fromComposerInput || sessionKeyRef.current !== queuedSessionKey) {
+        return;
+      }
+
+      setInput('');
+      inputValueRef.current = '';
+      setAttachedFiles([]);
+      setPastedTexts([]);
+      setFileErrors(new Map());
+      resetCommandMenuState();
+      setIsTextareaExpanded(false);
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+      }
+      if (draftScopeRef.current) {
+        writeDraftText(draftScopeRef.current, '');
+      }
+    },
+    [addMessage, recordSentMessage, resetCommandMenuState, setInput],
+  );
+
   const submitMessage = useCallback(
     async (
       event: FormEvent<HTMLFormElement> | MouseEvent | TouchEvent | KeyboardEvent<HTMLTextAreaElement>,
@@ -789,53 +903,12 @@ export function useChatComposerState({
           return;
         }
 
-        // Added to the end of the queue: the server sends them one per turn,
-        // oldest first. The card shows at once; the store takes it back out
-        // if the server refuses it.
-        const id = createLocalId();
-        queuedFilesRef.current.set(id, currentAttachments);
-        void appendQueuedMessage(queuedSessionKey, {
-          id,
+        queueMessage(queuedSessionKey, {
           content: currentInput,
           options: queuedOptions,
-          attachments: uploadedAttachments,
-        }).then((kept) => {
-          if (kept) {
-            return;
-          }
-          queuedFilesRef.current.delete(id);
-          addMessage({
-            type: 'error',
-            content: 'Could not queue your message. Press Up in the message box to get it back, then try again.',
-            timestamp: new Date(),
-          });
-        });
-
-        // Recorded under the session the message was queued FOR, and before
-        // the session-switch return below — the queued text must be
-        // recallable even when it dispatches without this composer.
-        recordSentMessage(currentInput, queuedSessionKey);
-
-        // A plan follow-up is not the composer's input, and if the user
-        // changed sessions during upload the input now belongs to another
-        // session: either way it is left as it is.
-        if (queuedSubmission || sessionKeyRef.current !== queuedSessionKey) {
-          return;
-        }
-
-        setInput('');
-        inputValueRef.current = '';
-        setAttachedFiles([]);
-        setPastedTexts([]);
-        setFileErrors(new Map());
-        resetCommandMenuState();
-        setIsTextareaExpanded(false);
-        if (textareaRef.current) {
-          textareaRef.current.style.height = 'auto';
-        }
-        if (draftScopeRef.current) {
-          writeDraftText(draftScopeRef.current, '');
-        }
+          uploadedAttachments,
+          files: currentAttachments,
+        }, !queuedSubmission);
         return;
       }
 
@@ -955,25 +1028,36 @@ export function useChatComposerState({
         });
       }
 
+      const sendOptions = queuedSubmission?.options ?? buildSendOptions(summaryInput);
+
       // A message goes to the process a session's background work runs under,
-      // so that work carries on. An edit cannot: it resumes the transcript
-      // partway, in a new process, and the agents, workflows and commands the
-      // old one still has going are stopped. Editing is the user's call, but
-      // not one to make for them.
+      // so that work carries on. It cannot when the message is an edit (which
+      // resumes the transcript partway, in a new process) or when the server
+      // says that process would not take it (a different reasoning effort,
+      // say). Then sending stops the agents, workflows and commands it still
+      // has going. That is the user's call, not one to make for them, and
+      // queueing behind the work is the safe alternative.
       const backgroundActivity = processingSessionsRef.current?.get(targetSessionId);
-      if (editingAnchorId && backgroundActivity?.background) {
-        const work = ownBackgroundTasks(backgroundActivity.tasks ?? [])
-          .map((task) => `• ${describeBackgroundTask(task, t)}`)
-          .join('\n');
-        const confirmed = await confirmDialog(t('claudeStatus.backgroundTask.editAnyway', {
-          work,
-          defaultValue: 'This session still has background work running:\n{{work}}\n\nEditing a message restarts the session, which stops that work; anything it has not reported yet is lost. Edit anyway?',
-        }), {
-          confirmLabel: t('claudeStatus.backgroundTask.editAnywayConfirm', 'Edit anyway'),
-          destructive: true,
-        });
-        if (!confirmed) {
-          return;
+      if (backgroundActivity?.background) {
+        const reason = editingAnchorId ? 'edit' : await readBackgroundStopReason(targetSessionId, sendOptions);
+        if (reason) {
+          const work = ownBackgroundTasks(backgroundActivity.tasks ?? [])
+            .map((task) => describeBackgroundTask(task, t));
+          const choice = await askBeforeSendingOverBackgroundWork({ work, reason });
+          if (choice === 'cancel') {
+            return;
+          }
+          if (choice === 'queue') {
+            // Attachments were uploaded above; queue the same descriptors. The
+            // server holds it until sending it would no longer stop the work.
+            queueMessage(targetSessionId, {
+              content: currentInput,
+              options: sendOptions,
+              uploadedAttachments,
+              files: currentAttachments,
+            }, !queuedSubmission);
+            return;
+          }
         }
       }
 
@@ -1014,7 +1098,7 @@ export function useChatComposerState({
         ...(editingAnchorId ? { anchorId: editingAnchorId } : {}),
         content: messageContent,
         options: {
-          ...(queuedSubmission?.options ?? buildSendOptions(summaryInput)),
+          ...sendOptions,
           attachments: uploadedAttachments,
         },
       });
@@ -1043,6 +1127,7 @@ export function useChatComposerState({
     },
     [
       selectedSession,
+      askBeforeSendingOverBackgroundWork,
       attachedFiles,
       pastedTexts,
       buildSendOptions,
@@ -1053,6 +1138,7 @@ export function useChatComposerState({
       onSessionProcessing,
       onSessionEstablished,
       provider,
+      queueMessage,
       recordSentMessage,
       resetCommandMenuState,
       scrollToBottom,
@@ -1419,6 +1505,8 @@ export function useChatComposerState({
     isDragActive,
     openAttachmentPicker: open,
     handleSubmit,
+    backgroundSendPrompt,
+    resolveBackgroundSendPrompt,
     queuedDrafts,
     editQueuedDraft,
     deleteQueuedDraft,

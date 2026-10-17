@@ -6,10 +6,12 @@ import { claudeSettingsPermissionsService } from '@/modules/providers/services/c
 import { providerCapabilitiesService } from '@/modules/providers/services/provider-capabilities.service.js';
 import { providerMcpService } from '@/modules/providers/services/mcp.service.js';
 import { providerModelsService } from '@/modules/providers/services/provider-models.service.js';
+import { providerRuntimeService } from '@/modules/providers/services/provider-runtime.service.js';
 import { providerTokenUsageService } from '@/modules/providers/services/provider-token-usage.service.js';
 import { providerSkillsService } from '@/modules/providers/services/skills.service.js';
 import { sessionConversationsSearchService } from '@/modules/providers/services/session-conversations-search.service.js';
 import { sessionsService } from '@/modules/providers/services/sessions.service.js';
+import { checkSendStopsBackgroundWork } from '@/modules/websocket/index.js';
 import type {
   CustomProviderModelEffort,
   CustomProviderModelInput,
@@ -54,6 +56,21 @@ const parseSessionId = (value: unknown): string => {
   }
 
   return sessionId;
+};
+
+// The send-check body's `options` — absent means none, as in `chat.send`.
+const parseSendCheckOptions = (body: unknown): Record<string, unknown> => {
+  const options = body && typeof body === 'object' ? (body as Record<string, unknown>).options : undefined;
+  if (options === undefined || options === null) {
+    return {};
+  }
+  if (typeof options !== 'object' || Array.isArray(options)) {
+    throw new AppError('options must be an object.', {
+      code: 'INVALID_SEND_OPTIONS',
+      statusCode: 400,
+    });
+  }
+  return options as Record<string, unknown>;
 };
 
 /** A workflow run id as the harness mints one (`wf_16fbf852-274`). */
@@ -935,6 +952,35 @@ router.get(
     const sessionId = parseSessionId(req.params.sessionId);
     const result = await providerTokenUsageService.getSessionTokenUsage(sessionId);
     res.json(createApiSuccessResponse(result));
+  }),
+);
+
+/**
+ * Asks, before the composer sends, whether a `chat.send` with these options
+ * would stop the session's background work — the held process cannot take
+ * every turn (another effort or working directory, an edit), and only the
+ * server can resolve that per model. Body: `{ options }`, the same object the
+ * client puts in `chat.send`.
+ */
+router.post(
+  '/sessions/:sessionId/send-check',
+  asyncHandler(async (req: Request, res: Response) => {
+    const sessionId = parseSessionId(req.params.sessionId);
+    const options = parseSendCheckOptions(req.body);
+    const impact = await checkSendStopsBackgroundWork(
+      { sessionId, options },
+      { runtime: providerRuntimeService },
+    );
+    if (!impact) {
+      throw new AppError(`Session "${sessionId}" was not found.`, {
+        code: 'SESSION_NOT_FOUND',
+        statusCode: 404,
+      });
+    }
+    res.json(createApiSuccessResponse({
+      stopsBackgroundWork: impact.stops,
+      reason: impact.stops ? impact.reason ?? 'unavailable' : null,
+    }));
   }),
 );
 

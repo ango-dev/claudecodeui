@@ -9,7 +9,9 @@ import { CLAUDE_PREDEFINED_MODELS } from '@/modules/providers/list/claude/claude
 import {
   listClaudeSDKBackgroundWork,
   queryClaudeSDK,
+  onClaudeSDKBackgroundWorkEnded,
   stopClaudeSDKTask,
+  wouldClaudeSDKSendStopBackgroundWork,
 } from '@/modules/providers/list/claude/claude-runtime.provider.js';
 import type { NormalizedMessage, ProviderRuntimeContext } from '@/shared/types.js';
 
@@ -448,4 +450,132 @@ test('a held process that has been let go does not take the next message', async
     first.script.end();
     await firstRun;
   });
+});
+
+// The preview the composer and the queued-message dispatcher ask before a
+// send. It runs the same check continueTurn does, so what it predicts is what
+// the send then does.
+const preview = (options: Record<string, unknown>, context?: Partial<ProviderRuntimeContext>) =>
+  wouldClaudeSDKSendStopBackgroundWork(SESSION_ID, options, context as ProviderRuntimeContext | undefined);
+
+test('the send preview says which turns the held process can take', async () => {
+  await withTwoRuns(async ({ cwd, first, firstSent, startFirst }) => {
+    // Nothing is outstanding before the first turn has even started work.
+    assert.deepEqual(await preview({ sessionId: SESSION_ID, cwd }), { stops: false });
+
+    const firstRun = startFirst({ effort: 'high' });
+    await holdForAgent(first, firstSent);
+
+    assert.deepEqual(await preview({ sessionId: SESSION_ID, cwd, effort: 'high' }), { stops: false }, 'same effort: the held process takes it');
+    assert.deepEqual(await preview({ sessionId: SESSION_ID, cwd, effort: 'high', model: 'best', permissionMode: 'acceptEdits' }), { stops: false }, 'model and mode are switched live');
+    assert.deepEqual(await preview({ sessionId: SESSION_ID, cwd, effort: 'low' }), { stops: true, reason: 'effort' });
+    assert.deepEqual(await preview({ sessionId: SESSION_ID, cwd, effort: 'high', resumeAnchorId: 'u-anchor' }), { stops: true, reason: 'edit' });
+    assert.deepEqual(await preview({ sessionId: SESSION_ID, cwd, effort: 'high', resumeFromScratch: true }), { stops: true, reason: 'edit' });
+    assert.deepEqual(await preview({ sessionId: SESSION_ID, cwd: path.join(cwd, 'elsewhere'), effort: 'high' }), { stops: true, reason: 'cwd' });
+    assert.deepEqual(first.script.prompts.length, 1, 'previewing sends nothing');
+    assert.deepEqual(first.script.switches, [], 'nor switches anything');
+
+    first.script.emit(taskNotification('a1', 'toolu_agent', 'stopped'));
+    await waitFor(() => first.script.released());
+    assert.deepEqual(await preview({ sessionId: SESSION_ID, cwd, effort: 'low' }), { stops: false }, 'no work left, nothing to stop');
+    first.script.end();
+    await firstRun;
+  });
+});
+
+test('the send preview resolves the turn\'s model with the lookup it is given', async () => {
+  await withTwoRuns(async ({ cwd, first, firstSent, startFirst }) => {
+    // The default model has no xhigh, so the process was started without an effort.
+    const firstRun = startFirst({ effort: 'xhigh' });
+    await holdForAgent(first, firstSent);
+
+    assert.deepEqual(await preview({ sessionId: SESSION_ID, cwd, effort: 'xhigh' }), { stops: false });
+    // A send that records `best` first resolves to it, and `best` has xhigh.
+    assert.deepEqual(
+      await preview({ sessionId: SESSION_ID, cwd, effort: 'xhigh', model: 'best' }, { resolveResumeModel: async () => 'best' }),
+      { stops: true, reason: 'effort' },
+    );
+
+    first.script.emit(taskNotification('a1', 'toolu_agent', 'stopped'));
+    await waitFor(() => first.script.released());
+    first.script.end();
+    await firstRun;
+  });
+});
+
+test('the send preview reports a held process that cannot take a turn mid-turn', async () => {
+  await withTwoRuns(async ({ cwd, first, firstSent, startFirst }) => {
+    const firstRun = startFirst();
+    await settle();
+    first.script.emit(init());
+    first.script.emit(toolUse('toolu_agent', 'Agent', { prompt: 'sleep 90', subagent_type: 'general-purpose', run_in_background: true }));
+    first.script.emit(taskStarted('a1', 'toolu_agent', 'local_agent'));
+    await waitFor(() => listClaudeSDKBackgroundWork().length === 1);
+
+    // The turn that started the work has not ended, so nothing can take another.
+    assert.deepEqual(await preview({ sessionId: SESSION_ID, cwd }), { stops: true, reason: 'unavailable' });
+
+    first.script.emit(result());
+    await waitFor(() => firstSent.some((message) => message.kind === 'complete'));
+    assert.deepEqual(await preview({ sessionId: SESSION_ID, cwd }), { stops: false });
+
+    first.script.emit(taskNotification('a1', 'toolu_agent', 'stopped'));
+    await waitFor(() => first.script.released());
+    first.script.end();
+    await firstRun;
+  });
+});
+
+test('a turn at another effort gets a new process, stopping the work, as the preview said', async () => {
+  await withTwoRuns(async ({ cwd, first, second, firstSent, secondSent, startFirst, startSecond }) => {
+    const firstRun = startFirst({ effort: 'high' });
+    await holdForAgent(first, firstSent);
+    assert.deepEqual(await preview({ sessionId: SESSION_ID, cwd, effort: 'low' }), { stops: true, reason: 'effort' });
+
+    const secondRun = startSecond({ effort: 'low' });
+    await waitFor(() => first.script.released());
+    assert.deepEqual(first.script.stopped, ['a1'], 'the held process\'s agent is stopped');
+    assert.equal(first.script.prompts.length, 1, 'the held process is not given the turn');
+
+    first.script.emit(taskNotification('a1', 'toolu_agent', 'stopped'));
+    first.script.end();
+    await firstRun;
+    second.script.emit(init());
+    second.script.emit(result());
+    second.script.end();
+    await secondRun;
+    assert.equal(second.script.prompts.length, 1, 'a new process takes the message');
+    assert.ok(secondSent.some((message) => message.kind === 'complete'));
+  });
+});
+
+test('the end of a held process is announced, and the end of one never held is not', async () => {
+  const ended: string[] = [];
+  const unsubscribe = onClaudeSDKBackgroundWorkEnded((sessionId) => { ended.push(sessionId); });
+  try {
+    // Nothing backgrounded: the run's own `complete` already said it is over.
+    await withRun(async ({ script }) => {
+      script.emit(init());
+      script.emit(result());
+      await waitFor(() => script.released());
+    });
+    assert.deepEqual(ended, []);
+
+    // Held for an agent: nothing else reports when the process finally goes.
+    await withRun(async ({ script, sent }) => {
+      script.emit(init());
+      script.emit(toolUse('toolu_agent', 'Agent', { prompt: 'sleep 90', subagent_type: 'general-purpose', run_in_background: true }));
+      script.emit(taskStarted('a1', 'toolu_agent', 'local_agent'));
+      script.emit(ack('toolu_agent', 'Async agent launched successfully.', { status: 'async_launched', agentId: 'a1' }));
+      script.emit(result());
+      await waitFor(() => sent.some((message) => message.kind === 'complete'));
+      script.emit(taskNotification('a1', 'toolu_agent', 'completed'));
+      script.emit(result());
+      await waitFor(() => script.released());
+      assert.deepEqual(ended, [], 'not before the process has ended');
+    });
+    assert.deepEqual(ended, [SESSION_ID]);
+  } finally {
+    unsubscribe();
+  }
 });

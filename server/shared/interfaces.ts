@@ -17,6 +17,7 @@ import type {
   ProviderRuntimeContext,
   ProviderRuntimePermissionGateway,
   ProviderRuntimeWriter,
+  SendBackgroundWorkImpact,
   UpsertProviderMcpServerInput,
   WorkflowAgentActivity,
 } from '@/shared/types.js';
@@ -51,6 +52,24 @@ export interface IProviderRuntime {
    * settled, or the id was never one of its own.
    */
   stopBackgroundTask?(sessionId: string, taskId: string): Promise<boolean>;
+  /**
+   * Previews whether running a turn with `options` (runtime options, as `run`
+   * would receive them) would stop the session's outstanding background work
+   * because the process holding it cannot take that turn. Uses the same check
+   * the runtime applies when the turn is actually run, and changes nothing.
+   * `context` is supplied like `run`'s, for the model lookup the check needs.
+   */
+  wouldStopBackgroundWork?(
+    sessionId: string,
+    options: AnyRecord,
+    context: ProviderRuntimeContext,
+  ): Promise<SendBackgroundWorkImpact>;
+  /**
+   * Calls `listener` with the session id when a process that was held open
+   * for background work has ended, so a turn that waited for that work (a
+   * queued message) can go. Returns the unsubscribe function.
+   */
+  onBackgroundWorkEnded?(listener: (sessionId: string) => void): () => void;
 }
 
 /**

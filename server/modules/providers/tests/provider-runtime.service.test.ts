@@ -136,3 +136,58 @@ test('routes permission decisions through provider-owned runtime capabilities', 
     { requestId: 'request-1', sessionId: 'session-1' },
   ]);
 });
+
+test('previews a send against the runtime\'s background work, resolving the model the send will record', async () => {
+  const asked: unknown[][] = [];
+  const claudeRuntime = createRuntime({
+    async wouldStopBackgroundWork(sessionId, options, context) {
+      asked.push([
+        sessionId,
+        options,
+        await context.resolveResumeModel(sessionId, options.model as string | undefined),
+      ]);
+      return { stops: true, reason: 'effort' };
+    },
+  });
+  const providers = [createProvider('claude', claudeRuntime), createProvider('cursor', createRuntime())];
+  const service = createProviderRuntimeService({
+    listProviders: () => providers,
+    resolveProvider: (providerName) => providers.find((provider) => provider.id === providerName)!,
+    resolveProviderSessionId: () => null,
+    // What the session row recorded for the turn before.
+    resolveResumeModel: async () => 'recorded-model',
+    getProviderModels: async () => ({ OPTIONS: [], DEFAULT: 'default-model' }),
+  });
+
+  assert.deepEqual(await service.wouldStopBackgroundWork('claude', 's1', { model: ' sonnet ' }), { stops: true, reason: 'effort' });
+  assert.deepEqual(await service.wouldStopBackgroundWork('claude', 's1', {}), { stops: true, reason: 'effort' });
+  // chat.send records a requested model before the run resolves it; without
+  // one, the recorded model stands.
+  assert.deepEqual(asked, [
+    ['s1', { model: ' sonnet ' }, 'sonnet'],
+    ['s1', {}, 'recorded-model'],
+  ]);
+  // A runtime that never holds background work has none to stop.
+  assert.deepEqual(await service.wouldStopBackgroundWork('cursor', 's1', {}), { stops: false });
+});
+
+test('subscribes to the end of held background work across every runtime that reports it', () => {
+  const listeners = new Set<(sessionId: string) => void>();
+  const claudeRuntime = createRuntime({
+    onBackgroundWorkEnded(listener) {
+      listeners.add(listener);
+      return () => { listeners.delete(listener); };
+    },
+  });
+  const service = createService([createProvider('claude', claudeRuntime), createProvider('cursor', createRuntime())]);
+  const ended: string[] = [];
+
+  const unsubscribe = service.onBackgroundWorkEnded((sessionId) => { ended.push(sessionId); });
+  for (const listener of listeners) {
+    listener('s1');
+  }
+  unsubscribe();
+
+  assert.deepEqual(ended, ['s1']);
+  assert.equal(listeners.size, 0);
+});

@@ -8,4 +8,9 @@ export { broadcastSessionUpserted, broadcastSessionUpsertedBatch } from './servi
 // runDetachedChatTurn: used by the scheduled-messages module to run a turn
 // from a timer, with no socket to stream to or report errors on.
 export { runDetachedChatTurn } from './services/chat-websocket.service.js';
+// checkSendStopsBackgroundWork: used by the scheduled-messages dispatcher (a
+// queued turn waits rather than stop background work) and by the providers
+// module's send-check route (the composer asks before sending). Both get the
+// same answer the real chat.send would act on.
+export { checkSendStopsBackgroundWork } from './services/chat-websocket.service.js';
 export type { ProviderRuntimeGateway } from './services/chat-websocket.service.js';

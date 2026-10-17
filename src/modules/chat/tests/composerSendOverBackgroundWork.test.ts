@@ -1,18 +1,19 @@
 import assert from 'node:assert/strict';
 
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, test, vi } from 'vitest';
 
 import '@/modules/i18n';
 import { useChatComposerState } from '@/modules/chat/hooks/useChatComposerState';
-import type { PermissionMode, Project, ProjectSession, SessionActivityMap } from '@/shared/types';
+import type { BackgroundSendChoice, BackgroundSendPrompt, PermissionMode, Project, ProjectSession, SessionActivityMap } from '@/shared/types';
 
 /**
  * A session whose turn has ended with background work still running keeps
  * its composer usable, and a new message goes to the process that work runs
- * under, so the work carries on. An edit is different: it resumes the
- * transcript partway in a new process, which stops the work, so the composer
- * says so and asks before sending the edit.
+ * under, so the work carries on. When it cannot (an edit resumes the
+ * transcript partway in a new process; the server says the held process would
+ * not take a message with, say, a different reasoning effort), sending stops
+ * the work, so the composer asks first: send anyway, queue, or cancel.
  */
 
 const PROJECT: Project = { projectId: 'project-1', displayName: 'Project One', fullPath: '/tmp/project-one' };
@@ -33,8 +34,13 @@ const backgroundOnly: SessionActivityMap = new Map([[
   },
 ]]);
 
-const submit = async (processingSessions: SessionActivityMap, { edit = false } = {}) => {
-  const sent: Array<{ type: string }> = [];
+type SendCheck = { stopsBackgroundWork: boolean; reason: string | null } | 'fail';
+
+let sendCheck: SendCheck = { stopsBackgroundWork: false, reason: null };
+const requests: Array<{ url: string; body: unknown }> = [];
+
+const renderComposer = (processingSessions: SessionActivityMap) => {
+  const sent: Array<{ type: string; options?: Record<string, unknown> }> = [];
   const view = renderHook(() =>
     useChatComposerState({
       selectedProject: PROJECT,
@@ -57,25 +63,57 @@ const submit = async (processingSessions: SessionActivityMap, { edit = false } =
       setPendingPermissionRequests: () => undefined,
     }),
   );
+  return {
+    view,
+    sends: () => sent.filter((message) => message.type === 'chat.send' || message.type === 'chat.edit-send'),
+  };
+};
+
+/** Types into the composer and submits; `answer` is the choice given if the prompt opens. */
+const submit = async (
+  processingSessions: SessionActivityMap,
+  { edit = false, answer = 'cancel' as BackgroundSendChoice } = {},
+) => {
+  const composer = renderComposer(processingSessions);
+  const { view } = composer;
   if (edit) {
     await act(async () => {
       view.result.current.beginEditMessage({ type: 'user', content: 'earlier', transcriptAnchorId: 'u-anchor', timestamp: new Date() } as never);
     });
   }
   await act(async () => { view.result.current.setInput('hello'); });
-  await act(async () => { await view.result.current.handleSubmit({ preventDefault: () => undefined } as never); });
-  return {
-    sends: sent.filter((message) => message.type === 'chat.send' || message.type === 'chat.edit-send'),
-    view,
-  };
+  let submitting: Promise<void> = Promise.resolve();
+  let settled = false;
+  act(() => {
+    submitting = view.result.current.handleSubmit({ preventDefault: () => undefined } as never)
+      .then(() => { settled = true; });
+  });
+  // Either the send finishes, or it stops to ask.
+  await waitFor(() => assert.ok(settled || view.result.current.backgroundSendPrompt));
+  const prompt: BackgroundSendPrompt | null = view.result.current.backgroundSendPrompt;
+  if (prompt) {
+    act(() => { view.result.current.resolveBackgroundSendPrompt(answer); });
+  }
+  await act(async () => { await submitting; });
+  return { ...composer, prompt };
 };
 
-const confirm = vi.fn<(message?: string) => boolean>();
+const checks = () => requests.filter((request) => request.url.includes('/send-check'));
 
 beforeEach(() => {
-  vi.stubGlobal('fetch', vi.fn(async () => new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } })));
-  vi.stubGlobal('confirm', confirm);
-  confirm.mockReset();
+  sendCheck = { stopsBackgroundWork: false, reason: null };
+  requests.length = 0;
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    requests.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    if (url.includes('/send-check')) {
+      if (sendCheck === 'fail') {
+        return new Response('{}', { status: 500 });
+      }
+      return new Response(JSON.stringify({ success: true, data: sendCheck }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    return new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }));
   localStorage.clear();
 });
 
@@ -84,40 +122,75 @@ afterEach(() => {
   localStorage.clear();
 });
 
-test('a message on a session with background work is sent without asking: the work carries on', async () => {
-  const { sends } = await submit(backgroundOnly);
+test('a message the held process can take is sent without asking: the work carries on', async () => {
+  const { sends, prompt } = await submit(backgroundOnly);
 
-  assert.equal(confirm.mock.calls.length, 0);
-  assert.equal(sends.length, 1);
+  assert.equal(prompt, null);
+  assert.equal(sends().length, 1);
+  assert.equal(checks().length, 1, 'the server was asked');
+  const checked = checks()[0]?.body as { options: { effort?: string } } | undefined;
+  assert.equal(checked?.options.effort, 'medium', 'with the options the message would be sent with');
 });
 
-test('editing a message while background work runs asks first, naming the session\'s own tasks', async () => {
-  confirm.mockReturnValue(false);
-  const { sends, view } = await submit(backgroundOnly, { edit: true });
+test('a message that would stop the work asks first, naming the session\'s own tasks and why', async () => {
+  sendCheck = { stopsBackgroundWork: true, reason: 'effort' };
+  const { sends, prompt, view } = await submit(backgroundOnly, { answer: 'cancel' });
 
-  assert.equal(confirm.mock.calls.length, 1);
-  assert.equal(
-    confirm.mock.calls[0]?.[0],
-    'This session still has background work running:\n'
-    + '• Workflow frontend-architecture-audit\n'
-    + '• Agent Survey the repo\n\n'
-    + 'Editing a message restarts the session, which stops that work; anything it has not reported yet is lost. Edit anyway?',
-  );
-  assert.equal(sends.length, 0, 'declined: nothing is sent');
+  assert.deepEqual(prompt, {
+    work: ['Workflow frontend-architecture-audit', 'Agent Survey the repo'],
+    reason: 'effort',
+  });
+  assert.equal(sends().length, 0, 'cancelled: nothing is sent');
   assert.equal(view.result.current.input, 'hello', 'and the draft stays in the composer');
+  assert.equal(view.result.current.backgroundSendPrompt, null, 'the prompt closes');
 });
 
-test('confirming sends the edit', async () => {
-  confirm.mockReturnValue(true);
-  const { sends } = await submit(backgroundOnly, { edit: true });
+test('send anyway sends it', async () => {
+  sendCheck = { stopsBackgroundWork: true, reason: 'effort' };
+  const { sends } = await submit(backgroundOnly, { answer: 'send' });
 
-  assert.equal(sends.length, 1);
-  assert.equal(sends[0]?.type, 'chat.edit-send');
+  assert.equal(sends().length, 1);
+  assert.equal(sends()[0]?.type, 'chat.send');
 });
 
-test('an edit on a session with nothing in the background is sent without asking', async () => {
-  const { sends } = await submit(new Map(), { edit: true });
+test('queue puts it in the session\'s queue instead, and clears the composer', async () => {
+  sendCheck = { stopsBackgroundWork: true, reason: 'effort' };
+  const { sends, view } = await submit(backgroundOnly, { answer: 'queue' });
 
-  assert.equal(confirm.mock.calls.length, 0);
-  assert.equal(sends.length, 1);
+  assert.equal(sends().length, 0);
+  const queued = requests.find((request) => request.url.includes('/api/user/drafts/queue'));
+  assert.equal((queued?.body as { message: { content: string } } | undefined)?.message.content, 'hello');
+  assert.deepEqual(view.result.current.queuedDrafts.map((draft) => draft.content), ['hello']);
+  assert.equal(view.result.current.input, '');
+});
+
+test('a check that fails asks rather than stopping the work unasked', async () => {
+  sendCheck = 'fail';
+  const { sends, prompt } = await submit(backgroundOnly, { answer: 'cancel' });
+
+  assert.equal(prompt?.reason, 'unavailable');
+  assert.equal(sends().length, 0);
+});
+
+test('editing a message while background work runs asks without a check, and offers no queue', async () => {
+  const { sends, prompt } = await submit(backgroundOnly, { edit: true, answer: 'cancel' });
+
+  assert.equal(prompt?.reason, 'edit');
+  assert.equal(checks().length, 0, 'an edit always restarts the session');
+  assert.equal(sends().length, 0);
+});
+
+test('editing anyway sends the edit', async () => {
+  const { sends } = await submit(backgroundOnly, { edit: true, answer: 'send' });
+
+  assert.equal(sends().length, 1);
+  assert.equal(sends()[0]?.type, 'chat.edit-send');
+});
+
+test('a session with nothing in the background sends without a check or a prompt', async () => {
+  const { sends, prompt } = await submit(new Map(), { edit: true });
+
+  assert.equal(prompt, null);
+  assert.equal(checks().length, 0);
+  assert.equal(sends().length, 1);
 });

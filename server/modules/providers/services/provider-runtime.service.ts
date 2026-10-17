@@ -9,6 +9,7 @@ import type {
   ProviderRunFunction,
   ProviderRuntimeContext,
   ProviderRuntimeWriter,
+  SendBackgroundWorkImpact,
 } from '@/shared/types.js';
 
 type ProviderRuntimeServiceDependencies = {
@@ -100,6 +101,49 @@ export function createProviderRuntimeService(
     hasBackgroundWork(sessionId: string): boolean {
       return dependencies.listProviders().some((provider) =>
         (provider.runtime.listBackgroundWork?.() ?? []).some((entry) => entry.sessionId === sessionId));
+    },
+
+    /**
+     * Previews whether running a turn with `options` (runtime options, built
+     * as for `run`) would stop the session's background work. Nothing is sent
+     * or recorded.
+     */
+    async wouldStopBackgroundWork(
+      providerName: LLMProvider,
+      sessionId: string,
+      options: AnyRecord,
+    ): Promise<SendBackgroundWorkImpact> {
+      const provider = dependencies.resolveProvider(providerName);
+      // A runtime that never holds background work has none to stop.
+      if (!provider.runtime.wouldStopBackgroundWork) {
+        return { stops: false };
+      }
+      const context = createRuntimeContext(provider);
+      return provider.runtime.wouldStopBackgroundWork(sessionId, options, {
+        ...context,
+        // The send this previews records its requested model on the session
+        // before the runtime resolves it (chat.send), so the lookup has to
+        // answer what it will answer then, not what the last turn recorded.
+        resolveResumeModel: (lookupSessionId, requestedModel) => {
+          const requested = typeof requestedModel === 'string' ? requestedModel.trim() : '';
+          return requested ? Promise.resolve(requested) : context.resolveResumeModel(lookupSessionId, requestedModel);
+        },
+      });
+    },
+
+    /**
+     * Calls `listener` with the session id whenever any runtime's process held
+     * open for background work ends. Returns the unsubscribe function.
+     */
+    onBackgroundWorkEnded(listener: (sessionId: string) => void): () => void {
+      const unsubscribes = dependencies.listProviders()
+        .map((provider) => provider.runtime.onBackgroundWorkEnded?.(listener))
+        .filter((unsubscribe): unsubscribe is () => void => typeof unsubscribe === 'function');
+      return () => {
+        for (const unsubscribe of unsubscribes) {
+          unsubscribe();
+        }
+      };
     },
 
     resolveToolApproval(requestId: string, decision: ProviderPermissionDecision): void {

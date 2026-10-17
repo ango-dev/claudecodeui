@@ -460,6 +460,30 @@ export type BackgroundTaskSummary = {
 };
 
 /**
+ * Why sending the next turn of a session would stop the background work its
+ * held process is running, because a new process has to take the turn:
+ * - `edit`: the turn replaces an earlier message, which resumes the transcript
+ *   partway and so needs a process of its own;
+ * - `cwd`: the turn runs in another working directory than the process;
+ * - `effort`: the turn's reasoning effort, resolved for its model, differs
+ *   from the one the process was started with;
+ * - `unavailable`: no held process can take a turn right now (it is mid-turn,
+ *   winding down, or was replaced).
+ */
+export type BackgroundWorkStopReason = 'edit' | 'cwd' | 'effort' | 'unavailable';
+
+/**
+ * What sending a turn with given options would do to the session's
+ * outstanding background work. `stops` is false when the session has no such
+ * work or its held process would take the turn; `reason` is set only when
+ * `stops` is true. Previews only — nothing is sent or recorded to answer it.
+ */
+export type SendBackgroundWorkImpact = {
+  stops: boolean;
+  reason?: BackgroundWorkStopReason;
+};
+
+/**
  * Where one agent of a running workflow stands, as the SDK reports it on the
  * run's `task_progress` events.
  *

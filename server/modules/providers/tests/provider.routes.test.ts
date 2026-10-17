@@ -450,6 +450,67 @@ test('the running-sessions route reports a session held open for background work
   }
 });
 
+test('the send-check route previews whether a send would stop the session\'s background work', async () => {
+  // The composer asks before sending: the held process cannot take a turn at
+  // another effort, and only the server can resolve effort for the model.
+  const asked: Array<{ sessionId: string; options: Record<string, unknown> }> = [];
+  let impact: { stops: boolean; reason?: string } = { stops: true, reason: 'effort' };
+  const fakeProvider = {
+    id: 'claude',
+    runtime: {
+      wouldStopBackgroundWork: async (sessionId: string, options: Record<string, unknown>) => {
+        asked.push({ sessionId, options });
+        return impact;
+      },
+    },
+  } as unknown as IProvider;
+  const realListProviders = providerRegistry.listProviders;
+  const realResolveProvider = providerRegistry.resolveProvider;
+  providerRegistry.listProviders = () => [fakeProvider];
+  providerRegistry.resolveProvider = () => fakeProvider;
+
+  try {
+    await withProviderServer(async (baseUrl, workspacePath) => {
+      sessionsDb.createAppSession('send-check-session', 'claude', workspacePath, 'Send check');
+      const check = (sessionId: string, body: unknown) => fetch(
+        `${baseUrl}/api/providers/sessions/${sessionId}/send-check`,
+        { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) },
+      );
+
+      const stopping = await check('send-check-session', { options: { effort: 'max', model: 'opus' } });
+      assert.equal(stopping.status, 200);
+      assert.deepEqual(await stopping.json(), {
+        success: true,
+        data: { stopsBackgroundWork: true, reason: 'effort' },
+      });
+      // Asked with the options chat.send would run with: the session's own
+      // project as the working directory, unless the client names one.
+      assert.equal(asked[0]?.sessionId, 'send-check-session');
+      assert.equal(asked[0]?.options.effort, 'max');
+      assert.equal(asked[0]?.options.model, 'opus');
+      assert.equal(asked[0]?.options.cwd, workspacePath);
+      assert.equal(asked[0]?.options.sessionId, 'send-check-session');
+
+      impact = { stops: false };
+      const fine = await check('send-check-session', {});
+      assert.deepEqual(await fine.json(), {
+        success: true,
+        data: { stopsBackgroundWork: false, reason: null },
+      });
+
+      const missing = await check('no-such-session', { options: {} });
+      assert.equal(missing.status, 404);
+      assert.equal((await missing.json() as { error: { code: string } }).error.code, 'SESSION_NOT_FOUND');
+
+      const invalid = await check('send-check-session', { options: ['effort'] });
+      assert.equal(invalid.status, 400);
+    });
+  } finally {
+    providerRegistry.listProviders = realListProviders;
+    providerRegistry.resolveProvider = realResolveProvider;
+  }
+});
+
 const WORKFLOW_SESSION_ID = 'claude-workflow-routes-session';
 const WORKFLOW_RUN_ID = 'wf_16fbf852-274';
 const FINISHED_AGENT_ID = 'aa1e064cf8bd159d6';

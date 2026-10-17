@@ -300,8 +300,16 @@
       "agent": "Agent {{description}}",
       "command": "Command {{description}}",
       "count": "{{count}} tasks",
-      "editAnyway": "This session still has background work running:\n{{work}}\n\nEditing a message restarts the session, which stops that work; anything it has not reported yet is lost. Edit anyway?",
-      "editAnywayConfirm": "Edit anyway"
+      "prompt": {
+        "title": "This session still has background work running",
+        "description": "This message cannot go to the process running that work, so sending it now stops the work; anything it has not reported yet is lost. Queue it to send when the work finishes.",
+        "effortDescription": "This message uses a different reasoning effort, so it needs a new session process, which stops that work; anything it has not reported yet is lost. Queue it to send when the work finishes, or switch back to the earlier effort.",
+        "editDescription": "Editing a message restarts the session, which stops that work; anything it has not reported yet is lost.",
+        "cancel": "Cancel",
+        "queue": "Queue",
+        "sendAnyway": "Send anyway",
+        "editAnyway": "Edit anyway"
+      }
     },
     "controls": {
       "stopGeneration": "Stop Generation",

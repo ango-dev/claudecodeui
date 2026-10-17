@@ -13,6 +13,7 @@ import {
 } from '@/modules/scheduled-messages/services/scheduled-message-dispatcher.service.js';
 import { scheduledMessagesService } from '@/modules/scheduled-messages/services/scheduled-messages.service.js';
 import { chatRunRegistry } from '@/modules/websocket/index.js';
+import type { SendBackgroundWorkImpact } from '@/shared/types.js';
 
 const SESSION_ID = 'scheduled-session';
 
@@ -47,15 +48,25 @@ function contents(userId: number): string[] {
 
 type RunCall = { provider: string; command: string; options: Record<string, unknown> };
 
+type BackgroundWorkStubs = {
+  /** Answers the dispatcher's "would this send stop the work?"; never by default. */
+  wouldStopBackgroundWork?: (provider: string, sessionId: string, options: Record<string, unknown>) => Promise<SendBackgroundWorkImpact>;
+  /** Receives the listener the dispatcher registers for the end of held work. */
+  onBackgroundWorkEnded?: (listener: (sessionId: string) => void) => () => void;
+};
+
 function createRuntime(
   runs: RunCall[],
   behaviour: 'ok' | 'throw' = 'ok',
   aborts: string[] = [],
   hasBackgroundWork: (sessionId: string) => boolean = () => false,
+  stubs: BackgroundWorkStubs = {},
 ) {
   return {
     hasRuntime: () => true,
     hasBackgroundWork,
+    wouldStopBackgroundWork: stubs.wouldStopBackgroundWork ?? (async () => ({ stops: false })),
+    onBackgroundWorkEnded: stubs.onBackgroundWorkEnded ?? (() => () => {}),
     run: async (provider: string, command: string, options: Record<string, unknown>) => {
       if (behaviour === 'throw') {
         throw new Error('provider exploded');
@@ -246,6 +257,119 @@ test('a queued message does not wait for background work its session\'s last tur
     assert.equal(await dispatchQueuedMessages(runtime), 1);
     assert.equal(runs[0]?.command, 'send while the background job runs');
     assert.equal(sessionDraftsDb.getDrafts(userId).length, 0);
+  });
+});
+
+/** Ends a turn whose session keeps background work going under its held process. */
+function completeTurnLeavingBackgroundWork(userId: number): void {
+  const run = chatRunRegistry.startRun({
+    appSessionId: SESSION_ID,
+    provider: 'claude',
+    providerSessionId: null,
+    connection: null,
+    userId,
+  });
+  run!.writer.sendComplete({ exitCode: 0 });
+}
+
+test('a queued message that would stop background work waits for it, and holds back the queue behind it', async () => {
+  await withIsolatedDatabase(async (userId) => {
+    sessionDraftsDb.saveDraft(userId, SESSION_ID, {
+      text: '',
+      queuedMessages: [
+        { content: 'think harder about it', options: { effort: 'max' } },
+        { content: 'the held process could take this one' },
+      ],
+    });
+    completeTurnLeavingBackgroundWork(userId);
+
+    // The held process was started at another effort, so it could not take
+    // the head turn: a new process would, stopping the work.
+    let workRunning = true;
+    const asked: Array<Record<string, unknown>> = [];
+    const runs: RunCall[] = [];
+    const runtime = createRuntime(runs, 'ok', [], () => workRunning, {
+      wouldStopBackgroundWork: async (_provider, _sessionId, options) => {
+        asked.push(options);
+        return workRunning && options.effort === 'max' ? { stops: true, reason: 'effort' } : { stops: false };
+      },
+    });
+
+    assert.equal(await dispatchQueuedMessages(runtime), 0);
+    assert.equal(runs.length, 0);
+    assert.deepEqual(contents(userId), ['think harder about it', 'the held process could take this one']);
+    // Asked about the head only, with the options the send would run with.
+    assert.equal(asked.length, 1);
+    assert.equal(asked[0].effort, 'max');
+    assert.equal(asked[0].sessionId, SESSION_ID);
+    assert.equal(asked[0].cwd, sessionsDb.getSessionById(SESSION_ID)?.project_path);
+
+    // The work is over: nothing is left to stop.
+    workRunning = false;
+    assert.equal(await dispatchQueuedMessages(runtime), 1);
+    assert.deepEqual(runs.map((run) => run.command), ['think harder about it']);
+    assert.deepEqual(contents(userId), ['the held process could take this one']);
+  });
+});
+
+test('a waiting queued message goes once the held process could take it', async () => {
+  await withIsolatedDatabase(async (userId) => {
+    sessionDraftsDb.saveDraft(userId, SESSION_ID, {
+      text: '',
+      queuedMessages: [{ content: 'check on the job' }],
+    });
+    completeTurnLeavingBackgroundWork(userId);
+
+    let wouldStop = true;
+    const runs: RunCall[] = [];
+    const runtime = createRuntime(runs, 'ok', [], () => true, {
+      wouldStopBackgroundWork: async () => (wouldStop ? { stops: true, reason: 'unavailable' } : { stops: false }),
+    });
+
+    assert.equal(await dispatchQueuedMessages(runtime), 0);
+    wouldStop = false;
+    assert.equal(await dispatchQueuedMessages(runtime), 1);
+    assert.equal(runs[0]?.command, 'check on the job');
+  });
+});
+
+test('a queued message that waited for background work goes when the held process ends, not on the next poll', async () => {
+  await withIsolatedDatabase(async (userId) => {
+    sessionDraftsDb.saveDraft(userId, SESSION_ID, {
+      text: '',
+      queuedMessages: [{ content: 'now in a fresh process', options: { effort: 'low' } }],
+    });
+    completeTurnLeavingBackgroundWork(userId);
+
+    let workRunning = true;
+    const ended = new Set<(sessionId: string) => void>();
+    const runs: RunCall[] = [];
+    const runtime = createRuntime(runs, 'ok', [], () => workRunning, {
+      wouldStopBackgroundWork: async () => (workRunning ? { stops: true, reason: 'effort' } : { stops: false }),
+      onBackgroundWorkEnded: (listener) => {
+        ended.add(listener);
+        return () => { ended.delete(listener); };
+      },
+    });
+
+    initializeScheduledMessageDispatcher(runtime);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      assert.equal(runs.length, 0, 'it waits while the work runs');
+
+      // No run completes when held work ends; the runtime says so itself.
+      workRunning = false;
+      for (const listener of ended) {
+        listener(SESSION_ID);
+      }
+      // Well inside the 30s poll interval.
+      await new Promise((resolve) => setTimeout(resolve, 1_600));
+      assert.equal(runs.length, 1);
+      assert.equal(runs[0].command, 'now in a fresh process');
+    } finally {
+      closeScheduledMessageDispatcher();
+    }
+    assert.equal(ended.size, 0, 'closing the dispatcher unsubscribes');
   });
 });
 

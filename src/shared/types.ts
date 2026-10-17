@@ -788,6 +788,22 @@ export type QueuedDraft = {
   options?: QueuedSendOptions;
 };
 
+/**
+ * Why sending a message would stop a session's background work: it edits a
+ * sent message, it runs in another folder, it asks for a different reasoning
+ * effort than the process holding that work, or that process cannot take it.
+ */
+export type BackgroundStopReason = 'edit' | 'cwd' | 'effort' | 'unavailable';
+
+/** The answer to the prompt shown when sending would stop a session's background work: send now (stopping that work), queue the message until it would not, or do nothing. */
+export type BackgroundSendChoice = 'send' | 'queue' | 'cancel';
+
+/** An open background-work send prompt: the session's own background tasks as display strings, and why sending would stop them. */
+export type BackgroundSendPrompt = {
+  work: string[];
+  reason: BackgroundStopReason;
+};
+
 /** A long paste the chat composer shows as a card instead of in the message box; its text is sent ahead of the typed message. */
 export type PastedText = {
   /** Identifies the card while it is edited or removed. */

@@ -1,6 +1,6 @@
 import { scheduledMessagesDb, sessionDraftsDb } from '@/modules/database/index.js';
 import type { QueuedSessionMessageRecord, ScheduledMessageRow } from '@/modules/database/index.js';
-import { chatRunRegistry, runDetachedChatTurn } from '@/modules/websocket/index.js';
+import { chatRunRegistry, checkSendStopsBackgroundWork, runDetachedChatTurn } from '@/modules/websocket/index.js';
 import type { ProviderRuntimeGateway } from '@/modules/websocket/index.js';
 
 /**
@@ -23,6 +23,7 @@ let dispatchInFlight = false;
 // A pass was asked for while one ran; it runs again when that one ends.
 let dispatchRequested = false;
 let unsubscribeRunCompleted: (() => void) | null = null;
+let unsubscribeBackgroundWorkEnded: (() => void) | null = null;
 
 type StoredQueuedMessage = {
   content: string;
@@ -61,6 +62,11 @@ function readQueuedMessage(value: unknown): StoredQueuedMessage | null {
   return { content, options, attachments };
 }
 
+/** The options a queued turn is sent with — and previewed with, so both agree. */
+function queuedTurnOptions(message: StoredQueuedMessage): Record<string, unknown> {
+  return { ...message.options, attachments: message.attachments };
+}
+
 async function sendClaimedQueuedMessage(
   candidate: QueuedSessionMessageRecord,
   claimed: unknown,
@@ -77,7 +83,7 @@ async function sendClaimedQueuedMessage(
       sessionId: candidate.sessionId,
       userId: candidate.userId,
       content: message.content,
-      options: { ...message.options, attachments: message.attachments },
+      options: queuedTurnOptions(message),
     },
     { runtime },
   );
@@ -93,14 +99,47 @@ async function sendClaimedQueuedMessage(
 }
 
 /**
- * Whether a queued turn has to keep waiting for the session: only while a
- * turn is running. A turn that ends with background work still going (a
- * backgrounded command, agent or workflow) keeps its CLI process open, and
- * the next turn is handed to that same process, so the work keeps running
- * and the queued turn need not wait for it.
+ * Whether the session's next queued turn (`head`, the oldest) has to keep
+ * waiting: while a turn is running, and while sending it would stop the
+ * session's background work.
+ *
+ * A turn that ends with background work still going (a backgrounded command,
+ * agent or workflow) keeps its CLI process open, and the next turn is handed
+ * to that same process, so the work keeps running and a queued turn need not
+ * wait for it. That process cannot take every turn, though — not one with
+ * another reasoning effort or working directory, say — and such a turn would
+ * start a new process, which stops the work. It waits until the work is over
+ * instead (announced by onBackgroundWorkEnded, at worst the next poll), or
+ * until it is edited into one the process can take.
+ *
+ * Only the head is asked about: the queue goes in order, so nothing behind it
+ * may overtake it.
  */
-function isSessionBusy(sessionId: string): boolean {
-  return chatRunRegistry.isProcessing(sessionId);
+async function isSessionBusy(
+  sessionId: string,
+  head: StoredQueuedMessage | null,
+  runtime: ProviderRuntimeGateway,
+): Promise<boolean> {
+  if (chatRunRegistry.isProcessing(sessionId)) {
+    return true;
+  }
+  // A malformed head is claimed only to be dropped; it sends nothing.
+  if (!head || !runtime.hasBackgroundWork(sessionId)) {
+    return false;
+  }
+  try {
+    const impact = await checkSendStopsBackgroundWork(
+      { sessionId, options: queuedTurnOptions(head) },
+      { runtime },
+    );
+    return impact?.stops ?? false;
+  } catch (error) {
+    // Unsure means wait: the next pass asks again, and the work ending
+    // settles it.
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('[ScheduledMessages] Could not check a queued turn against background work', { sessionId, error: message });
+    return true;
+  }
 }
 
 /**
@@ -113,7 +152,8 @@ export async function dispatchQueuedMessages(runtime: ProviderRuntimeGateway): P
   let claimed = 0;
 
   await Promise.all(candidates.map(async (candidate) => {
-    if (isSessionBusy(candidate.sessionId)) {
+    const head = readQueuedMessage(candidate.queuedMessages[0]);
+    if (await isSessionBusy(candidate.sessionId, head, runtime)) {
       return;
     }
     const next = sessionDraftsDb.claimNextQueuedMessage(candidate);
@@ -230,6 +270,12 @@ export function initializeScheduledMessageDispatcher(runtime: ProviderRuntimeGat
   unsubscribeRunCompleted = chatRunRegistry.onRunCompleted(() => {
     setTimeout(poll, AFTER_RUN_DELAY_MS).unref?.();
   });
+  // A turn that waited for background work rather than stop it goes when the
+  // process holding that work ends; no run completes then, since that run's
+  // `complete` went out when its turn did.
+  unsubscribeBackgroundWorkEnded = runtime.onBackgroundWorkEnded(() => {
+    setTimeout(poll, AFTER_RUN_DELAY_MS).unref?.();
+  });
 
   // Catch up on anything that came due while the server was not running.
   poll();
@@ -242,4 +288,6 @@ export function closeScheduledMessageDispatcher(): void {
   }
   unsubscribeRunCompleted?.();
   unsubscribeRunCompleted = null;
+  unsubscribeBackgroundWorkEnded?.();
+  unsubscribeBackgroundWorkEnded = null;
 }
