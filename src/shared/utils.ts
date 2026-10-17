@@ -283,14 +283,17 @@ export const isPromptCommand = (command: SlashCommand): boolean =>
 
 /**
  * The text a chat composer sends: each pasted-text card, in paste order, then
- * what was typed, joined by a blank line (blank parts are left out). Used by
+ * what was typed, joined by a blank line (blank parts are left out); a typed
+ * slash command goes first instead. Used by
  * chat when sending or queueing a message and when scheduling one.
  */
-export const withPastedTexts = (pastedTexts: PastedText[], typed: string): string => (
-  [...pastedTexts.map((pasted) => pasted.text), typed]
-    .filter((part) => part.trim())
-    .join('\n\n')
-);
+export const withPastedTexts = (pastedTexts: PastedText[], typed: string): string => {
+  const pasted = pastedTexts.map((entry) => entry.text);
+  // A typed slash command has to lead the message for Claude to run it, with
+  // the pasted text after it as its input.
+  const parts = typed.trimStart().startsWith('/') ? [typed, ...pasted] : [...pasted, typed];
+  return parts.filter((part) => part.trim()).join('\n\n');
+};
 
 // ---------------------------
 

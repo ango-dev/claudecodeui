@@ -722,7 +722,11 @@ export function useChatComposerState({
       queuedSubmission?: ComposerSubmission,
     ) => {
       event.preventDefault();
-      const currentInput = queuedSubmission?.content ?? withPastedTexts(pastedTexts, inputValueRef.current);
+      // What was typed (or the follow-up being submitted), without the pasted
+      // texts: only it can be a slash command, and it names a new chat.
+      const typedInput = queuedSubmission?.content ?? inputValueRef.current;
+      const currentInput = queuedSubmission ? typedInput : withPastedTexts(pastedTexts, typedInput);
+      const summaryInput = typedInput.trim() ? typedInput : currentInput;
       const currentAttachments = queuedSubmission?.attachments ?? attachedFiles;
       const previouslyUploadedAttachments = queuedSubmission?.uploadedAttachments ?? [];
       if (
@@ -745,7 +749,7 @@ export function useChatComposerState({
           // Nothing has been sent yet, so there is no session to queue for.
           return;
         }
-        const queuedOptions = queuedSubmission?.options ?? buildSendOptions(currentInput);
+        const queuedOptions = queuedSubmission?.options ?? buildSendOptions(summaryInput);
         let uploadedAttachments: unknown[] = [];
         try {
           uploadedAttachments = [
@@ -817,7 +821,8 @@ export function useChatComposerState({
       // Also accept exact "help" as a convenience alias for users who expect CLI-style help.
       const commandInput = currentInput.trimEnd();
       const isHelpAlias = commandInput.trim().toLowerCase() === 'help';
-      if (commandInput.startsWith('/') || isHelpAlias) {
+      // Pasted text that happens to start with a command name is not a command.
+      if ((commandInput.startsWith('/') && typedInput.trimStart().startsWith('/')) || isHelpAlias) {
         const firstSpace = commandInput.indexOf(' ');
         const commandName = isHelpAlias
           ? '/help'
@@ -868,7 +873,7 @@ export function useChatComposerState({
       }
 
       const resolvedProjectPath = selectedProject.fullPath || selectedProject.path || '';
-      const sessionSummary = getNotificationSessionSummary(selectedSession, currentInput);
+      const sessionSummary = getNotificationSessionSummary(selectedSession, summaryInput);
 
       // The conversation always has a stable backend-allocated session id
       // BEFORE the first websocket send: brand-new chats allocate one here
@@ -982,7 +987,7 @@ export function useChatComposerState({
         ...(editingAnchorId ? { anchorId: editingAnchorId } : {}),
         content: messageContent,
         options: {
-          ...(queuedSubmission?.options ?? buildSendOptions(messageContent)),
+          ...(queuedSubmission?.options ?? buildSendOptions(summaryInput)),
           attachments: uploadedAttachments,
         },
       });

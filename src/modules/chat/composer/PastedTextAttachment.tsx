@@ -71,8 +71,9 @@ export default function PastedTextAttachment({ text, onChange, onRemove }: Paste
         aria-label={editLabel}
         className="flex h-20 w-40 max-w-full flex-col justify-between overflow-hidden rounded-xl border border-border/50 bg-background/80 px-2.5 py-1.5 text-left shadow-sm transition-colors hover:border-border focus:outline-none focus:ring-2 focus:ring-primary/60"
       >
-        <span className="line-clamp-3 w-full whitespace-pre-wrap break-all text-[10px] leading-[13px] text-muted-foreground">
-          {text.slice(0, 400)}
+        {/* Leading blank lines would leave the preview empty; words wrap whole. */}
+        <span className="line-clamp-3 w-full whitespace-pre-wrap break-words text-[10px] leading-[13px] text-muted-foreground">
+          {text.trimStart().slice(0, 400)}
         </span>
         <span className="flex w-full items-center justify-between">
           <span className="rounded border border-border/70 px-1 text-[9px] font-semibold uppercase leading-[14px] tracking-wide text-foreground/80">

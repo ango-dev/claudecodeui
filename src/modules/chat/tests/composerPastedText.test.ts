@@ -17,7 +17,7 @@ import type { PermissionMode, Project, ProjectSession } from '@/shared/types';
 // The queue is server-backed; only what the composer hands it matters here.
 const queuedMessages = vi.hoisted(() => [] as Array<{ scope: string; content: string }>);
 vi.mock('@/shared/chatDrafts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/shared/chatDrafts')>();
+  const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
     appendQueuedMessage: async (scope: string, message: { content: string }) => {
@@ -36,7 +36,7 @@ const MANY_LINES = Array.from({ length: 15 }, (_, index) => `line ${index + 1}`)
 const jsonResponse = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
-const renderComposer = ({ isLoading = false }: { isLoading?: boolean } = {}) => {
+const renderComposer = async ({ isLoading = false }: { isLoading?: boolean } = {}) => {
   const sent: Array<{ type: string; sessionId?: string; content?: string }> = [];
   const view = renderHook(() =>
     useChatComposerState({
@@ -58,10 +58,12 @@ const renderComposer = ({ isLoading = false }: { isLoading?: boolean } = {}) => 
       setIsUserScrolledUp: () => undefined,
       setPendingPermissionRequests: () => undefined,
     }));
+  // Let the mount-time requests (slash commands, drafts) finish while fetch is stubbed.
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   return { view, chatSends: () => sent.filter((message) => message.type === 'chat.send') };
 };
 
-type ComposerView = ReturnType<typeof renderComposer>['view'];
+type ComposerView = Awaited<ReturnType<typeof renderComposer>>['view'];
 
 /** A paste event like the textarea gets, with the clipboard's plain text and any items. */
 const paste = (
@@ -100,8 +102,8 @@ afterEach(() => {
   localStorage.clear();
 });
 
-test('a paste of 1,000+ characters becomes a card and is kept out of the message box', () => {
-  const { view } = renderComposer();
+test('a paste of 1,000+ characters becomes a card and is kept out of the message box', async () => {
+  const { view } = await renderComposer();
   act(() => { view.result.current.setInput('typed'); });
 
   const preventDefault = paste(view, LONG_TEXT);
@@ -111,8 +113,8 @@ test('a paste of 1,000+ characters becomes a card and is kept out of the message
   assert.equal(view.result.current.input, 'typed');
 });
 
-test('a paste of 15+ lines becomes a card even when it is short', () => {
-  const { view } = renderComposer();
+test('a paste of 15+ lines becomes a card even when it is short', async () => {
+  const { view } = await renderComposer();
 
   const preventDefault = paste(view, MANY_LINES);
 
@@ -120,8 +122,8 @@ test('a paste of 15+ lines becomes a card even when it is short', () => {
   assert.deepEqual(view.result.current.pastedTexts.map((pasted) => pasted.text), [MANY_LINES]);
 });
 
-test('a shorter paste is left to the browser, as before', () => {
-  const { view } = renderComposer();
+test('a shorter paste is left to the browser, as before', async () => {
+  const { view } = await renderComposer();
 
   const belowBoth = Array.from({ length: 14 }, () => 'y'.repeat(60)).join('\n');
   assert.ok(belowBoth.length < 1_000);
@@ -133,8 +135,8 @@ test('a shorter paste is left to the browser, as before', () => {
   assert.deepEqual(view.result.current.pastedTexts, []);
 });
 
-test('a paste carrying an image and long text attaches the image and makes a card', () => {
-  const { view } = renderComposer();
+test('a paste carrying an image and long text attaches the image and makes a card', async () => {
+  const { view } = await renderComposer();
   const image = new File(['png'], 'shot.png', { type: 'image/png' });
 
   paste(view, LONG_TEXT, [{ type: 'image/png', getAsFile: () => image }]);
@@ -143,8 +145,8 @@ test('a paste carrying an image and long text attaches the image and makes a car
   assert.equal(view.result.current.pastedTexts.length, 1);
 });
 
-test('a card is edited and removed by its id', () => {
-  const { view } = renderComposer();
+test('a card is edited and removed by its id', async () => {
+  const { view } = await renderComposer();
   paste(view, LONG_TEXT);
   paste(view, MANY_LINES);
   const [first, second] = view.result.current.pastedTexts;
@@ -158,7 +160,7 @@ test('a card is edited and removed by its id', () => {
 });
 
 test('sending puts each pasted text, in paste order, ahead of the typed text and clears the cards', async () => {
-  const { view, chatSends } = renderComposer();
+  const { view, chatSends } = await renderComposer();
   paste(view, LONG_TEXT);
   paste(view, MANY_LINES);
   act(() => { view.result.current.setInput('Summarize both'); });
@@ -173,8 +175,28 @@ test('sending puts each pasted text, in paste order, ahead of the typed text and
   assert.equal(view.result.current.input, '');
 });
 
+test('a typed slash command leads the message, with the pasted text after it as its input', async () => {
+  const { view, chatSends } = await renderComposer();
+  paste(view, LONG_TEXT);
+  act(() => { view.result.current.setInput('/review'); });
+
+  await submit(view);
+
+  assert.deepEqual(chatSends().map((message) => message.content), [`/review\n\n${LONG_TEXT}`]);
+});
+
+test('pasted text that starts with a command name is sent as text, not run as a command', async () => {
+  const { view, chatSends } = await renderComposer();
+  const pastedHelp = `/help ${LONG_TEXT}`;
+  paste(view, pastedHelp);
+
+  await submit(view);
+
+  assert.deepEqual(chatSends().map((message) => message.content), [pastedHelp]);
+});
+
 test('a message of only a pasted card, with nothing typed, is sent', async () => {
-  const { view, chatSends } = renderComposer();
+  const { view, chatSends } = await renderComposer();
   paste(view, LONG_TEXT);
 
   await submit(view);
@@ -184,7 +206,7 @@ test('a message of only a pasted card, with nothing typed, is sent', async () =>
 });
 
 test('while a reply runs, the pasted and typed text are queued together and the cards clear', async () => {
-  const { view, chatSends } = renderComposer({ isLoading: true });
+  const { view, chatSends } = await renderComposer({ isLoading: true });
   paste(view, LONG_TEXT);
   act(() => { view.result.current.setInput('next'); });
 
