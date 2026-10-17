@@ -26,6 +26,7 @@ type ProviderTokenUsageServiceDependencies = {
   readTextFile: (filePath: string) => Promise<string>;
   readTextFileTail: (filePath: string, maxBytes: number) => Promise<FileTail>;
   getClaudeContextWindow: () => string | undefined;
+  getReportedClaudeContextWindow: (providerSessionId: string) => number | undefined;
   isProviderSessionSuperseded: (providerSessionId: string, provider: string) => boolean;
 };
 
@@ -92,9 +93,56 @@ const defaultDependencies: ProviderTokenUsageServiceDependencies = {
     }
   },
   getClaudeContextWindow: () => process.env.CONTEXT_WINDOW,
+  getReportedClaudeContextWindow: (providerSessionId) => getReportedClaudeContextWindow(providerSessionId),
   isProviderSessionSuperseded: (providerSessionId, provider) =>
     sessionsDb.isProviderSessionSuperseded(providerSessionId, provider),
 };
+
+/**
+ * Context windows the Claude SDK reported per provider session id.
+ *
+ * The SDK states the real window of the model that served a turn only in the
+ * turn's `result.modelUsage[model].contextWindow`; the transcript records the
+ * model id at most, and an id cannot tell a 200K from a 1M variant, nor what a
+ * self-hosted model behind ANTHROPIC_BASE_URL allows. Remembering the reported
+ * value lets the history-derived usage show the same window the live counter
+ * did. It is process memory on purpose: after a restart the counter falls back
+ * to `resolveClaudeContextWindow` until the session's next turn reports again.
+ */
+const reportedClaudeContextWindows = new Map<string, number>();
+
+/** One number per session; the cap only bounds a long-lived server's memory. */
+const MAX_REPORTED_CLAUDE_CONTEXT_WINDOWS = 1000;
+
+/**
+ * Used by the Claude runtime provider to record the window the SDK reported for
+ * a session's turn. Non-positive or non-numeric values are ignored so a build
+ * that reports no window never overwrites one that did.
+ */
+export function rememberClaudeContextWindow(providerSessionId: string, contextWindow: number): void {
+  if (!providerSessionId || !Number.isFinite(contextWindow) || contextWindow <= 0) {
+    return;
+  }
+
+  // Re-insert so the most recently reported sessions are the last evicted.
+  reportedClaudeContextWindows.delete(providerSessionId);
+  reportedClaudeContextWindows.set(providerSessionId, contextWindow);
+  if (reportedClaudeContextWindows.size > MAX_REPORTED_CLAUDE_CONTEXT_WINDOWS) {
+    const oldestSessionId = reportedClaudeContextWindows.keys().next().value;
+    if (oldestSessionId !== undefined) {
+      reportedClaudeContextWindows.delete(oldestSessionId);
+    }
+  }
+}
+
+/**
+ * Used by the Claude runtime provider (a resumed run starts from the window its
+ * session last reported), the Claude history reader, and this service's usage
+ * lookup. Returns undefined when no run has reported a window for the session.
+ */
+export function getReportedClaudeContextWindow(providerSessionId: string | null | undefined): number | undefined {
+  return providerSessionId ? reportedClaudeContextWindows.get(providerSessionId) : undefined;
+}
 
 function readUsageNumber(value: unknown): number {
   const parsedValue = Number(value);
@@ -192,9 +240,11 @@ const ONE_MILLION_SUFFIX_PATTERN = /\[1m\]$/i;
 /**
  * Context windows the Agent SDK has reported, by model id. The SDK states each
  * model's real window in a turn's `result.modelUsage`, which beats any guess;
- * transcripts never record it, so this is the only place it is known.
+ * transcripts never record it, so this is the only place it is known. Shared by
+ * every session, unlike the per-session map above, so it is the fallback for a
+ * session that has not reported a window of its own.
  */
-const reportedClaudeContextWindows = new Map<string, number>();
+const reportedClaudeModelContextWindows = new Map<string, number>();
 
 /**
  * Used by the Claude runtime: records the window of every model a turn used,
@@ -207,16 +257,16 @@ export function rememberClaudeContextWindows(modelUsage: unknown): void {
   for (const [model, usage] of Object.entries(modelUsage as AnyRecord)) {
     const contextWindow = readUsageNumber((usage as AnyRecord | null)?.contextWindow);
     if (contextWindow > 0) {
-      reportedClaudeContextWindows.set(model, contextWindow);
+      reportedClaudeModelContextWindows.set(model, contextWindow);
       // Assistant rows name the model without the `[1m]` suffix the key may
       // carry, so the window is also kept under the bare id; but only until
       // the bare model reports its own, as the map is shared by every session
       // and a standard-window session of the same model is not 1M.
       const baseModel = model.replace(ONE_MILLION_SUFFIX_PATTERN, '');
-      if (baseModel !== model && reportedClaudeContextWindows.has(baseModel)) {
+      if (baseModel !== model && reportedClaudeModelContextWindows.has(baseModel)) {
         continue;
       }
-      reportedClaudeContextWindows.set(baseModel, contextWindow);
+      reportedClaudeModelContextWindows.set(baseModel, contextWindow);
     }
   }
 }
@@ -235,7 +285,7 @@ export function resolveClaudeContextWindow(
   largestPromptTokens: number,
   configuredContextWindow: string | undefined = process.env.CONTEXT_WINDOW,
 ): number {
-  const reported = model ? reportedClaudeContextWindows.get(model) : undefined;
+  const reported = model ? reportedClaudeModelContextWindows.get(model) : undefined;
   if (reported) {
     return reported;
   }
@@ -264,10 +314,14 @@ export function resolveClaudeContextWindow(
  * window currently holds. Summing turns would count the same cached prefix
  * once per turn. A compaction newer than that turn replaces it: the context
  * then holds the compacted size its boundary row records, until the next turn.
+ *
+ * The total is the window the SDK reported for the session when there is one,
+ * and otherwise `resolveClaudeContextWindow` for the transcript's model.
  */
 export function summarizeClaudeTokenUsage(
   entries: AnyRecord[],
   configuredContextWindow: string | undefined = process.env.CONTEXT_WINDOW,
+  reportedContextWindow?: number,
 ): TokenUsageResult {
   let inputTokens = 0;
   let outputTokens = 0;
@@ -351,7 +405,11 @@ export function summarizeClaudeTokenUsage(
     );
   }
 
-  const contextWindow = resolveClaudeContextWindow(model, largestPromptTokens, configuredContextWindow);
+  // A window the SDK reported for this very session beats one inferred from
+  // the model id, which cannot tell a 200K from a 1M variant of it.
+  const contextWindow = reportedContextWindow && reportedContextWindow > 0
+    ? reportedContextWindow
+    : resolveClaudeContextWindow(model, largestPromptTokens, configuredContextWindow);
   const cacheTokens = cacheReadTokens + cacheCreationTokens;
 
   return {
@@ -579,7 +637,11 @@ export function createProviderTokenUsageService(
       if (!claudeEntriesHaveUsage(entries) && !tail.isComplete) {
         entries = parseClaudeUsageEntries(await dependencies.readTextFile(sessionFilePath));
       }
-      return summarizeClaudeTokenUsage(entries, dependencies.getClaudeContextWindow());
+      return summarizeClaudeTokenUsage(
+        entries,
+        dependencies.getClaudeContextWindow(),
+        dependencies.getReportedClaudeContextWindow(providerSessionId),
+      );
     },
   };
 }
