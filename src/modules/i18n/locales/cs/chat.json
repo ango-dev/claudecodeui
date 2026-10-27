@@ -164,7 +164,8 @@
     "hintText": {
       "ctrlEnter": "{{send}} pro odeslání • {{newLine}} pro nový řádek • Tab pro změnu režimu • / pro příkazy s lomítkem",
       "enter": "Enter pro odeslání • {{newLine}} pro nový řádek • Tab pro změnu režimu • / pro příkazy s lomítkem",
-      "queue": "Enter pro zařazení další zprávy do fronty"
+      "queue": "Enter pro zařazení další zprávy do fronty",
+      "appendQueued": "Enter pro přidání ke zprávě ve frontě"
     },
     "clickToChangeMode": "Kliknutím změníte režim oprávnění (nebo stiskněte Tab ve vstupním poli)",
     "showAllCommands": "Zobrazit všechny příkazy",
@@ -175,7 +176,8 @@
       "label": "Ve frontě",
       "willSend": "Odešle se po dokončení",
       "edit": "Upravit zprávu ve frontě",
-      "delete": "Smazat zprávu ve frontě"
+      "delete": "Smazat zprávu ve frontě",
+      "append": "Přidat ke zprávě ve frontě"
     }
   },
   "composer": {

@@ -47,6 +47,32 @@ type SettingsDependencies = {
  */
 const SHOW_SESSIONS_IN_VS_CODE_KEY = 'showSessionsInVsCode';
 
+/**
+ * The user-preferences key the client keeps its interface toggles under, as
+ * one object of booleans, and the toggle inside it behind "Combine queued
+ * messages". The client may store a toggle as a real boolean or as the string
+ * 'true' / 'false'.
+ */
+const UI_PREFERENCES_KEY = 'uiPreferences';
+const COMBINE_QUEUED_MESSAGES_KEY = 'combineQueuedMessages';
+
+/**
+ * Reads one stored interface toggle the way the client does: a boolean, or the
+ * string 'true' / 'false'; anything else (absent, unparseable) is `fallback`.
+ */
+function readUiToggle(value: unknown, fallback: boolean): boolean {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (value === 'true') {
+    return true;
+  }
+  if (value === 'false') {
+    return false;
+  }
+  return fallback;
+}
+
 function requiredString(value: unknown, fieldName: string, code: string): string {
   const normalizedValue = typeof value === 'string' ? value.trim() : '';
   if (!normalizedValue) {
@@ -171,6 +197,18 @@ export function createSettingsService(dependencies: SettingsDependencies) {
         return false;
       }
       return dependencies.preferences.getPreferences(numericUserId)[SHOW_SESSIONS_IN_VS_CODE_KEY] === true;
+    },
+    /**
+     * Whether "Combine queued messages" is on: the session's queued follow-ups
+     * go as one turn rather than one turn each. On unless the user has turned
+     * it off, so a missing or unreadable preference reads as on.
+     */
+    isQueuedMessageCombiningEnabled(userId: number): boolean {
+      const uiPreferences = dependencies.preferences.getPreferences(userId)[UI_PREFERENCES_KEY];
+      if (!uiPreferences || typeof uiPreferences !== 'object' || Array.isArray(uiPreferences)) {
+        return true;
+      }
+      return readUiToggle((uiPreferences as Record<string, unknown>)[COMBINE_QUEUED_MESSAGES_KEY], true);
     },
     subscribeToPush(userId: number, input: Record<string, unknown>) {
       const endpoint = requiredString(input.endpoint, 'Endpoint', 'PUSH_SUBSCRIPTION_REQUIRED');

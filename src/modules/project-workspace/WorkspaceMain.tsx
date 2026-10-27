@@ -63,7 +63,7 @@ function WorkspaceMain({
   const preferences = useUiPreferences();
   // The sidebar is a drawer on phones, or anywhere with the slide-over preference.
   const showMenuButton = isPhoneSizedScreen() || preferences.sidebarAsDrawer;
-  const { showRawParameters, showThinking, sendByCtrlEnter } = preferences;
+  const { showRawParameters, showThinking, sendByCtrlEnter, combineQueuedMessages } = preferences;
 
   const { tasksEnabled, isTaskMasterInstalled } = useTasksSettings();
   const browserUseEnabled = useBrowserUseEnabled();
@@ -182,6 +182,7 @@ function WorkspaceMain({
                 showRawParameters={showRawParameters}
                 showThinking={showThinking}
                 sendByCtrlEnter={sendByCtrlEnter}
+                combineQueuedMessages={combineQueuedMessages}
                 externalMessageUpdate={externalMessageUpdate}
                 newSessionTrigger={newSessionTrigger}
                 onShowAllTasks={tasksEnabled ? showAllTasks : null}

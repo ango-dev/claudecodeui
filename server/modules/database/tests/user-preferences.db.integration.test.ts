@@ -202,18 +202,66 @@ test('a turn restored after its emptied row was removed is written back', async 
     const row = getConnection()
       .prepare('SELECT queued_message FROM session_drafts WHERE user_id = ? AND draft_scope = ?')
       .get(USER_ID, 'session-a') as { queued_message: string };
-    const claimed = sessionDraftsDb.claimNextQueuedMessage({
+    const claimed = sessionDraftsDb.claimQueuedMessages({
       userId: USER_ID,
       sessionId: 'session-a',
       queuedMessages: sessionDraftsDb.getDrafts(USER_ID)[0]!.queuedMessages,
       claimToken: row.queued_message,
-    });
+    }, 1);
     assert.notEqual(claimed, null);
     sessionDraftsDb.deleteEmptyDraft(USER_ID, 'session-a');
     assert.deepEqual(sessionDraftsDb.getDrafts(USER_ID), []);
 
-    sessionDraftsDb.restoreQueuedMessage(USER_ID, 'session-a', claimed);
+    sessionDraftsDb.restoreQueuedMessages(USER_ID, 'session-a', claimed!);
 
     assert.deepEqual(queuedIdsIn('session-a'), ['qa']);
+  });
+});
+
+/** The dispatcher's candidate for a scope, built the way listQueuedMessages lists one. */
+function queuedCandidate(scope: string) {
+  const row = getConnection()
+    .prepare('SELECT queued_message FROM session_drafts WHERE user_id = ? AND draft_scope = ?')
+    .get(USER_ID, scope) as { queued_message: string };
+  return {
+    userId: USER_ID,
+    sessionId: scope,
+    queuedMessages: sessionDraftsDb.getDrafts(USER_ID).find((draft) => draft.scope === scope)!.queuedMessages,
+    claimToken: row.queued_message,
+  };
+}
+
+test('several queued turns are claimed together, and restored together in front of later ones', async () => {
+  await withDatabase(() => {
+    for (const id of ['qa', 'qb', 'qc']) {
+      sessionDraftsDb.appendQueuedMessage(USER_ID, 'session-a', { id, content: id, attachments: [] }, 50);
+    }
+    const candidate = queuedCandidate('session-a');
+
+    // More than the queue holds, or none, takes nothing.
+    assert.equal(sessionDraftsDb.claimQueuedMessages(candidate, 4), null);
+    assert.equal(sessionDraftsDb.claimQueuedMessages(candidate, 0), null);
+    assert.deepEqual(queuedIdsIn('session-a'), ['qa', 'qb', 'qc']);
+
+    const claimed = sessionDraftsDb.claimQueuedMessages(candidate, 2);
+    assert.deepEqual(claimed!.map((message) => (message as { id: string }).id), ['qa', 'qb']);
+    assert.deepEqual(queuedIdsIn('session-a'), ['qc']);
+    // The same listing cannot be claimed from twice.
+    assert.equal(sessionDraftsDb.claimQueuedMessages(candidate, 1), null);
+
+    sessionDraftsDb.appendQueuedMessage(USER_ID, 'session-a', { id: 'qd', content: 'qd', attachments: [] }, 50);
+    sessionDraftsDb.restoreQueuedMessages(USER_ID, 'session-a', claimed!);
+    assert.deepEqual(queuedIdsIn('session-a'), ['qa', 'qb', 'qc', 'qd']);
+  });
+});
+
+test('claiming the whole queue empties it', async () => {
+  await withDatabase(() => {
+    sessionDraftsDb.appendQueuedMessage(USER_ID, 'session-a', { id: 'qa', content: 'A', attachments: [] }, 50);
+    sessionDraftsDb.appendQueuedMessage(USER_ID, 'session-a', { id: 'qb', content: 'B', attachments: [] }, 50);
+
+    assert.equal(sessionDraftsDb.claimQueuedMessages(queuedCandidate('session-a'), 2)?.length, 2);
+    sessionDraftsDb.deleteEmptyDraft(USER_ID, 'session-a');
+    assert.deepEqual(sessionDraftsDb.getDrafts(USER_ID), []);
   });
 });

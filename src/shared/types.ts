@@ -1408,6 +1408,7 @@ export type PreferenceToggleKey =
   | 'showRawParameters'
   | 'showThinking'
   | 'sendByCtrlEnter'
+  | 'combineQueuedMessages'
   | 'sidebarAsDrawer'
   | 'voiceEnabled';
 

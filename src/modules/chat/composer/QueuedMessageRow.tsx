@@ -2,13 +2,23 @@ import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PaperclipIcon, PencilIcon, XIcon } from 'lucide-react';
 
+import QueuedMessageMergedCard from '@/modules/chat/composer/QueuedMessageMergedCard';
 import type { QueuedDraft } from '@/shared/types';
 
-type QueuedMessageRowProps = {
+type QueuedMessageStripProps = {
   /** Oldest first: the first draft is the one sent when the current turn ends. */
   queuedDrafts: QueuedDraft[];
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
+};
+
+type QueuedMessageRowProps = QueuedMessageStripProps & {
+  /** True when the server merges the queue into one message (the default); false sends each draft as its own turn. */
+  combined: boolean;
+  /** Takes every queued draft back into the message box (combined mode). */
+  onEditAll: () => void;
+  /** Clears the whole queue (combined mode). */
+  onDeleteAll: () => void;
 };
 
 type QueuedMessageCardProps = {
@@ -89,12 +99,11 @@ function QueuedMessageCard({ draft, position, onEdit, onDelete }: QueuedMessageC
 }
 
 /**
- * Rendered by chat's ChatComposer to show the messages queued for a busy
- * session as one short, sideways-scrolling strip of cards (so several of them
- * never push the transcript up), each with edit and delete actions before it
- * is auto-sent in order.
+ * Separate-turns mode: the queued messages as one short, sideways-scrolling
+ * strip of cards (so several of them never push the transcript up), each with
+ * edit and delete actions before it is auto-sent in order.
  */
-export default function QueuedMessageRow({ queuedDrafts, onEdit, onDelete }: QueuedMessageRowProps) {
+function QueuedMessageStrip({ queuedDrafts, onEdit, onDelete }: QueuedMessageStripProps) {
   const { t } = useTranslation('chat');
   const rowRef = useRef<HTMLOListElement | null>(null);
   // Compared on each change so the strip only scrolls when a card was added, not when one is removed.
@@ -149,4 +158,31 @@ export default function QueuedMessageRow({ queuedDrafts, onEdit, onDelete }: Que
       </ol>
     </div>
   );
+}
+
+/**
+ * Rendered by chat's ChatComposer to show the messages queued for a busy
+ * session: by default as one merged card matching the single message the
+ * server sends, or, when the user turned combining off, as a strip of cards
+ * sent one per turn.
+ */
+export default function QueuedMessageRow({
+  queuedDrafts,
+  combined,
+  onEdit,
+  onDelete,
+  onEditAll,
+  onDeleteAll,
+}: QueuedMessageRowProps) {
+  if (combined) {
+    return (
+      <QueuedMessageMergedCard
+        queuedDrafts={queuedDrafts}
+        onDelete={onDelete}
+        onEditAll={onEditAll}
+        onDeleteAll={onDeleteAll}
+      />
+    );
+  }
+  return <QueuedMessageStrip queuedDrafts={queuedDrafts} onEdit={onEdit} onDelete={onDelete} />;
 }

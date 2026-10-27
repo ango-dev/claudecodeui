@@ -85,6 +85,10 @@ type ChatComposerProps = {
   onCancelScheduledMessage: (id: string) => void;
   onEditQueuedDraft: (id: string) => void;
   onDeleteQueuedDraft: (id: string) => void;
+  /** Queued follow-ups are sent together as one message, shown as one card, rather than one turn each. */
+  combineQueuedMessages: boolean;
+  onEditAllQueuedDrafts: () => void;
+  onDeleteAllQueuedDrafts: () => void;
   attachedFiles: File[];
   onRemoveAttachment: (index: number) => void;
   /** Long pastes shown as cards; sent ahead of the typed text. */
@@ -162,6 +166,9 @@ export default function ChatComposer({
   onCancelScheduledMessage,
   onEditQueuedDraft,
   onDeleteQueuedDraft,
+  combineQueuedMessages,
+  onEditAllQueuedDrafts,
+  onDeleteAllQueuedDrafts,
   attachedFiles,
   pastedTexts,
   onChangePastedText,
@@ -263,17 +270,23 @@ export default function ChatComposer({
   const hasPendingPermissions = pendingPermissionRequests.length > 0;
   const hasActivityIndicator = Boolean(activity && !hasPendingPermissions);
 
-  // Enter while a reply is running always adds another message to the queue.
+  // Enter while a reply is running always adds another message to the queue;
+  // combined, it joins the message already waiting there.
   // Anything to send besides the typed text: attached files or pasted texts.
   const hasAttachments = attachedFiles.length > 0 || pastedTexts.length > 0;
   const canQueueDraft = isLoading && Boolean(input.trim() || hasAttachments);
+  const addsToQueuedMessage = combineQueuedMessages && queuedDrafts.length > 0;
   const submitHint = canQueueDraft
-    ? t('input.hintText.queue', { defaultValue: 'Enter to queue your next message' })
+    ? addsToQueuedMessage
+      ? t('input.hintText.appendQueued', { defaultValue: 'Enter to add to the queued message' })
+      : t('input.hintText.queue', { defaultValue: 'Enter to queue your next message' })
     : sendByCtrlEnter
       ? t('input.hintText.ctrlEnter', { send: formatShortcut('Mod', 'Enter'), newLine: formatShortcut('Shift', 'Enter') })
       : t('input.hintText.enter', { newLine: formatShortcut('Shift', 'Enter') });
   const submitAriaLabel = canQueueDraft
-    ? t('input.queue.sendNext', { defaultValue: 'Queue next message' })
+    ? addsToQueuedMessage
+      ? t('input.queue.append', { defaultValue: 'Add to queued message' })
+      : t('input.queue.sendNext', { defaultValue: 'Queue next message' })
     : isLoading
       ? t('input.stop')
       : t('input.send');
@@ -326,8 +339,11 @@ export default function ChatComposer({
 
       <QueuedMessageRow
         queuedDrafts={queuedDrafts}
+        combined={combineQueuedMessages}
         onEdit={onEditQueuedDraft}
         onDelete={onDeleteQueuedDraft}
+        onEditAll={onEditAllQueuedDrafts}
+        onDeleteAll={onDeleteAllQueuedDrafts}
       />
 
       {!hasQuestionPanel && <div className="relative mx-auto max-w-[54.25rem]">

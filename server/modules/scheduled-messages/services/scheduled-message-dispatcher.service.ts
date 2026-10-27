@@ -1,6 +1,7 @@
 import { scheduledMessagesDb, sessionDraftsDb } from '@/modules/database/index.js';
 import type { QueuedSessionMessageRecord, ScheduledMessageRow } from '@/modules/database/index.js';
 import { announceScheduledMessagesChanged } from '@/modules/scheduled-messages/services/scheduled-messages.service.js';
+import { isQueuedMessageCombiningEnabled } from '@/modules/settings/index.js';
 import { chatRunRegistry, checkSendStopsBackgroundWork, runDetachedChatTurn } from '@/modules/websocket/index.js';
 import type { ProviderRuntimeGateway } from '@/modules/websocket/index.js';
 import type { QueuedChatMessage } from '@/shared/types.js';
@@ -44,13 +45,89 @@ function queuedTurnOptions(message: QueuedChatMessage): Record<string, unknown> 
   return { ...message.options, attachments: message.attachments };
 }
 
-async function sendClaimedQueuedMessage(
+/**
+ * What one pass sends from a session's queue: how many of its oldest entries
+ * the turn takes, and the turn they make. `turn` is null when none of those
+ * entries is a readable message; they are claimed only to be dropped.
+ */
+type QueuedTurnPlan = {
+  count: number;
+  turn: QueuedChatMessage | null;
+};
+
+/** A slash command is handed to the provider as the whole turn, so it is never merged with other text. */
+function isSlashCommand(message: QueuedChatMessage): boolean {
+  return message.content.trimStart().startsWith('/');
+}
+
+/**
+ * Plans the next turn from a session's queue (`queue`, oldest first).
+ *
+ * Without `combine`, the turn is the oldest entry alone. With it, the turn is
+ * the oldest entry plus those after it, up to (not including) the first slash
+ * command: their contents joined by a blank line (blank contents, such as an
+ * attachments-only entry's, are left out rather than adding empty lines),
+ * their attachments in order, and the send options of the last of them — the
+ * most recent composer settings. A command at the front goes alone, since a
+ * command cannot share its turn with other text. Unreadable entries are taken
+ * along wherever they fall and contribute nothing.
+ *
+ * Exported for the scheduled-messages tests, which check the planning
+ * directly.
+ */
+export function planQueuedTurn(queue: unknown[], combine: boolean): QueuedTurnPlan {
+  if (queue.length === 0) {
+    return { count: 0, turn: null };
+  }
+  if (!combine) {
+    return { count: 1, turn: readQueuedChatMessage(queue[0]) };
+  }
+
+  const included: QueuedChatMessage[] = [];
+  let count = 0;
+  for (const entry of queue) {
+    const message = readQueuedChatMessage(entry);
+    if (message && isSlashCommand(message)) {
+      if (included.length === 0) {
+        // A command at the front is its own turn.
+        included.push(message);
+        count += 1;
+      }
+      break;
+    }
+    count += 1;
+    if (message) {
+      included.push(message);
+    }
+  }
+
+  if (included.length === 0) {
+    return { count, turn: null };
+  }
+  if (included.length === 1) {
+    return { count, turn: included[0] };
+  }
+  const options = included[included.length - 1].options;
+  return {
+    count,
+    turn: {
+      content: included
+        .map((message) => message.content)
+        .filter((content) => content.trim())
+        .join('\n\n'),
+      ...(options ? { options } : {}),
+      attachments: included.flatMap((message) => message.attachments),
+    },
+  };
+}
+
+async function sendClaimedQueuedTurn(
   candidate: QueuedSessionMessageRecord,
-  claimed: unknown,
+  claimed: unknown[],
+  turn: QueuedChatMessage | null,
   runtime: ProviderRuntimeGateway,
 ): Promise<void> {
-  const message = readQueuedChatMessage(claimed);
-  if (!message) {
+  if (!turn) {
     sessionDraftsDb.deleteEmptyDraft(candidate.userId, candidate.sessionId);
     return;
   }
@@ -59,25 +136,25 @@ async function sendClaimedQueuedMessage(
     {
       sessionId: candidate.sessionId,
       userId: candidate.userId,
-      content: message.content,
-      options: queuedTurnOptions(message),
+      content: turn.content,
+      options: queuedTurnOptions(turn),
     },
     { runtime },
   );
 
   // The registry check and run reservation are separate operations. If a run
-  // wins that tiny race, put the turn back at the front so the next pass
-  // tries it again before anything queued behind it.
+  // wins that tiny race, put every entry the turn took back at the front, in
+  // order, so the next pass tries them again before anything queued behind.
   if (!result.started && result.error === 'A run was already in progress for this session.') {
-    sessionDraftsDb.restoreQueuedMessage(candidate.userId, candidate.sessionId, claimed);
+    sessionDraftsDb.restoreQueuedMessages(candidate.userId, candidate.sessionId, claimed);
     return;
   }
   sessionDraftsDb.deleteEmptyDraft(candidate.userId, candidate.sessionId);
 }
 
 /**
- * Whether the session's next queued turn (`head`, the oldest) has to keep
- * waiting: while a turn is running, and while sending it would stop the
+ * Whether the session's next queued turn (`turn`, as planned from the front of
+ * its queue) has to keep waiting: while a turn is running, and while sending it would stop the
  * session's background work.
  *
  * A turn that ends with background work still going (a backgrounded command,
@@ -89,24 +166,25 @@ async function sendClaimedQueuedMessage(
  * instead (announced by onBackgroundWorkEnded, at worst the next poll), or
  * until it is edited into one the process can take.
  *
- * Only the head is asked about: the queue goes in order, so nothing behind it
- * may overtake it.
+ * Only the next turn is asked about, with the options it would be sent with
+ * (for a combined turn, its last entry's): the queue goes in order, so nothing
+ * behind it may overtake it, and holding it holds back every entry it takes.
  */
 async function isSessionBusy(
   sessionId: string,
-  head: QueuedChatMessage | null,
+  turn: QueuedChatMessage | null,
   runtime: ProviderRuntimeGateway,
 ): Promise<boolean> {
   if (chatRunRegistry.isProcessing(sessionId)) {
     return true;
   }
-  // A malformed head is claimed only to be dropped; it sends nothing.
-  if (!head || !runtime.hasBackgroundWork(sessionId)) {
+  // Malformed entries are claimed only to be dropped; they send nothing.
+  if (!turn || !runtime.hasBackgroundWork(sessionId)) {
     return false;
   }
   try {
     const impact = await checkSendStopsBackgroundWork(
-      { sessionId, options: queuedTurnOptions(head) },
+      { sessionId, options: queuedTurnOptions(turn) },
       { runtime },
     );
     return impact?.stops ?? false;
@@ -120,25 +198,32 @@ async function isSessionBusy(
 }
 
 /**
- * Sends the oldest queued turn of every session that is currently idle. One
- * per session per pass: the turn it starts makes the session busy, and the
- * next in line goes when that turn ends.
+ * Sends the next queued turn of every session that is currently idle: its
+ * oldest message, or — with the owner's "Combine queued messages" on — its
+ * queued messages merged into one turn (see planQueuedTurn). One turn per
+ * session per pass: the turn it starts makes the session busy, and the next
+ * goes when that turn ends. Returns the number of turns claimed.
  */
 export async function dispatchQueuedMessages(runtime: ProviderRuntimeGateway): Promise<number> {
   const candidates = sessionDraftsDb.listQueuedMessages();
   let claimed = 0;
 
   await Promise.all(candidates.map(async (candidate) => {
-    const head = readQueuedChatMessage(candidate.queuedMessages[0]);
-    if (await isSessionBusy(candidate.sessionId, head, runtime)) {
+    const plan = planQueuedTurn(
+      candidate.queuedMessages,
+      isQueuedMessageCombiningEnabled(candidate.userId),
+    );
+    if (plan.count === 0 || await isSessionBusy(candidate.sessionId, plan.turn, runtime)) {
       return;
     }
-    const next = sessionDraftsDb.claimNextQueuedMessage(candidate);
-    if (next === null) {
+    // Claimed against the copy the plan was made from, so a queue edited
+    // meanwhile is left for the next pass to plan afresh.
+    const taken = sessionDraftsDb.claimQueuedMessages(candidate, plan.count);
+    if (taken === null) {
       return;
     }
     claimed += 1;
-    await sendClaimedQueuedMessage(candidate, next, runtime);
+    await sendClaimedQueuedTurn(candidate, taken, plan.turn, runtime);
   }));
 
   return claimed;

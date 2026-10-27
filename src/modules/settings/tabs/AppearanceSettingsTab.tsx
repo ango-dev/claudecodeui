@@ -22,6 +22,11 @@ const CHAT_TOGGLES: { key: PreferenceToggleKey; labelKey: string; descriptionKey
     labelKey: 'quickSettings.sendByCtrlEnter',
     descriptionKey: 'quickSettings.sendByCtrlEnterDescription',
   },
+  {
+    key: 'combineQueuedMessages',
+    labelKey: 'quickSettings.combineQueuedMessages',
+    descriptionKey: 'quickSettings.combineQueuedMessagesDescription',
+  },
 ];
 
 type AppearanceSettingsTabProps = {

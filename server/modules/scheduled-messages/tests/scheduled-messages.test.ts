@@ -4,12 +4,21 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { closeConnection, initializeDatabase, scheduledMessagesDb, sessionDraftsDb, sessionsDb, userDb } from '@/modules/database/index.js';
+import {
+  closeConnection,
+  initializeDatabase,
+  scheduledMessagesDb,
+  sessionDraftsDb,
+  sessionsDb,
+  userDb,
+  userPreferencesDb,
+} from '@/modules/database/index.js';
 import {
   closeScheduledMessageDispatcher,
   dispatchDueScheduledMessages,
   dispatchQueuedMessages,
   initializeScheduledMessageDispatcher,
+  planQueuedTurn,
 } from '@/modules/scheduled-messages/services/scheduled-message-dispatcher.service.js';
 import { scheduledMessagesService } from '@/modules/scheduled-messages/services/scheduled-messages.service.js';
 import { chatRunRegistry, connectedClients } from '@/modules/websocket/index.js';
@@ -45,6 +54,11 @@ async function withIsolatedDatabase(runTest: (userId: number) => void | Promise<
 /** The contents of the session's queue, oldest first. */
 function contents(userId: number): string[] {
   return (sessionDraftsDb.getDrafts(userId)[0]?.queuedMessages ?? []).map((message) => (message as { content: string }).content);
+}
+
+/** Sets the user's "Combine queued messages" toggle the way the client stores it. */
+function setCombineQueuedMessages(userId: number, value: boolean | string): void {
+  userPreferencesDb.savePreferences(userId, { uiPreferences: { combineQueuedMessages: value } });
 }
 
 type RunCall = { provider: string; command: string; options: Record<string, unknown> };
@@ -197,8 +211,9 @@ test('a queued message goes as soon as the reply it waited on ends, not on the n
   });
 });
 
-test('queued messages go one per turn, oldest first', async () => {
+test('with combining off, queued messages go one per turn, oldest first', async () => {
   await withIsolatedDatabase(async (userId) => {
+    setCombineQueuedMessages(userId, false);
     sessionDraftsDb.saveDraft(userId, SESSION_ID, {
       text: 'still typing',
       queuedMessages: [{ content: 'first' }, { content: 'second' }, { content: 'third' }],
@@ -237,21 +252,61 @@ test('a queue edited after it was listed is not claimed from the stale copy', as
     const [stale] = sessionDraftsDb.listQueuedMessages();
     sessionDraftsDb.saveDraft(userId, SESSION_ID, { text: '', queuedMessages: [{ content: 'edited' }] });
 
-    assert.equal(sessionDraftsDb.claimNextQueuedMessage(stale!), null);
+    assert.equal(sessionDraftsDb.claimQueuedMessages(stale!, 1), null);
     assert.deepEqual(contents(userId), ['edited']);
   });
 });
 
-test('a turn put back after a lost race goes ahead of what was queued meanwhile', async () => {
+test('turns put back after a lost race go ahead of what was queued meanwhile, in order', async () => {
   await withIsolatedDatabase(async (userId) => {
-    sessionDraftsDb.saveDraft(userId, SESSION_ID, { text: '', queuedMessages: [{ content: 'a' }, { content: 'b' }] });
+    sessionDraftsDb.saveDraft(userId, SESSION_ID, {
+      text: '',
+      queuedMessages: [{ content: 'a' }, { content: 'b' }, { content: 'c' }],
+    });
     const [candidate] = sessionDraftsDb.listQueuedMessages();
-    const claimed = sessionDraftsDb.claimNextQueuedMessage(candidate!);
-    assert.equal((claimed as { content: string }).content, 'a');
-    sessionDraftsDb.appendQueuedMessage(userId, SESSION_ID, { id: 'c', content: 'c' }, 50);
+    const claimed = sessionDraftsDb.claimQueuedMessages(candidate!, 2);
+    assert.deepEqual(claimed!.map((message) => (message as { content: string }).content), ['a', 'b']);
+    assert.deepEqual(contents(userId), ['c']);
+    sessionDraftsDb.appendQueuedMessage(userId, SESSION_ID, { id: 'd', content: 'd' }, 50);
 
-    sessionDraftsDb.restoreQueuedMessage(userId, SESSION_ID, claimed);
-    assert.deepEqual(contents(userId), ['a', 'b', 'c']);
+    sessionDraftsDb.restoreQueuedMessages(userId, SESSION_ID, claimed!);
+    assert.deepEqual(contents(userId), ['a', 'b', 'c', 'd']);
+  });
+});
+
+test('a combined turn that loses the race to another run is put back whole, ahead of later messages', async () => {
+  await withIsolatedDatabase(async (userId) => {
+    sessionDraftsDb.saveDraft(userId, SESSION_ID, {
+      text: '',
+      queuedMessages: [{ content: 'a' }, { content: 'b' }, { content: '/compact' }],
+    });
+
+    const runs: RunCall[] = [];
+    const runtime = createRuntime(runs);
+    // A run that starts between the dispatcher's busy check and its own
+    // reservation: it appears while the queue is claimed, and a message is
+    // queued behind meanwhile.
+    const originalClaim = sessionDraftsDb.claimQueuedMessages;
+    sessionDraftsDb.claimQueuedMessages = (candidate, count) => {
+      const taken = originalClaim(candidate, count);
+      chatRunRegistry.startRun({
+        appSessionId: SESSION_ID,
+        provider: 'claude',
+        providerSessionId: null,
+        connection: null,
+        userId,
+      });
+      sessionDraftsDb.appendQueuedMessage(userId, SESSION_ID, { id: 'late', content: 'late' }, 50);
+      return taken;
+    };
+    try {
+      assert.equal(await dispatchQueuedMessages(runtime), 1);
+    } finally {
+      sessionDraftsDb.claimQueuedMessages = originalClaim;
+    }
+
+    assert.equal(runs.length, 0);
+    assert.deepEqual(contents(userId), ['a', 'b', '/compact', 'late']);
   });
 });
 
@@ -296,6 +351,8 @@ function completeTurnLeavingBackgroundWork(userId: number): void {
 
 test('a queued message that would stop background work waits for it, and holds back the queue behind it', async () => {
   await withIsolatedDatabase(async (userId) => {
+    // One per turn, so the head is a turn of its own.
+    setCombineQueuedMessages(userId, false);
     sessionDraftsDb.saveDraft(userId, SESSION_ID, {
       text: '',
       queuedMessages: [
@@ -393,6 +450,199 @@ test('a queued message that waited for background work goes when the held proces
     }
     assert.equal(ended.size, 0, 'closing the dispatcher unsubscribes');
   });
+});
+
+test('combining is on by default: queued follow-ups go as one turn', async () => {
+  await withIsolatedDatabase(async (userId) => {
+    sessionDraftsDb.saveDraft(userId, SESSION_ID, {
+      text: '',
+      queuedMessages: [
+        // Relative paths are anchored in the upload store, so they survive the
+        // send's attachment check.
+        { id: 'q1', content: 'A', options: { model: 'first-model' }, attachments: [{ path: 'one.png' }] },
+        { id: 'q2', content: '', options: { model: 'second-model' }, attachments: [{ path: 'two.png' }] },
+        { id: 'q3', content: 'B', attachments: [] },
+        { id: 'q4', content: 'C', options: { model: 'last-model', effort: 'high' }, attachments: [{ path: 'three.txt' }] },
+      ],
+    });
+
+    const runs: RunCall[] = [];
+    assert.equal(await dispatchQueuedMessages(createRuntime(runs)), 1);
+    assert.equal(runs.length, 1);
+    // The attachments-only message adds its file but no blank line.
+    assert.equal(runs[0].command, 'A\n\nB\n\nC');
+    assert.deepEqual(
+      (runs[0].options.attachments as Array<{ path: string }>).map((attachment) => path.basename(attachment.path)),
+      ['one.png', 'two.png', 'three.txt'],
+    );
+    // The most recent composer settings win.
+    assert.equal(runs[0].options.model, 'last-model');
+    assert.equal(runs[0].options.effort, 'high');
+    assert.deepEqual(sessionDraftsDb.getDrafts(userId), []);
+  });
+});
+
+test('combining turned off as the string \'false\' is honoured', async () => {
+  await withIsolatedDatabase(async (userId) => {
+    setCombineQueuedMessages(userId, 'false');
+    sessionDraftsDb.saveDraft(userId, SESSION_ID, {
+      text: '',
+      queuedMessages: [{ content: 'one' }, { content: 'two' }],
+    });
+
+    const runs: RunCall[] = [];
+    assert.equal(await dispatchQueuedMessages(createRuntime(runs)), 1);
+    assert.deepEqual(runs.map((run) => run.command), ['one']);
+    assert.deepEqual(contents(userId), ['two']);
+  });
+});
+
+test('combining turned on explicitly merges, as the default does', async () => {
+  await withIsolatedDatabase(async (userId) => {
+    setCombineQueuedMessages(userId, 'true');
+    sessionDraftsDb.saveDraft(userId, SESSION_ID, {
+      text: '',
+      queuedMessages: [{ content: 'one' }, { content: 'two' }],
+    });
+
+    const runs: RunCall[] = [];
+    assert.equal(await dispatchQueuedMessages(createRuntime(runs)), 1);
+    assert.deepEqual(runs.map((run) => run.command), ['one\n\ntwo']);
+    assert.deepEqual(sessionDraftsDb.getDrafts(userId), []);
+  });
+});
+
+test('slash commands split the combined queue into turns, in order', async () => {
+  await withIsolatedDatabase(async (userId) => {
+    sessionDraftsDb.saveDraft(userId, SESSION_ID, {
+      text: '',
+      queuedMessages: [
+        { content: 'A' },
+        { content: 'B' },
+        { content: '  /compact keep the plan' },
+        { content: 'C' },
+        { content: 'D' },
+        { content: '/clear' },
+        { content: '/cost' },
+      ],
+    });
+
+    const runs: RunCall[] = [];
+    const runtime = createRuntime(runs);
+    const passes: string[][] = [];
+    for (let pass = 0; pass < 6; pass += 1) {
+      assert.equal(await dispatchQueuedMessages(runtime), pass < 5 ? 1 : 0);
+      passes.push(contents(userId));
+    }
+
+    assert.deepEqual(runs.map((run) => run.command), ['A\n\nB', '  /compact keep the plan', 'C\n\nD', '/clear', '/cost']);
+    assert.deepEqual(passes, [
+      ['  /compact keep the plan', 'C', 'D', '/clear', '/cost'],
+      ['C', 'D', '/clear', '/cost'],
+      ['/clear', '/cost'],
+      ['/cost'],
+      [],
+      [],
+    ]);
+    assert.deepEqual(sessionDraftsDb.getDrafts(userId), []);
+  });
+});
+
+test('a combined turn that would stop background work is held whole, judged by its last message\'s options', async () => {
+  await withIsolatedDatabase(async (userId) => {
+    sessionDraftsDb.saveDraft(userId, SESSION_ID, {
+      text: '',
+      queuedMessages: [
+        { content: 'first', options: { effort: 'low' } },
+        { content: 'second', options: { effort: 'max' } },
+      ],
+    });
+    completeTurnLeavingBackgroundWork(userId);
+
+    let workRunning = true;
+    const asked: Array<Record<string, unknown>> = [];
+    const runs: RunCall[] = [];
+    const runtime = createRuntime(runs, 'ok', [], () => workRunning, {
+      wouldStopBackgroundWork: async (_provider, _sessionId, options) => {
+        asked.push(options);
+        return workRunning && options.effort === 'max' ? { stops: true, reason: 'effort' } : { stops: false };
+      },
+    });
+
+    assert.equal(await dispatchQueuedMessages(runtime), 0);
+    assert.equal(runs.length, 0);
+    assert.deepEqual(contents(userId), ['first', 'second']);
+    assert.equal(asked.length, 1);
+    assert.equal(asked[0].effort, 'max');
+
+    workRunning = false;
+    assert.equal(await dispatchQueuedMessages(runtime), 1);
+    assert.deepEqual(runs.map((run) => run.command), ['first\n\nsecond']);
+    assert.equal(runs[0].options.effort, 'max');
+    assert.deepEqual(sessionDraftsDb.getDrafts(userId), []);
+  });
+});
+
+test('planQueuedTurn joins contents with a blank line, attachments in order, last options', () => {
+  const plan = planQueuedTurn([
+    { content: 'A', options: { model: 'm1' }, attachments: [{ name: '1' }] },
+    { content: 'B', attachments: [{ name: '2' }, { name: '3' }] },
+    { content: 'C', options: { model: 'm3' }, attachments: [] },
+  ], true);
+  assert.deepEqual(plan, {
+    count: 3,
+    turn: {
+      content: 'A\n\nB\n\nC',
+      options: { model: 'm3' },
+      attachments: [{ name: '1' }, { name: '2' }, { name: '3' }],
+    },
+  });
+});
+
+test('planQueuedTurn adds no blank lines for an attachments-only message', () => {
+  assert.equal(planQueuedTurn([
+    { content: '', attachments: [{ name: 'lead' }] },
+    { content: 'A' },
+    { content: '   ', attachments: [{ name: 'middle' }] },
+    { content: 'B' },
+    { content: '', attachments: [{ name: 'tail' }] },
+  ], true).turn?.content, 'A\n\nB');
+
+  const onlyAttachments = planQueuedTurn([
+    { content: '', attachments: [{ name: '1' }] },
+    { content: '', attachments: [{ name: '2' }] },
+  ], true);
+  assert.deepEqual(onlyAttachments.turn, { content: '', attachments: [{ name: '1' }, { name: '2' }] });
+});
+
+test('planQueuedTurn sends a leading command alone and stops a run before a command', () => {
+  const queue = [{ content: '/compact' }, { content: 'A' }];
+  assert.deepEqual(planQueuedTurn(queue, true), { count: 1, turn: { content: '/compact', attachments: [] } });
+  assert.equal(planQueuedTurn([{ content: 'A' }, { content: 'B' }, { content: ' /cost' }, { content: 'C' }], true).count, 2);
+  // The last message before the command supplies the options, not the command.
+  assert.equal(
+    planQueuedTurn([{ content: 'A', options: { model: 'a' } }, { content: '/cost', options: { model: 'cmd' } }], true).turn?.options?.model,
+    'a',
+  );
+});
+
+test('planQueuedTurn with combining off takes the oldest message alone, unchanged', () => {
+  assert.deepEqual(
+    planQueuedTurn([{ content: 'A', options: { model: 'm' }, attachments: [] }, { content: 'B' }], false),
+    { count: 1, turn: { content: 'A', options: { model: 'm' }, attachments: [] } },
+  );
+  // An unreadable message is still taken, to be dropped.
+  assert.deepEqual(planQueuedTurn([{ content: '   ' }, { content: 'B' }], false), { count: 1, turn: null });
+  assert.deepEqual(planQueuedTurn([], false), { count: 0, turn: null });
+  assert.deepEqual(planQueuedTurn([], true), { count: 0, turn: null });
+});
+
+test('planQueuedTurn takes unreadable messages along without adding to the turn', () => {
+  assert.deepEqual(planQueuedTurn([{ content: '' }, 'junk', { content: 'A' }], true), {
+    count: 3,
+    turn: { content: 'A', attachments: [] },
+  });
+  assert.deepEqual(planQueuedTurn([{ content: '' }, null], true), { count: 2, turn: null });
 });
 
 test('a draft-text save after the queued message was sent does not send it again', async () => {

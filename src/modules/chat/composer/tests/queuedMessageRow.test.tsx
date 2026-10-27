@@ -18,6 +18,9 @@ const THREE_DRAFTS = [
   draft('q-3', 'Finally update the changelog'),
 ];
 
+// Separate-turns mode; the merged default is covered in queuedMessageMergedCard.test.tsx.
+const STRIP_MODE = { combined: false, onEditAll: () => {}, onDeleteAll: () => {} };
+
 describe('the queued message row', () => {
   const originalScrollTo = HTMLElement.prototype.scrollTo;
   afterEach(() => {
@@ -25,7 +28,7 @@ describe('the queued message row', () => {
   });
 
   it('shows one numbered card per draft, oldest first', () => {
-    render(<QueuedMessageRow queuedDrafts={THREE_DRAFTS} onEdit={() => {}} onDelete={() => {}} />);
+    render(<QueuedMessageRow {...STRIP_MODE} queuedDrafts={THREE_DRAFTS} onEdit={() => {}} onDelete={() => {}} />);
 
     const cards = screen.getAllByTestId('queued-message-card');
     expect(cards).toHaveLength(3);
@@ -43,7 +46,7 @@ describe('the queued message row', () => {
   it('edits and deletes the card that was clicked, by id', () => {
     const onEdit = vi.fn();
     const onDelete = vi.fn();
-    render(<QueuedMessageRow queuedDrafts={THREE_DRAFTS} onEdit={onEdit} onDelete={onDelete} />);
+    render(<QueuedMessageRow {...STRIP_MODE} queuedDrafts={THREE_DRAFTS} onEdit={onEdit} onDelete={onDelete} />);
 
     const cards = screen.getAllByTestId('queued-message-card');
     fireEvent.click(within(cards[1]).getByRole('button', { name: 'Edit queued message' }));
@@ -57,7 +60,7 @@ describe('the queued message row', () => {
 
   it('renders nothing when the queue is empty', () => {
     const { container } = render(
-      <QueuedMessageRow queuedDrafts={[]} onEdit={() => {}} onDelete={() => {}} />,
+      <QueuedMessageRow {...STRIP_MODE} queuedDrafts={[]} onEdit={() => {}} onDelete={() => {}} />,
     );
     expect(container.innerHTML).toBe('');
   });
@@ -66,14 +69,14 @@ describe('the queued message row', () => {
     const scrollTo = vi.fn();
     HTMLElement.prototype.scrollTo = scrollTo as unknown as typeof HTMLElement.prototype.scrollTo;
     const props = { onEdit: () => {}, onDelete: () => {} };
-    const { rerender } = render(<QueuedMessageRow queuedDrafts={THREE_DRAFTS.slice(0, 2)} {...props} />);
+    const { rerender } = render(<QueuedMessageRow {...STRIP_MODE} queuedDrafts={THREE_DRAFTS.slice(0, 2)} {...props} />);
     expect(scrollTo).not.toHaveBeenCalled();
 
-    rerender(<QueuedMessageRow queuedDrafts={THREE_DRAFTS} {...props} />);
+    rerender(<QueuedMessageRow {...STRIP_MODE} queuedDrafts={THREE_DRAFTS} {...props} />);
     expect(scrollTo).toHaveBeenCalledTimes(1);
     expect(scrollTo.mock.calls[0][0]).toMatchObject({ behavior: 'smooth' });
 
-    rerender(<QueuedMessageRow queuedDrafts={THREE_DRAFTS.slice(1)} {...props} />);
+    rerender(<QueuedMessageRow {...STRIP_MODE} queuedDrafts={THREE_DRAFTS.slice(1)} {...props} />);
     expect(scrollTo).toHaveBeenCalledTimes(1);
   });
 });

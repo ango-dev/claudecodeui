@@ -47,6 +47,8 @@ type ChatInterfaceProps = {
   showRawParameters?: boolean;
   showThinking?: boolean;
   sendByCtrlEnter?: boolean;
+  /** Queued follow-ups are sent together as one message (the default) rather than one turn each. */
+  combineQueuedMessages?: boolean;
   externalMessageUpdate?: number;
   newSessionTrigger?: number;
   onTaskClick?: (...args: unknown[]) => void;
@@ -71,6 +73,7 @@ function ChatInterface({
   showRawParameters,
   showThinking,
   sendByCtrlEnter,
+  combineQueuedMessages = true,
   externalMessageUpdate,
   newSessionTrigger,
   onShowAllTasks,
@@ -227,6 +230,8 @@ function ChatInterface({
     queuedDrafts,
     editQueuedDraft,
     deleteQueuedDraft,
+    editAllQueuedDrafts,
+    deleteAllQueuedDrafts,
     handleVoiceTranscript,
     handleInputChange,
     handleKeyDown,
@@ -640,6 +645,9 @@ function ChatInterface({
           queuedDrafts={queuedDrafts}
           onEditQueuedDraft={editQueuedDraft}
           onDeleteQueuedDraft={deleteQueuedDraft}
+          combineQueuedMessages={combineQueuedMessages}
+          onEditAllQueuedDrafts={editAllQueuedDrafts}
+          onDeleteAllQueuedDrafts={deleteAllQueuedDrafts}
           attachedFiles={attachedFiles}
           pastedTexts={pastedTexts}
           onChangePastedText={updatePastedText}

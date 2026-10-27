@@ -18,6 +18,11 @@ export type UiPreferences = {
   sidebarAsDrawer: boolean;
   /** Restore the projects that were expanded in the sidebar after a reload. */
   keepProjectsExpanded: boolean;
+  /**
+   * Follow-ups queued while a reply runs are sent together as one message;
+   * off sends each as its own turn. Read by the server, which sends them.
+   */
+  combineQueuedMessages: boolean;
   voiceEnabled: boolean;
 };
 
@@ -34,6 +39,7 @@ const DEFAULTS: UiPreferences = {
   sidebarVisible: true,
   sidebarAsDrawer: false,
   keepProjectsExpanded: false,
+  combineQueuedMessages: true,
   voiceEnabled: false,
 };
 

@@ -60,3 +60,12 @@ export const settingsRoutes = createSettingsRouter(settingsService);
 export function isVsCodeSessionListingEnabled(userId: string | number | null | undefined): boolean {
   return settingsService.isVsCodeSessionListingEnabled(userId);
 }
+
+/**
+ * Whether the user has "Combine queued messages" on (the default). Used by the
+ * scheduled-messages module's dispatcher to decide whether a session's queued
+ * follow-ups go as one turn or one turn each.
+ */
+export function isQueuedMessageCombiningEnabled(userId: number): boolean {
+  return settingsService.isQueuedMessageCombiningEnabled(userId);
+}

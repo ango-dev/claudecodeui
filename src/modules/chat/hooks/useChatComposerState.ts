@@ -1237,6 +1237,36 @@ export function useChatComposerState({
     queuedFilesRef.current.delete(id);
   }, [sessionKey]);
 
+  // For the combined card, whose queued follow-ups go as one message: edit
+  // and delete act on all of them. Editing puts them back into the composer
+  // in order, after anything already typed there.
+  const editAllQueuedDrafts = useCallback(() => {
+    if (!sessionKey || queuedDrafts.length === 0) {
+      return;
+    }
+    for (const draft of queuedDrafts) {
+      removeQueuedMessage(sessionKey, draft.id);
+      queuedFilesRef.current.delete(draft.id);
+    }
+    const next = [inputValueRef.current, ...queuedDrafts.map((draft) => draft.content)]
+      .filter((part) => part.trim())
+      .join('\n\n');
+    setInput(next);
+    inputValueRef.current = next;
+    setAttachedFiles((previous) => [...previous, ...queuedDrafts.flatMap((draft) => draft.attachments)]);
+    textareaRef.current?.focus();
+  }, [queuedDrafts, sessionKey, setInput]);
+
+  const deleteAllQueuedDrafts = useCallback(() => {
+    if (!sessionKey) {
+      return;
+    }
+    for (const draft of queuedDrafts) {
+      removeQueuedMessage(sessionKey, draft.id);
+      queuedFilesRef.current.delete(draft.id);
+    }
+  }, [queuedDrafts, sessionKey]);
+
   // A voice transcript either fills the input (to edit before sending) or, when the
   // user tapped "stop and send", is submitted straight away. Mirror the value into
   // inputValueRef synchronously so handleSubmit reads the new text, not the stale state.
@@ -1526,6 +1556,8 @@ export function useChatComposerState({
     queuedDrafts,
     editQueuedDraft,
     deleteQueuedDraft,
+    editAllQueuedDrafts,
+    deleteAllQueuedDrafts,
     handleVoiceTranscript,
     handleInputChange,
     handleKeyDown,

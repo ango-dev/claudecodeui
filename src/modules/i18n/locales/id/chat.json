@@ -138,7 +138,8 @@
     "hintText": {
       "ctrlEnter": "{{send}} untuk mengirim • {{newLine}} untuk baris baru • Tab untuk mengganti mode • / untuk slash command",
       "enter": "Enter untuk mengirim • {{newLine}} untuk baris baru • Tab untuk mengganti mode • / untuk slash command",
-      "queue": "Enter untuk mengantrekan pesan berikutnya"
+      "queue": "Enter untuk mengantrekan pesan berikutnya",
+      "appendQueued": "Enter untuk menambahkan ke pesan yang diantrekan"
     },
     "clickToChangeMode": "Klik untuk mengganti mode izin (atau tekan Tab di input)",
     "showAllCommands": "Tampilkan semua perintah",
@@ -149,7 +150,8 @@
       "label": "Diantrekan",
       "willSend": "Akan dikirim setelah proses ini selesai",
       "edit": "Edit pesan antrean",
-      "delete": "Hapus pesan antrean"
+      "delete": "Hapus pesan antrean",
+      "append": "Tambahkan ke pesan antrean"
     }
   },
   "composer": {

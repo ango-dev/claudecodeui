@@ -80,6 +80,8 @@
     "sendByCtrlEnter": "Send by {{shortcut}}",
     "voiceEnabled": "Voice (mic + read aloud)",
     "sendByCtrlEnterDescription": "When enabled, pressing {{shortcut}} will send the message instead of just Enter. This is useful for IME users to avoid accidental sends.",
+    "combineQueuedMessages": "Combine queued messages",
+    "combineQueuedMessagesDescription": "Messages sent while Claude is replying are joined into one message, sent when the reply finishes. Turn off to send each one as its own turn, in order.",
     "dragHandle": {
       "dragging": "Dragging handle",
       "closePanel": "Close settings panel",

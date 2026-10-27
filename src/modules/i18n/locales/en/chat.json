@@ -145,7 +145,8 @@
     "hintText": {
       "ctrlEnter": "{{send}} to send • {{newLine}} for new line • Tab to change modes • / for slash commands",
       "enter": "Enter to send • {{newLine}} for new line • Tab to change modes • / for slash commands",
-      "queue": "Enter to queue your next message"
+      "queue": "Enter to queue your next message",
+      "appendQueued": "Enter to add to the queued message"
     },
     "clickToChangeMode": "Click to change permission mode (or press Tab in input)",
     "showAllCommands": "Show all commands",
@@ -161,7 +162,18 @@
       "attachments_one": "{{count}} file",
       "attachments_other": "{{count}} files",
       "edit": "Edit queued message",
-      "delete": "Delete queued message"
+      "delete": "Delete queued message",
+      "followUps_one": "{{count}} follow-up",
+      "followUps_other": "{{count}} follow-ups",
+      "willSendCombined": "Sends as one message when this finishes",
+      "willSendAsMessages_one": "Sends as {{count}} message when this finishes",
+      "willSendAsMessages_other": "Sends as {{count}} messages when this finishes",
+      "separate": "Sent on its own",
+      "separateHint": "Commands cannot be merged, so this one is sent as its own message",
+      "editAll": "Edit all queued messages",
+      "deleteAll": "Delete all queued messages",
+      "mergedLabel": "Queued follow-ups, as they will be sent",
+      "append": "Add to queued message"
     },
     "pasted": {
       "label": "Pasted",

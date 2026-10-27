@@ -131,15 +131,17 @@ export const sessionDraftsDb = {
   },
 
   /**
-   * Atomically takes the oldest queued turn off the session's queue, only if
-   * the queue has not been edited since listing. Returns the turn, or null
-   * when the queue changed (or was empty) and nothing was taken.
+   * Atomically takes the oldest `count` queued turns off the session's queue,
+   * only if the queue has not been edited since listing. Returns them oldest
+   * first, or null when the queue changed (or holds fewer than `count`) and
+   * nothing was taken.
    */
-  claimNextQueuedMessage(candidate: QueuedSessionMessageRecord): unknown | null {
-    const [next, ...rest] = candidate.queuedMessages;
-    if (next === undefined) {
+  claimQueuedMessages(candidate: QueuedSessionMessageRecord, count: number): unknown[] | null {
+    if (!Number.isInteger(count) || count < 1 || count > candidate.queuedMessages.length) {
       return null;
     }
+    const claimed = candidate.queuedMessages.slice(0, count);
+    const rest = candidate.queuedMessages.slice(count);
     const result = getConnection()
       .prepare(
         `UPDATE session_drafts
@@ -147,21 +149,24 @@ export const sessionDraftsDb = {
          WHERE user_id = ? AND draft_scope = ? AND queued_message = ?`
       )
       .run(serializeQueuedMessages(rest), candidate.userId, candidate.sessionId, candidate.claimToken);
-    return result.changes > 0 ? next : null;
+    return result.changes > 0 ? claimed : null;
   },
 
   /**
-   * Puts a claimed turn back at the front of its session's queue, for the
-   * narrow race where another run starts first. Turns queued meanwhile stay
-   * behind it.
+   * Puts claimed turns back at the front of their session's queue, in their
+   * order, for the narrow race where another run starts first. Turns queued
+   * meanwhile stay behind them.
    */
-  restoreQueuedMessage(userId: number, scope: string, message: unknown): void {
+  restoreQueuedMessages(userId: number, scope: string, messages: unknown[]): void {
+    if (messages.length === 0) {
+      return;
+    }
     const db = getConnection();
     db.transaction(() => {
       const row = db
         .prepare('SELECT queued_message FROM session_drafts WHERE user_id = ? AND draft_scope = ?')
         .get(userId, scope) as { queued_message: string | null } | undefined;
-      const queue = serializeQueuedMessages([message, ...parseQueuedMessages(row?.queued_message ?? null)]);
+      const queue = serializeQueuedMessages([...messages, ...parseQueuedMessages(row?.queued_message ?? null)]);
       db.prepare(
         `INSERT INTO session_drafts (user_id, draft_scope, draft_text, queued_message, updated_at)
          VALUES (?, ?, '', ?, CURRENT_TIMESTAMP)
