@@ -152,6 +152,23 @@ test('queueMessage appends the message with its id, options and attachments', ()
   assert.deepEqual(appended, [[5, 'session-1', { id: 'q1', content: 'next', options: { model: 'm' }, attachments: [] }, 50]]);
 });
 
+test('queueMessage reads a message the way the dispatcher sends it: legacy images as attachments, bad options dropped', () => {
+  const appended: unknown[][] = [];
+  const service = createUserService(createDependencies({
+    drafts: {
+      ...createDependencies().drafts,
+      appendQueuedMessage: (...args) => {
+        appended.push(args);
+        return true;
+      },
+    },
+  }));
+
+  service.queueMessage(5, 'session-1', { id: 'q1', content: '', images: [{ name: 'shot.png' }], options: ['plan'] });
+
+  assert.deepEqual(appended, [[5, 'session-1', { id: 'q1', content: '', options: {}, attachments: [{ name: 'shot.png' }] }, 50]]);
+});
+
 test('queueMessage refuses a message without an id or anything to send, and a full queue', () => {
   const service = createUserService(createDependencies());
   assert.throws(() => service.queueMessage(5, 'session-1', { content: 'no id' }), /id/);

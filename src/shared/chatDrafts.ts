@@ -1,4 +1,4 @@
-import { api } from '@/shared/api';
+import { api, readApiErrorMessage } from '@/shared/api';
 import type { QueuedSendOptions } from '@/shared/types';
 
 /**
@@ -68,6 +68,25 @@ const changedAt = new Map<string, number>();
  * server's copy may not include them, so a hydrate keeps the local one.
  */
 const inFlight = new Map<string, number>();
+
+/**
+ * The last queue request per scope. Queue changes for one scope go out one
+ * after another, so a removal can never overtake the append it undoes and
+ * leave that message queued.
+ */
+const queueRequestChains = new Map<string, Promise<unknown>>();
+
+function sendQueueRequestInOrder<T>(scope: string, send: () => Promise<T>): Promise<T> {
+  const previous = queueRequestChains.get(scope) ?? Promise.resolve();
+  const request = previous.catch(() => undefined).then(send);
+  queueRequestChains.set(scope, request);
+  void request.finally(() => {
+    if (queueRequestChains.get(scope) === request) {
+      queueRequestChains.delete(scope);
+    }
+  }).catch(() => undefined);
+  return request;
+}
 
 function trackRequest(scope: string, request: Promise<unknown>): Promise<unknown> {
   inFlight.set(scope, (inFlight.get(scope) ?? 0) + 1);
@@ -240,27 +259,35 @@ export function readQueuedMessages(scope: string): StoredQueuedMessage[] {
     .filter((message) => message.content.trim() || message.attachments.length > 0);
 }
 
+/** How an append ended: kept, or refused with the server's reason when it gave one. */
+export type QueueAppendResult = { kept: true } | { kept: false; reason: string | null };
+
 /**
  * Adds a message to the end of one scope's queue, shown here at once and
  * sent to the server straight away rather than debounced: queueing is a
- * send-like action that must survive the tab closing. Resolves false, with
- * the message taken back out, when the server would not keep it.
+ * send-like action that must survive the tab closing. When the server will
+ * not keep it, it is taken back out and the result says why.
  */
-export async function appendQueuedMessage(scope: string, message: StoredQueuedMessage): Promise<boolean> {
+export async function appendQueuedMessage(scope: string, message: StoredQueuedMessage): Promise<QueueAppendResult> {
   const current = drafts.get(scope)?.queuedMessages ?? [];
   setDraft(scope, { queuedMessages: [...current, message] });
+  let reason: string | null = null;
   try {
-    const response = await trackRequest(scope, api.user.queueMessage(scope, message)) as Response;
+    const response = await trackRequest(
+      scope,
+      sendQueueRequestInOrder(scope, () => api.user.queueMessage(scope, message)),
+    ) as Response;
     if (response.ok) {
-      return true;
+      return { kept: true };
     }
-    console.error('Failed to queue chat message:', response.status);
+    reason = readApiErrorMessage(await response.json().catch(() => null));
+    console.error('Failed to queue chat message:', response.status, reason);
   } catch (error) {
     console.error('Failed to queue chat message:', error);
   }
   const queue = drafts.get(scope)?.queuedMessages ?? [];
   setDraft(scope, { queuedMessages: queue.filter((queued) => queued.id !== message.id) });
-  return false;
+  return { kept: false, reason };
 }
 
 /**
@@ -271,7 +298,7 @@ export async function appendQueuedMessage(scope: string, message: StoredQueuedMe
 export function removeQueuedMessage(scope: string, id: string): void {
   const queue = drafts.get(scope)?.queuedMessages ?? [];
   setDraft(scope, { queuedMessages: queue.filter((queued) => queued.id !== id) });
-  void trackRequest(scope, api.user.unqueueMessage(scope, id)).catch((error: unknown) => {
+  void trackRequest(scope, sendQueueRequestInOrder(scope, () => api.user.unqueueMessage(scope, id))).catch((error: unknown) => {
     console.error('Failed to remove queued chat message:', error);
   });
 }

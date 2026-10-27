@@ -153,6 +153,21 @@ export default function AppearanceSettingsTab({
         </SettingsCard>
       </SettingsSection>
 
+      <SettingsSection title={t('appearanceSettings.keepProjectsExpanded.section', { defaultValue: 'Sidebar' })}>
+        <SettingsCard>
+          <SettingsRow
+            label={t('appearanceSettings.keepProjectsExpanded.label', { defaultValue: 'Keep projects expanded' })}
+            description={t('appearanceSettings.keepProjectsExpanded.description', { defaultValue: 'Open several projects together and remember them after reloading.' })}
+          >
+            <SettingsToggle
+              checked={preferences.keepProjectsExpanded}
+              onChange={(value) => setPreference('keepProjectsExpanded', value)}
+              ariaLabel={t('appearanceSettings.keepProjectsExpanded.label', { defaultValue: 'Keep projects expanded' })}
+            />
+          </SettingsRow>
+        </SettingsCard>
+      </SettingsSection>
+
       <SettingsSection title={t('appearanceSettings.codeEditor.title')}>
         <SettingsCard divided>
           <SettingsRow

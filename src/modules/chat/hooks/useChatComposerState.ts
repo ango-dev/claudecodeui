@@ -810,14 +810,14 @@ export function useChatComposerState({
         content: message.content,
         options: message.options,
         attachments: message.uploadedAttachments,
-      }).then((kept) => {
-        if (kept) {
+      }).then((result) => {
+        if (result.kept) {
           return;
         }
         queuedFilesRef.current.delete(id);
         addMessage({
           type: 'error',
-          content: 'Could not queue your message. Press Up in the message box to get it back, then try again.',
+          content: `Could not queue your message${result.reason ? `: ${result.reason}` : ''}. Press Up in the message box to get it back, then try again.`,
           timestamp: new Date(),
         });
       });
@@ -1195,6 +1195,22 @@ export function useChatComposerState({
     const timer = setInterval(() => void hydrateChatDrafts(), 5_000);
     return () => clearInterval(timer);
   }, [hasQueuedDrafts, sessionKey]);
+
+  // A hidden tab's timers are slowed or stopped, so a tab shown again
+  // re-reads at once: messages queued on another device appear, and ones the
+  // server sent meanwhile drop off, without waiting for the next re-read.
+  useEffect(() => {
+    if (!sessionKey) {
+      return;
+    }
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void hydrateChatDrafts();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, [sessionKey]);
 
   // Editing takes the message out of the queue and back into the composer,
   // after anything already typed there.

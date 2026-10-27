@@ -16,6 +16,8 @@ export type UiPreferences = {
   sidebarVisible: boolean;
   /** Show the sidebar as a slide-over drawer (the phone layout) on any screen size. */
   sidebarAsDrawer: boolean;
+  /** Restore the projects that were expanded in the sidebar after a reload. */
+  keepProjectsExpanded: boolean;
   voiceEnabled: boolean;
 };
 
@@ -31,6 +33,7 @@ const DEFAULTS: UiPreferences = {
   sendByCtrlEnter: false,
   sidebarVisible: true,
   sidebarAsDrawer: false,
+  keepProjectsExpanded: false,
   voiceEnabled: false,
 };
 

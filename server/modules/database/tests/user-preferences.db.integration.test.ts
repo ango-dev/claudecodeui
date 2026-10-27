@@ -171,3 +171,49 @@ test('deleteDraft removes only the named scope', async () => {
     );
   });
 });
+
+const queuedIdsIn = (scope: string) => (
+  sessionDraftsDb.getDrafts(USER_ID)
+    .find((draft) => draft.scope === scope)
+    ?.queuedMessages.map((message) => (message as { id: string }).id) ?? null
+);
+
+test('removing the last queued message keeps the draft text, and drops an emptied row', async () => {
+  await withDatabase(() => {
+    sessionDraftsDb.saveDraft(USER_ID, 'session-a', { text: 'keep me' });
+    sessionDraftsDb.appendQueuedMessage(USER_ID, 'session-a', { id: 'qa', content: 'A', attachments: [] }, 50);
+    sessionDraftsDb.appendQueuedMessage(USER_ID, 'session-b', { id: 'qb', content: 'B', attachments: [] }, 50);
+
+    sessionDraftsDb.removeQueuedMessage(USER_ID, 'session-a', 'qa');
+    sessionDraftsDb.removeQueuedMessage(USER_ID, 'session-b', 'qb');
+
+    assert.deepEqual(
+      sessionDraftsDb.getDrafts(USER_ID).map((draft) => [draft.scope, draft.text, draft.queuedMessages]),
+      [['session-a', 'keep me', []]],
+    );
+  });
+});
+
+test('a turn restored after its emptied row was removed is written back', async () => {
+  await withDatabase(() => {
+    // listQueuedMessages only lists real chat sessions, so the dispatcher's
+    // candidate is built here the way it lists one.
+    sessionDraftsDb.appendQueuedMessage(USER_ID, 'session-a', { id: 'qa', content: 'A', attachments: [] }, 50);
+    const row = getConnection()
+      .prepare('SELECT queued_message FROM session_drafts WHERE user_id = ? AND draft_scope = ?')
+      .get(USER_ID, 'session-a') as { queued_message: string };
+    const claimed = sessionDraftsDb.claimNextQueuedMessage({
+      userId: USER_ID,
+      sessionId: 'session-a',
+      queuedMessages: sessionDraftsDb.getDrafts(USER_ID)[0]!.queuedMessages,
+      claimToken: row.queued_message,
+    });
+    assert.notEqual(claimed, null);
+    sessionDraftsDb.deleteEmptyDraft(USER_ID, 'session-a');
+    assert.deepEqual(sessionDraftsDb.getDrafts(USER_ID), []);
+
+    sessionDraftsDb.restoreQueuedMessage(USER_ID, 'session-a', claimed);
+
+    assert.deepEqual(queuedIdsIn('session-a'), ['qa']);
+  });
+});

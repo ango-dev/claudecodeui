@@ -22,7 +22,7 @@ vi.mock('@/shared/chatDrafts', async (importOriginal) => {
     ...actual,
     appendQueuedMessage: async (scope: string, message: { content: string }) => {
       queuedMessages.push({ scope, content: message.content });
-      return true;
+      return { kept: true };
     },
   };
 });

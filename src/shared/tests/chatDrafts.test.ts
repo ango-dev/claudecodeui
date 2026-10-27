@@ -23,6 +23,7 @@ let queueStatus = 200;
 let holdQueueRequest: Promise<void> | null = null;
 
 vi.mock('@/shared/api', () => ({
+  readApiErrorMessage: (body: { error?: { message?: string } } | null) => body?.error?.message ?? null,
   api: {
     user: {
       drafts: async () => {
@@ -41,7 +42,10 @@ vi.mock('@/shared/api', () => ({
       queueMessage: async (scope: string, message: unknown) => {
         queueRequests.push(['queue', scope, message]);
         await holdQueueRequest;
-        return new Response('{}', { status: queueStatus });
+        return new Response(
+          queueStatus === 200 ? '{}' : JSON.stringify({ success: false, error: { message: 'At most 50 messages can be queued' } }),
+          { status: queueStatus },
+        );
       },
       unqueueMessage: async (scope: string, id: string) => {
         queueRequests.push(['unqueue', scope, id]);
@@ -165,14 +169,34 @@ test('a hydrate that overtakes a queue request keeps the queued message', async 
   assert.deepEqual(store.readQueuedMessages('session-a').map((message) => message.id), ['q1']);
 
   release();
-  assert.equal(await queued, true);
+  assert.deepEqual(await queued, { kept: true });
+});
+
+test('removing a message whose append is still on its way waits for it, so the removal lands last', async () => {
+  const store = await loadStore();
+  let release = () => undefined as void;
+  holdQueueRequest = new Promise<void>((resolve) => { release = resolve; });
+  const queued = store.appendQueuedMessage('session-a', { id: 'q1', content: 'changed my mind' });
+
+  store.removeQueuedMessage('session-a', 'q1');
+  await vi.waitFor(() => assert.equal(queueRequests.length, 1));
+  await vi.advanceTimersByTimeAsync(20);
+  assert.deepEqual(queueRequests.map(([kind]) => kind), ['queue'], 'the removal waits behind the append');
+
+  release();
+  await queued;
+  await vi.waitFor(() => assert.deepEqual(queueRequests.map(([kind]) => kind), ['queue', 'unqueue']));
 });
 
 test('a message the server refuses to queue is taken back out', async () => {
   const store = await loadStore();
   queueStatus = 413;
 
-  assert.equal(await store.appendQueuedMessage('session-a', { id: 'q1', content: 'one too many' }), false);
+  assert.deepEqual(
+    await store.appendQueuedMessage('session-a', { id: 'q1', content: 'one too many' }),
+    { kept: false, reason: 'At most 50 messages can be queued' },
+    'with the server\'s reason',
+  );
   assert.deepEqual(store.readQueuedMessages('session-a'), []);
 });
 
@@ -244,7 +268,7 @@ test('removing one queued message leaves the others and the draft text alone', a
 
   assert.deepEqual(store.readQueuedMessages('session-a').map((message) => message.id), ['q2']);
   assert.equal(store.readDraftText('session-a'), 'keep me');
-  assert.deepEqual(queueRequests.at(-1), ['unqueue', 'session-a', 'q1']);
+  await vi.waitFor(() => assert.deepEqual(queueRequests.at(-1), ['unqueue', 'session-a', 'q1']));
 });
 
 test('subscribers are notified on a write', async () => {

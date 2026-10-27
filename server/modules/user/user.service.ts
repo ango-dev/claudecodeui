@@ -1,4 +1,4 @@
-import { AppError } from '@/shared/utils.js';
+import { AppError, readQueuedChatMessage } from '@/shared/utils.js';
 
 type GitConfig = {
   git_name: string | null;
@@ -90,15 +90,16 @@ const readQueuedMessage = (value: unknown): Record<string, unknown> => {
       statusCode: 400,
     });
   }
-  const content = typeof message.content === 'string' ? message.content : '';
-  const attachments = Array.isArray(message.attachments) ? message.attachments : [];
-  if (!content.trim() && attachments.length === 0) {
+  // Read the way the dispatcher reads it to send it, so the queue only takes
+  // a message the dispatcher will send rather than silently drop.
+  const sendable = readQueuedChatMessage(message);
+  if (!sendable) {
     throw new AppError('A queued message needs text or attachments', {
       code: 'INVALID_QUEUED_MESSAGE',
       statusCode: 400,
     });
   }
-  if (content.length > MAX_DRAFT_TEXT_LENGTH) {
+  if (sendable.content.length > MAX_DRAFT_TEXT_LENGTH) {
     throw new AppError('Queued message is too long to store', {
       code: 'DRAFT_TEXT_TOO_LONG',
       statusCode: 413,
@@ -106,9 +107,9 @@ const readQueuedMessage = (value: unknown): Record<string, unknown> => {
   }
   return {
     id,
-    content,
-    options: isRecord(message.options) ? message.options : {},
-    attachments,
+    content: sendable.content,
+    options: sendable.options ?? {},
+    attachments: sendable.attachments,
   };
 };
 
