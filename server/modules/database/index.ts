@@ -10,6 +10,8 @@ export { notificationPreferencesDb } from '@/modules/database/repositories/notif
 export { providerModelsDb } from '@/modules/database/repositories/provider-models.js';
 // projectsDb: used by Projects, Worktrees, Git, WebSocket, and notification modules to persist and resolve project records.
 export { projectsDb } from '@/modules/database/repositories/projects.db.js';
+// promptPresetsDb: used by the Prompt Presets module to store each user's saved composer prompts.
+export { promptPresetsDb } from '@/modules/database/repositories/prompt-presets.db.js';
 export { pushSubscriptionsDb } from '@/modules/database/repositories/push-subscriptions.js';
 export { scanStateDb } from '@/modules/database/repositories/scan-state.db.js';
 // sessionDraftsDb: used by User for drafts and Scheduled Messages for server-owned queued turns.

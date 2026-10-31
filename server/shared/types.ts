@@ -1076,6 +1076,38 @@ export type WorkspacePathValidationResult = {
 };
 
 // ---------------------------
+//----------------- PROMPT PRESET PERSISTENCE TYPES ------------
+/**
+ * One `prompt_presets` row as the database repository returns it.
+ *
+ * Produced by `promptPresetsDb` and mapped to the client-facing preset shape by
+ * the Prompt Presets service. `project_id` is NULL for a global preset (offered
+ * in every project). Timestamps are ISO-8601 UTC strings; `last_used_at` is
+ * NULL until the preset is first used.
+ */
+export type PromptPresetRow = {
+  id: string;
+  user_id: number;
+  project_id: string | null;
+  title: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+  last_used_at: string | null;
+};
+
+/**
+ * Fields a prompt preset update may change, already validated by the Prompt
+ * Presets service. An omitted field is left as stored; `projectId: null` makes
+ * the preset global and a string moves it to that project.
+ */
+export type PromptPresetChanges = {
+  title?: string;
+  content?: string;
+  projectId?: string | null;
+};
+
+// ---------------------------
 //----------------- GIT COMMAND EXECUTION AND WORKTREE MANAGEMENT ------------
 /**
  * Captured output of one completed `git` invocation.

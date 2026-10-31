@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { ChevronRight, TriangleAlert } from 'lucide-react';
 
 import { saveShowOtherAgents, useShowOtherAgents } from '@/shared/agentVisibility';
-import SettingsToggle from '@/modules/settings/SettingsToggle';
+import { Switch } from '@/shared/ui';
 
 /**
  * Rendered by AgentCategoryContentSection under an agent's Account panel,
@@ -43,7 +43,7 @@ export default function OtherAgentsSwitch() {
             <div className="text-sm font-medium text-foreground">{k('label')}</div>
             <div className="mt-0.5">{k('description')}</div>
           </div>
-          <SettingsToggle
+          <Switch
             checked={showOtherAgents}
             onChange={(value) => void toggle(value)}
             ariaLabel={k('label')}

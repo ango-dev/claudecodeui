@@ -836,6 +836,25 @@ export type SlashCommand = {
 /** Discriminator naming which slash-command result the chat command modal is showing: 'help', 'models', 'cost' or 'status'. */
 type CommandModalKind = 'help' | 'models' | 'cost' | 'status';
 
+/**
+ * A saved prompt the chat composer offers for quick reuse, as returned by the
+ * `api.promptPresets` endpoints. Owned by the signed-in user; `projectId` is
+ * the project it belongs to, or null when `global` is true and it is offered
+ * in every project. Timestamps are ISO-8601 UTC strings; `lastUsedAt` is null
+ * until the preset is first used, and lists are ordered most recently used
+ * first. Used by the chat module's preset picker.
+ */
+export type PromptPreset = {
+  id: string;
+  projectId: string | null;
+  title: string;
+  content: string;
+  global: boolean;
+  createdAt: string;
+  updatedAt: string;
+  lastUsedAt: string | null;
+};
+
 // ---------------------------
 
 //----------------- CHAT VOICE ------------

@@ -31,4 +31,5 @@ export { LLMProviderLogo } from '@/shared/ui/LLMProviderLogo';
 export { PillBar, Pill } from '@/shared/ui/PillBar';
 export { ScrollArea } from '@/shared/ui/ScrollArea';
 export { Shimmer } from '@/shared/ui/Shimmer';
+export { Switch } from '@/shared/ui/Switch';
 export { Tooltip } from '@/shared/ui/Tooltip';

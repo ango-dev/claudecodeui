@@ -2,7 +2,7 @@ import type { InputHTMLAttributes } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import SettingsSection from '@/modules/settings/SettingsSection';
-import SettingsToggle from '@/modules/settings/SettingsToggle';
+import { Switch } from '@/shared/ui';
 import { useUiPreferences, useSetUiPreference } from '@/shared/context/UiPreferencesContext';
 import { useVoiceConfig } from '@/modules/settings/hooks/useVoiceConfig';
 
@@ -34,7 +34,7 @@ export default function VoiceSettingsTab() {
             <div className="text-sm font-medium text-foreground">{t('voiceSettings.enable')}</div>
             <div className="text-xs text-muted-foreground">{t('voiceSettings.enableDescription')}</div>
           </div>
-          <SettingsToggle
+          <Switch
             checked={voiceEnabled}
             onChange={(v) => setPreference('voiceEnabled', v)}
             ariaLabel={t('voiceSettings.enable')}

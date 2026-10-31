@@ -302,6 +302,19 @@ export const api = {
     cancel: (id: string) => del(`/api/scheduled-messages/${encodeURIComponent(id)}`),
   },
 
+  // Prompt presets: saved prompts per project, or global across all projects.
+  // `list` returns the project's presets plus the global ones, most recently
+  // used first; `markUsed` moves a preset to the top of that order.
+  promptPresets: {
+    list: (projectId: string) => get(`/api/prompt-presets${query({ projectId })}`),
+    create: (payload: { projectId: string; title: string; content: string; global?: boolean }) =>
+      post('/api/prompt-presets', payload),
+    update: (id: string, changes: { title?: string; content?: string; global?: boolean; projectId?: string }) =>
+      patch(`/api/prompt-presets/${encodeURIComponent(id)}`, changes),
+    remove: (id: string) => del(`/api/prompt-presets/${encodeURIComponent(id)}`),
+    markUsed: (id: string) => post(`/api/prompt-presets/${encodeURIComponent(id)}/use`),
+  },
+
   // Workspace file tree
   readFile: (projectId: string, filePath: string) =>
     get(`/api/file-tree/projects/${projectId}/file${query({ filePath })}`),

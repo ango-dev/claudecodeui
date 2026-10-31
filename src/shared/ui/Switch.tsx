@@ -1,20 +1,27 @@
 import { cn } from '@/shared/utils';
 
-type SettingsToggleProps = {
+type SwitchProps = {
   checked: boolean;
   onChange: (value: boolean) => void;
   ariaLabel: string;
   disabled?: boolean;
+  /** Ties the switch to a visible description, such as the hint under its label. */
+  ariaDescribedBy?: string;
 };
 
-/** Used by the settings module's appearance, browser-use, tasks and voice tabs to render a boolean setting switch. */
-export default function SettingsToggle({ checked, onChange, ariaLabel, disabled }: SettingsToggleProps) {
+/**
+ * The app's on/off switch. Used by the settings module's appearance, agents,
+ * browser-use, tasks and voice tabs for boolean settings, and by the chat
+ * module's prompt-preset editor for "Available in all projects".
+ */
+export function Switch({ checked, onChange, ariaLabel, disabled, ariaDescribedBy }: SwitchProps) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
       aria-label={ariaLabel}
+      aria-describedby={ariaDescribedBy}
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(

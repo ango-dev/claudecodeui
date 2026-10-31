@@ -2,12 +2,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Download, Loader2 } from 'lucide-react';
 
-import { Button, Input } from '@/shared/ui';
+import { Button, Input, Switch } from '@/shared/ui';
 import { api, readApiJson, ApiRequestError } from '@/shared/api';
 import SettingsCard from '@/modules/settings/SettingsCard';
 import SettingsRow from '@/modules/settings/SettingsRow';
 import SettingsSection from '@/modules/settings/SettingsSection';
-import SettingsToggle from '@/modules/settings/SettingsToggle';
 import BrowserAdminRightsNotice from '@/modules/settings/tabs/browser-use-settings/BrowserAdminRightsNotice';
 import type { BrowserEngineChoice } from '@/modules/settings/tabs/browser-use-settings/BrowserAdminRightsNotice';
 import BrowserGraphicsCheck from '@/modules/settings/tabs/browser-use-settings/BrowserGraphicsCheck';
@@ -212,7 +211,7 @@ export default function BrowserUseSettingsTab() {
             {isSettingsLoading && !settings ? (
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
             ) : (
-              <SettingsToggle
+              <Switch
                 checked={browserEnabled}
                 onChange={(value) => void updateSettings({ enabled: value })}
                 ariaLabel={t('browserUseSettings.enableAriaLabel')}

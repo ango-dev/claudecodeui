@@ -444,5 +444,39 @@
     "customModelsOnlyHint": "Hide the built-in {{provider}} models from every model picker and make your first model the default. Built-in models stay listed until you add a model.",
     "builtInModelsHidden": "Hidden from model pickers while “Use only my models” is on.",
     "customModelsOnlyFailed": "Unable to change this setting."
+  },
+  "promptPresets": {
+    "trigger": "Preset prompts",
+    "searchPlaceholder": "Search presets",
+    "loading": "Loading presets…",
+    "empty": "No presets yet — save prompts you reuse here",
+    "noMatches": "No presets match your search",
+    "allProjects": "All projects",
+    "edit": "Edit preset",
+    "editNamed": "Edit “{{title}}”",
+    "delete": "Delete",
+    "deleteNamed": "Delete “{{title}}”",
+    "deleteConfirm": "Delete the preset “{{title}}”?",
+    "newPreset": "New preset",
+    "saveMessage": "Save message as preset",
+    "saveMessageEmpty": "Type a message first",
+    "dismissError": "Dismiss",
+    "editor": {
+      "newHeading": "New preset",
+      "editHeading": "Edit preset",
+      "titleLabel": "Title",
+      "titlePlaceholder": "e.g. Review this diff",
+      "titleRequired": "Give the preset a title.",
+      "contentLabel": "Prompt",
+      "contentPlaceholder": "The text to put in the message box when you pick this preset",
+      "contentRequired": "Write the prompt to save.",
+      "globalLabel": "Available in all projects",
+      "globalOnHint": "Offered in every project’s composer.",
+      "globalOffHint": "Offered in this project only.",
+      "saveShortcut": "{{shortcut}} to save",
+      "cancel": "Cancel",
+      "save": "Save",
+      "saving": "Saving…"
+    }
   }
 }

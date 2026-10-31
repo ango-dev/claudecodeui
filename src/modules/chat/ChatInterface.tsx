@@ -233,6 +233,7 @@ function ChatInterface({
     editAllQueuedDrafts,
     deleteAllQueuedDrafts,
     handleVoiceTranscript,
+    insertTextAtCaret,
     handleInputChange,
     handleKeyDown,
     handlePaste,
@@ -690,6 +691,8 @@ function ChatInterface({
             : t('input.placeholder', { provider: selectedProviderLabel })}
           isTextareaExpanded={isTextareaExpanded}
           sendByCtrlEnter={sendByCtrlEnter}
+          projectId={selectedProject.projectId}
+          onInsertText={insertTextAtCaret}
           exportControl={(
             <ChatExportMenu
               messages={chatMessages}

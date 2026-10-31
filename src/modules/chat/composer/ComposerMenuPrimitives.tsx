@@ -1,24 +1,31 @@
-import type { ReactNode, Ref } from 'react';
+import type { KeyboardEvent, ReactNode, Ref } from 'react';
 import { Check } from 'lucide-react';
 
 import { cn } from '@/shared/utils';
 import type { ComposerMenuAnchor } from '@/shared/types';
 
 /**
- * Shared shell for the composer popovers (model/effort and permissions) so both
- * menus share one surface, one heading style and one row style.
+ * Shared shell for the composer popovers (model/effort, permissions, schedule
+ * and preset prompts) so they share one surface, one heading style and one row
+ * style.
  *
- * Used by chat's ComposerModelMenu and ComposerPermissionMenu.
+ * Used by chat's ComposerModelMenu, ComposerPermissionMenu,
+ * ScheduleMessagePopover and PromptPresetMenu.
  */
 export function ComposerMenuSurface({
   anchor,
   menuRef,
   ariaLabel,
+  className,
+  onKeyDown,
   children,
 }: {
   anchor: ComposerMenuAnchor;
   menuRef: Ref<HTMLDivElement>;
   ariaLabel: string;
+  /** Layout for a menu that scrolls only part of itself, as the preset list does. */
+  className?: string;
+  onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void;
   children: ReactNode;
 }) {
   return (
@@ -26,7 +33,11 @@ export function ComposerMenuSurface({
       ref={menuRef}
       role="menu"
       aria-label={ariaLabel}
-      className="fixed z-[100] min-w-48 overflow-y-auto overscroll-contain rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-xl"
+      onKeyDown={onKeyDown}
+      className={cn(
+        'fixed z-[100] min-w-48 overflow-y-auto overscroll-contain rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-xl',
+        className,
+      )}
       style={{
         left: anchor.left,
         right: anchor.right,
@@ -40,19 +51,23 @@ export function ComposerMenuSurface({
   );
 }
 
-/** Used by chat's ComposerModelMenu and ComposerPermissionMenu to label a section of the popover. */
+/** Used by chat's ComposerModelMenu, ComposerPermissionMenu, ScheduleMessagePopover and PromptPresetMenu to label a section of the popover. */
 export function ComposerMenuHeading({ children }: { children: ReactNode }) {
   return (
     <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium text-muted-foreground">{children}</p>
   );
 }
 
-/** Used by chat's ComposerModelMenu to divide its model and effort sections. */
+/** Used by chat's ComposerModelMenu, ScheduleMessagePopover and PromptPresetMenu to divide a popover's sections. */
 export function ComposerMenuSeparator() {
   return <div className="my-1 h-px bg-border" aria-hidden />;
 }
 
-/** Used by chat's ComposerModelMenu and ComposerPermissionMenu to render one selectable row with its checked state. */
+/**
+ * Used by chat's ComposerModelMenu, ComposerPermissionMenu,
+ * ScheduleMessagePopover and PromptPresetMenu to render one selectable row with
+ * its checked state.
+ */
 export function ComposerMenuItem({
   label,
   description,
@@ -61,6 +76,8 @@ export function ComposerMenuItem({
   onSelect,
   role = 'menuitemradio',
   trailing,
+  disabled,
+  title,
   className,
 }: {
   label: ReactNode;
@@ -70,6 +87,8 @@ export function ComposerMenuItem({
   onSelect: () => void;
   role?: 'menuitemradio' | 'menuitem';
   trailing?: ReactNode;
+  disabled?: boolean;
+  title?: string;
   className?: string;
 }) {
   return (
@@ -78,9 +97,12 @@ export function ComposerMenuItem({
       role={role}
       aria-checked={role === 'menuitemradio' ? isSelected : undefined}
       onClick={onSelect}
+      disabled={disabled}
+      title={title}
       className={cn(
         'flex w-full items-start gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors',
         'hover:bg-accent focus-visible:bg-accent focus-visible:outline-none',
+        'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent',
         isSelected ? 'text-foreground' : 'text-foreground/90',
         className,
       )}

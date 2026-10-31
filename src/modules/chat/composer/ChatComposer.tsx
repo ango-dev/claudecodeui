@@ -39,6 +39,7 @@ import { ScheduleMessagePopover } from '@/modules/chat/composer/ScheduleMessageP
 import { ScheduledMessageList } from '@/modules/chat/composer/ScheduledMessageList';
 import ComposerModelMenu from '@/modules/chat/composer/ComposerModelMenu';
 import ComposerPermissionMenu from '@/modules/chat/composer/ComposerPermissionMenu';
+import PromptPresetMenu from '@/modules/chat/composer/PromptPresetMenu';
 
 type MentionableFile = {
   name: string;
@@ -127,6 +128,10 @@ type ChatComposerProps = {
   sendByCtrlEnter?: boolean;
   /** The transcript download menu, shown in the toolbar under the input box. */
   exportControl?: ReactNode;
+  /** The open project, whose preset prompts the toolbar offers; none hides that menu. */
+  projectId?: string | null;
+  /** Puts text in the message box at the caret, replacing any selection; used for a picked preset. */
+  onInsertText?: (text: string) => void;
 };
 
 /**
@@ -205,6 +210,8 @@ export default function ChatComposer({
   isTextareaExpanded,
   sendByCtrlEnter,
   exportControl,
+  projectId,
+  onInsertText,
 }: ChatComposerProps) {
   const { t } = useTranslation('chat');
   const fileDropdownRef = useRef<HTMLDivElement | null>(null);
@@ -258,6 +265,10 @@ export default function ChatComposer({
     onVoiceTranscript ?? noopTranscript,
     handleVoiceError,
   );
+  // A getter for "Save message as preset", so the memoized menu is not
+  // re-rendered on every keystroke by a prop holding the text. The textarea is
+  // controlled, so its value is the message.
+  const readComposerMessage = useCallback(() => textareaRef.current?.value ?? '', [textareaRef]);
   const isRecording = voiceState === 'recording';
   const isTranscribing = voiceState === 'transcribing';
 
@@ -524,6 +535,15 @@ export default function ChatComposer({
 
             {onVoiceTranscript && voiceAvailable && (
               <VoiceInputButton state={voiceState} onToggle={voiceToggle} errorMsg={voiceError} />
+            )}
+
+            {projectId && onInsertText && (
+              <PromptPresetMenu
+                projectId={projectId}
+                hasMessage={Boolean(input.trim())}
+                readMessage={readComposerMessage}
+                onInsert={onInsertText}
+              />
             )}
 
             <ComposerPermissionMenu

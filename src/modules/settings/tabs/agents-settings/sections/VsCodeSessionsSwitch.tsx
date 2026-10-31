@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
 import { readUserPreference, subscribeToUserPreferences, writeUserPreference } from '@/shared/userSettings';
-import SettingsToggle from '@/modules/settings/SettingsToggle';
+import { Switch } from '@/shared/ui';
 
 // Off unless turned on: it edits each Claude Code transcript after every turn.
 const SHOW_SESSIONS_IN_VS_CODE_DEFAULT = false;
@@ -35,7 +35,7 @@ export default function VsCodeSessionsSwitch() {
           />
         </div>
       </div>
-      <SettingsToggle
+      <Switch
         checked={showSessionsInVsCode}
         onChange={(value) => writeUserPreference('showSessionsInVsCode', value)}
         ariaLabel={label}

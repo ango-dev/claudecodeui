@@ -11,7 +11,7 @@ import { LanguageSelector } from '@/modules/i18n';
 import SettingsCard from '@/modules/settings/SettingsCard';
 import SettingsRow from '@/modules/settings/SettingsRow';
 import SettingsSection from '@/modules/settings/SettingsSection';
-import SettingsToggle from '@/modules/settings/SettingsToggle';
+import { Switch } from '@/shared/ui';
 
 /** The display and input toggles that used to live in the Quick Settings drawer. */
 const CHAT_TOGGLES: { key: PreferenceToggleKey; labelKey: string; descriptionKey?: string }[] = [
@@ -94,7 +94,7 @@ export default function AppearanceSettingsTab({
       <SettingsSection title={t('appearanceSettings.layout.title')}>
         <SettingsCard>
           <SettingsRow label={t('quickSettings.sidebarAsDrawer')}>
-            <SettingsToggle
+            <Switch
               checked={preferences.sidebarAsDrawer}
               onChange={(value) => setPreference('sidebarAsDrawer', value)}
               ariaLabel={t('quickSettings.sidebarAsDrawer')}
@@ -111,7 +111,7 @@ export default function AppearanceSettingsTab({
               label={t(labelKey, shortcutValues)}
               description={descriptionKey ? t(descriptionKey, shortcutValues) : undefined}
             >
-              <SettingsToggle
+              <Switch
                 checked={preferences[key]}
                 onChange={(value) => setPreference(key, value)}
                 ariaLabel={t(labelKey, shortcutValues)}
@@ -164,7 +164,7 @@ export default function AppearanceSettingsTab({
             label={t('appearanceSettings.keepProjectsExpanded.label', { defaultValue: 'Keep projects expanded' })}
             description={t('appearanceSettings.keepProjectsExpanded.description', { defaultValue: 'Open several projects together and remember them after reloading.' })}
           >
-            <SettingsToggle
+            <Switch
               checked={preferences.keepProjectsExpanded}
               onChange={(value) => setPreference('keepProjectsExpanded', value)}
               ariaLabel={t('appearanceSettings.keepProjectsExpanded.label', { defaultValue: 'Keep projects expanded' })}
@@ -179,7 +179,7 @@ export default function AppearanceSettingsTab({
             label={t('appearanceSettings.codeEditor.wordWrap.label')}
             description={t('appearanceSettings.codeEditor.wordWrap.description')}
           >
-            <SettingsToggle
+            <Switch
               checked={codeEditorSettings.wordWrap}
               onChange={onCodeEditorWordWrapChange}
               ariaLabel={t('appearanceSettings.codeEditor.wordWrap.label')}
@@ -190,7 +190,7 @@ export default function AppearanceSettingsTab({
             label={t('appearanceSettings.codeEditor.showMinimap.label')}
             description={t('appearanceSettings.codeEditor.showMinimap.description')}
           >
-            <SettingsToggle
+            <Switch
               checked={codeEditorSettings.showMinimap}
               onChange={onCodeEditorShowMinimapChange}
               ariaLabel={t('appearanceSettings.codeEditor.showMinimap.label')}
@@ -201,7 +201,7 @@ export default function AppearanceSettingsTab({
             label={t('appearanceSettings.codeEditor.lineNumbers.label')}
             description={t('appearanceSettings.codeEditor.lineNumbers.description')}
           >
-            <SettingsToggle
+            <Switch
               checked={codeEditorSettings.lineNumbers}
               onChange={onCodeEditorLineNumbersChange}
               ariaLabel={t('appearanceSettings.codeEditor.lineNumbers.label')}

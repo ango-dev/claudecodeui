@@ -262,6 +262,35 @@ CREATE TABLE IF NOT EXISTS superseded_provider_sessions (
 );
 `;
 
+/**
+ * Saved prompts a user can reuse from the chat composer.
+ *
+ * `project_id` names the project the preset belongs to, or is NULL for a
+ * "global" preset offered in every project. It references `projects` with
+ * ON DELETE CASCADE, so permanently deleting a project (by any code path)
+ * removes its presets while the user's global ones stay. Archiving a project
+ * only flags its row, so its presets survive an archive/restore round trip.
+ *
+ * Timestamps are ISO-8601 UTC strings written by the repository (not
+ * CURRENT_TIMESTAMP), so they sort as text and reach the client unchanged.
+ * Created in `runMigrations` only, after the projects table has been repaired,
+ * because the foreign key needs `projects.project_id` to be its primary key.
+ */
+export const PROMPT_PRESETS_TABLE_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS prompt_presets (
+    id TEXT PRIMARY KEY NOT NULL,
+    user_id INTEGER NOT NULL,
+    project_id TEXT DEFAULT NULL,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    last_used_at TEXT DEFAULT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
+);
+`;
+
 export const INIT_SCHEMA_SQL = `
 -- Initialize authentication database
 PRAGMA foreign_keys = ON;

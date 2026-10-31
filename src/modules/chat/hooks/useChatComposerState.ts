@@ -1278,6 +1278,30 @@ export function useChatComposerState({
     if (send) handleSubmitRef.current?.(createFakeSubmitEvent());
   }, [setInput]);
 
+  // A preset picked from the composer's menu goes where the caret was, replacing
+  // any selection, as typing would; it is never sent. The textarea keeps its
+  // selection while the menu has focus. When the box is not on screen, or holds
+  // a value it has not rendered yet, the text goes at the end instead.
+  const insertTextAtCaret = useCallback((text: string) => {
+    const current = inputValueRef.current;
+    const textarea = textareaRef.current;
+    const inSync = textarea !== null && textarea.value === current;
+    const start = inSync ? textarea.selectionStart : current.length;
+    const end = inSync ? Math.max(start, textarea.selectionEnd) : current.length;
+    const next = `${current.slice(0, start)}${text}${current.slice(end)}`;
+    const caret = start + text.length;
+    setInput(next);
+    inputValueRef.current = next;
+    setCursorPosition(caret);
+    // After React has rendered the new value, or the caret would land in the old one.
+    window.requestAnimationFrame(() => {
+      const box = textareaRef.current;
+      if (!box) return;
+      box.focus();
+      box.setSelectionRange(caret, caret);
+    });
+  }, [setCursorPosition, setInput]);
+
   useEffect(() => {
     inputValueRef.current = input;
   }, [input]);
@@ -1559,6 +1583,7 @@ export function useChatComposerState({
     editAllQueuedDrafts,
     deleteAllQueuedDrafts,
     handleVoiceTranscript,
+    insertTextAtCaret,
     handleInputChange,
     handleKeyDown,
     handlePaste,
