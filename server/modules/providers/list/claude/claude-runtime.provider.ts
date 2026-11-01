@@ -329,12 +329,22 @@ function matchesToolPermission(entry: string, toolName: string, input: unknown) 
  * CLAUDE_CODE_ARTIFACT is set, so a session continued from this UI would lose them.
  * Default it on; a host value (e.g. CLAUDE_CODE_ARTIFACT=0) still wins.
  *
+ * The entrypoint is written into the transcript, and the VS Code Claude Code
+ * panel hides only the SDK ones (sdk-ts, sdk-py, sdk-cli). So it follows
+ * "Show these sessions in VS Code": `claudecodeui` lists the session there,
+ * and the SDK's own `sdk-ts` keeps it out. A host value still wins.
+ *
  * @param {NodeJS.ProcessEnv} [hostEnv] - Environment to forward, `process.env` by default
+ * @param {{ listedInVsCode?: boolean }} [options] - Whether the session should appear in VS Code
  * @returns {NodeJS.ProcessEnv} Environment for the spawned CLI
  */
-export function buildClaudeSdkEnv(hostEnv: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+export function buildClaudeSdkEnv(
+  hostEnv: NodeJS.ProcessEnv = process.env,
+  { listedInVsCode = false }: { listedInVsCode?: boolean } = {},
+): NodeJS.ProcessEnv {
   return {
     CLAUDE_CODE_ARTIFACT: '1',
+    CLAUDE_CODE_ENTRYPOINT: listedInVsCode ? 'claudecodeui' : 'sdk-ts',
     ...hostEnv,
     CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS: String(BG_WAIT_CEILING_MS),
   };
@@ -345,7 +355,7 @@ function mapCliOptionsToSDK(options: AnyRecord = {}) {
 
   const sdkOptions: AnyRecord = {};
 
-  sdkOptions.env = buildClaudeSdkEnv();
+  sdkOptions.env = buildClaudeSdkEnv(process.env, { listedInVsCode: Boolean(options.listInVsCode) });
 
   // Resolve the executable eagerly on Windows because the SDK uses raw child_process.spawn,
   // which does not reliably follow npm's shell wrappers like cross-spawn does.
@@ -1254,6 +1264,7 @@ async function queryClaudeSDK(
       providerSessionId,
       model: resolvedModel || options.model,
       effortModels,
+      listInVsCode,
     });
 
     const mcpServers = await loadMcpConfig(options.cwd);

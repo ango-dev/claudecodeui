@@ -620,6 +620,7 @@ export const api = {
     sessions: () => get('/api/browser-use/sessions'),
     stopSession: (sessionId: string) => post(`/api/browser-use/sessions/${sessionId}/stop`),
     deleteSession: (sessionId: string) => del(`/api/browser-use/sessions/${sessionId}`),
+    sendInput: (sessionId: string, input: unknown) => post(`/api/browser-use/sessions/${sessionId}/input`, input),
     installRuntime: () => post('/api/browser-use/runtime/install'),
     removeRuntime: (engine: string, part: 'engine' | 'chromium') => post('/api/browser-use/runtime/remove', { engine, part }),
     installSystemHelper: (helper: string) => post('/api/browser-use/system-helper/install', { helper }),

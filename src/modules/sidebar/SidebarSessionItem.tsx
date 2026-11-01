@@ -190,6 +190,8 @@ function SidebarSessionItem({
             }
             if (event.altKey) return;
             event.preventDefault();
+            // The second click of a double-click renames instead (see the title).
+            if (event.detail > 1) return;
             onSessionSelect(session, project.projectId);
           }}
           onContextMenu={openContextMenu}
@@ -203,6 +205,13 @@ function SidebarSessionItem({
                 <div
                   className="min-w-0 flex-1 truncate text-sm font-normal text-foreground"
                   title={sessionView.sessionName}
+                  // Double-clicking the title renames the session, as in Claude Code.
+                  onDoubleClick={(event) => {
+                    if (readOnly || isSelecting || isEditing || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onStartEditingSession(project.projectId, session.id, sessionView.sessionName);
+                  }}
                 >
                   {sessionView.sessionName}
                 </div>

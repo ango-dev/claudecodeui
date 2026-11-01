@@ -8,10 +8,12 @@ import path from 'node:path';
  *
  * The panel hides every transcript whose `entrypoint` is an SDK one, and the
  * CLI writes `sdk-cli` even when told `cli`, because every SDK run is
- * non-interactive. So instead the transcript is patched after each turn, at
- * the one place the panel looks: the first `"entrypoint":"…"` in the file's
- * first 64 KiB, or, when there is none there, the last one in its final
- * 64 KiB.
+ * non-interactive. A session started with the setting on is labelled
+ * `claudecodeui` instead (see buildClaudeSdkEnv), which the panel lists as
+ * it is. One started before, or with the setting off, still carries an SDK
+ * value, so the transcript is patched after each turn, at the one place the
+ * panel looks: the first `"entrypoint":"…"` in the file's first 64 KiB, or,
+ * when there is none there, the last one in its final 64 KiB.
  *
  * The patch keeps the file's byte length: `"sdk-ts"` becomes `"cli"` plus
  * trailing spaces, which JSON allows between a value and the next comma. That

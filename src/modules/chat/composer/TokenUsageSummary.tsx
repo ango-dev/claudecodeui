@@ -13,12 +13,13 @@ const formatTokenCount = (value: number) => {
     return '0';
   }
 
-  if (value >= 1_000_000) {
-    // "1M", not "1.0M", for a round window size.
-    return `${Number((value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1))}M`;
+  // Thresholds sit where rounding would carry into the next unit, so 9,960
+  // reads "10K", not "10.0K"; and "1M", not "1.0M", for a round window size.
+  if (value >= 999_500) {
+    return `${Number((value / 1_000_000).toFixed(value >= 9_950_000 ? 0 : 1))}M`;
   }
 
-  if (value >= 10_000) {
+  if (value >= 9_950) {
     return `${Math.round(value / 1_000)}K`;
   }
 
