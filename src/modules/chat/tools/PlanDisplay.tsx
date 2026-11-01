@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronsUpDown, FileText } from 'lucide-react';
 
@@ -199,6 +199,23 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [showActions, isRevising]);
 
+  // The revision box grows with what is typed, up to its CSS max height (past
+  // that it scrolls), and its footer stays in view as it grows: the plan is
+  // often the last thing in the transcript, right above the floating composer,
+  // so a footer growing downwards would slide Send under the composer.
+  const revisionRef = useRef<HTMLTextAreaElement>(null);
+  const revisionFooterRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const textarea = revisionRef.current;
+    if (!isRevising || !textarea) return;
+    // Measure from 'auto' so the box also shrinks when text is deleted.
+    textarea.style.height = 'auto';
+    const borderHeight = textarea.offsetHeight - textarea.clientHeight;
+    textarea.style.height = `${textarea.scrollHeight + borderHeight}px`;
+    // 'nearest' does nothing while the footer is fully visible.
+    revisionFooterRef.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [isRevising, revision]);
+
   return (
     <Collapsible defaultOpen={defaultOpen}>
       <Card ref={cardRef} className="my-1 flex flex-col shadow-none">
@@ -271,8 +288,10 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
           </CardFooter>
         )}
         {showActions && isRevising && (
-          <CardFooter className="flex-col items-stretch gap-2 border-t border-border/40 px-4 pb-3 pt-3">
+          <CardFooter ref={revisionFooterRef} className="min-w-0 flex-col items-stretch gap-2 border-t border-border/40 px-4 pb-3 pt-3">
+            {/* Wraps everything, even a long URL, and is sized by the effect above. */}
             <textarea
+              ref={revisionRef}
               autoFocus
               value={revision}
               onChange={(event) => setRevision(event.target.value)}
@@ -284,9 +303,9 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
               }}
               rows={3}
               placeholder="What should change?"
-              className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              className="block max-h-[40vh] w-full min-w-0 resize-none overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none [overflow-wrap:anywhere] placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring sm:max-h-60"
             />
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
               <Button variant="ghost" size="sm" onClick={() => setIsRevising(false)} className="text-muted-foreground">
                 Cancel
               </Button>

@@ -602,9 +602,13 @@
 
   /* The composer floats over the bottom of the transcript (ChatInterface
      measures both variables), so the transcript and its scrollbar run the
-     full height. Its bottom padding keeps the last message above the composer. */
+     full height. Its bottom padding keeps the last message above the composer.
+     The same scroll padding makes anything scrolled into view inside the
+     transcript (a focused field, its buttons, a revealed message) stop above
+     the composer rather than at the pane's edge, hidden behind it. */
   [data-composer-docked] .chat-messages-pane {
     padding-bottom: calc(var(--composer-dock-height, 0px) + 0.75rem);
+    scroll-padding-bottom: calc(var(--composer-dock-height, 0px) + 0.75rem);
   }
 
   /* Messages fade out as they pass under the header and behind the composer.
