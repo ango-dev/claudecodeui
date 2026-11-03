@@ -37,7 +37,7 @@ export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
   const [mounted, setMounted] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const otherInputRef = useRef<HTMLInputElement>(null);
+  const otherInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     requestAnimationFrame(() => setMounted(true));
@@ -55,6 +55,16 @@ export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
       otherInputRef.current?.focus();
     }
   }, [otherActive, currentStep]);
+
+  // The "Other" answer wraps and grows with what is typed, up to its max
+  // height (then it scrolls), instead of running on under the Enter hint.
+  const otherText = otherTexts.get(currentStep) || '';
+  useEffect(() => {
+    const box = otherInputRef.current;
+    if (!box) return;
+    box.style.height = 'auto';
+    box.style.height = `${box.scrollHeight}px`;
+  }, [otherText, otherActive, currentStep]);
 
   const toggleOption = useCallback((qIdx: number, label: string, multiSelect: boolean) => {
     setSelections(prev => {
@@ -350,13 +360,15 @@ export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
             {q.custom !== false && isOtherOn && (
               <div className="pl-[30px] pr-0.5">
                 <div className="relative">
-                  <input
+                  <textarea
                     ref={otherInputRef}
-                    type="text"
-                    value={otherTexts.get(currentStep) || ''}
+                    rows={1}
+                    value={otherText}
                     onChange={(e) => setOtherText(currentStep, e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
+                      // Enter answers; Shift+Enter starts a new line. An IME
+                      // composition's Enter only confirms the composition.
+                      if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                         e.preventDefault();
                         if (isLast) handleSubmit();
                         else setCurrentStep(s => s + 1);
@@ -365,9 +377,10 @@ export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
                       e.stopPropagation();
                     }}
                     placeholder={t('chat:misc.typeAnswer')}
-                    className="w-full rounded-lg border-0 bg-gray-50 px-3 py-1.5 text-[13px] text-gray-900 outline-none ring-1 ring-gray-200 transition-shadow duration-200 placeholder:text-gray-400 focus:ring-2 focus:ring-blue-400 dark:bg-gray-900/60 dark:text-gray-100 dark:ring-gray-700 dark:placeholder:text-gray-600 dark:focus:ring-blue-500"
+                    // Right padding keeps the text clear of the Enter hint.
+                    className="block max-h-40 w-full resize-none overflow-y-auto whitespace-pre-wrap break-words rounded-lg border-0 bg-gray-50 py-1.5 pl-3 pr-14 text-[13px] leading-5 text-gray-900 outline-none ring-1 ring-gray-200 transition-shadow duration-200 [overflow-wrap:anywhere] placeholder:text-gray-400 focus:ring-2 focus:ring-blue-400 touch:pr-3 dark:bg-gray-900/60 dark:text-gray-100 dark:ring-gray-700 dark:placeholder:text-gray-600 dark:focus:ring-blue-500"
                   />
-                  <kbd className="absolute right-2 top-1/2 -translate-y-1/2 rounded border border-gray-200 bg-gray-100 px-1 py-0.5 font-mono text-[9px] text-gray-300 touch:hidden dark:border-gray-700 dark:bg-gray-800 dark:text-gray-600">
+                  <kbd className="pointer-events-none absolute bottom-[7px] right-2 rounded border border-gray-200 bg-gray-100 px-1 py-0.5 font-mono text-[9px] text-gray-300 touch:hidden dark:border-gray-700 dark:bg-gray-800 dark:text-gray-600">
                     Enter
                   </kbd>
                 </div>
