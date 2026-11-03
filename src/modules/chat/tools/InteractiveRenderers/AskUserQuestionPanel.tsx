@@ -355,39 +355,42 @@ export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
                 )}
               </button>
             )}
-
-            {/* Other text input — inline */}
-            {q.custom !== false && isOtherOn && (
-              <div className="pl-[30px] pr-0.5">
-                <div className="relative">
-                  <textarea
-                    ref={otherInputRef}
-                    rows={1}
-                    value={otherText}
-                    onChange={(e) => setOtherText(currentStep, e.target.value)}
-                    onKeyDown={(e) => {
-                      // Enter answers; Shift+Enter starts a new line. An IME
-                      // composition's Enter only confirms the composition.
-                      if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                        e.preventDefault();
-                        if (isLast) handleSubmit();
-                        else setCurrentStep(s => s + 1);
-                      }
-                      // Prevent container keydown from firing
-                      e.stopPropagation();
-                    }}
-                    placeholder={t('chat:misc.typeAnswer')}
-                    // Right padding keeps the text clear of the Enter hint.
-                    className="block max-h-40 w-full resize-none overflow-y-auto whitespace-pre-wrap break-words rounded-lg border-0 bg-gray-50 py-1.5 pl-3 pr-14 text-[13px] leading-5 text-gray-900 outline-none ring-1 ring-gray-200 transition-shadow duration-200 [overflow-wrap:anywhere] placeholder:text-gray-400 focus:ring-2 focus:ring-blue-400 touch:pr-3 dark:bg-gray-900/60 dark:text-gray-100 dark:ring-gray-700 dark:placeholder:text-gray-600 dark:focus:ring-blue-500"
-                  />
-                  <kbd className="pointer-events-none absolute bottom-[7px] right-2 rounded border border-gray-200 bg-gray-100 px-1 py-0.5 font-mono text-[9px] text-gray-300 touch:hidden dark:border-gray-700 dark:bg-gray-800 dark:text-gray-600">
-                    Enter
-                  </kbd>
-                </div>
-              </div>
-            )}
           </div>
         </div>
+
+        {/* Other text input, kept below the options' scroll area so the box
+            grows the panel instead of being clipped by that area as it grows */}
+        {q.custom !== false && isOtherOn && (
+          <div className="-mt-1 px-4 pb-2">
+            <div className="pl-[30px] pr-0.5">
+              <div className="relative">
+                <textarea
+                  ref={otherInputRef}
+                  rows={1}
+                  value={otherText}
+                  onChange={(e) => setOtherText(currentStep, e.target.value)}
+                  onKeyDown={(e) => {
+                    // Enter answers; Shift+Enter starts a new line. An IME
+                    // composition's Enter only confirms the composition.
+                    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                      e.preventDefault();
+                      if (isLast) handleSubmit();
+                      else setCurrentStep(s => s + 1);
+                    }
+                    // Prevent container keydown from firing
+                    e.stopPropagation();
+                  }}
+                  placeholder={t('chat:misc.typeAnswer')}
+                  // Right padding keeps the text clear of the Enter hint.
+                  className="block max-h-40 w-full resize-none overflow-y-auto whitespace-pre-wrap break-words rounded-lg border-0 bg-gray-50 py-1.5 pl-3 pr-14 text-[13px] leading-5 text-gray-900 outline-none ring-1 ring-gray-200 transition-shadow duration-200 [overflow-wrap:anywhere] placeholder:text-gray-400 focus:ring-2 focus:ring-blue-400 touch:pr-3 dark:bg-gray-900/60 dark:text-gray-100 dark:ring-gray-700 dark:placeholder:text-gray-600 dark:focus:ring-blue-500"
+                />
+                <kbd className="pointer-events-none absolute bottom-[7px] right-2 rounded border border-gray-200 bg-gray-100 px-1 py-0.5 font-mono text-[9px] text-gray-300 touch:hidden dark:border-gray-700 dark:bg-gray-800 dark:text-gray-600">
+                  Enter
+                </kbd>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Footer — compact */}
         <div className="flex items-center justify-between gap-2 border-t border-gray-100 bg-gray-50/50 px-4 py-2 dark:border-gray-700/50 dark:bg-gray-800/50">
