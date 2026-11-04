@@ -178,7 +178,7 @@ export default function QueuedMessageMergedCard({
       className={`settings-content-enter mx-auto max-w-[54.25rem] border border-b-0 ${flushTop ? 'rounded-t-[0.5px]' : 'rounded-t-lg'}`}
     >
       {/* On phones the send hint drops to its own line under the label and actions instead of truncating. */}
-      <div className="flex flex-wrap items-center gap-x-1.5 py-1 pl-3 pr-1 text-[11px] font-medium leading-4 text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-x-1.5 py-1 pl-3 pr-1 text-[11px] font-medium leading-4 text-primary/70">
         <span className="shrink-0 uppercase tracking-wide">{t('input.queue.label', { defaultValue: 'Queued' })}</span>
         {count > 1 && (
           <span data-testid="queued-merged-count" className="shrink-0 tabular-nums">
@@ -230,9 +230,9 @@ export default function QueuedMessageMergedCard({
         ref={bodyRef}
         tabIndex={0}
         aria-label={t('input.queue.mergedLabel', { defaultValue: 'Queued follow-ups, as they will be sent' })}
-        className="scrollbar-thin max-h-32 overflow-y-auto overscroll-y-contain border-t border-border/50 px-3 py-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary/40"
+        className="scrollbar-thin max-h-32 overflow-y-auto overscroll-y-contain border-t border-primary/15 px-3 py-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary/40"
       >
-        <ol className="divide-y divide-border/50">
+        <ol className="divide-y divide-primary/15">
           {queuedDrafts.map((draft) =>
             isSlashCommand(draft) ? (
               <CommandSection key={draft.id} draft={draft} onDelete={onDelete} />

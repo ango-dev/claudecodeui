@@ -1099,7 +1099,8 @@
      side borders run on unbroken. */
   [data-slot="queued-attached"] {
     border-color: hsl(var(--input));
-    background-color: hsl(var(--card));
+    /* Keeps the queue's own warm tint, laid over the box's surface. */
+    background: linear-gradient(hsl(var(--primary) / 0.05), hsl(var(--primary) / 0.05)), hsl(var(--card));
     box-shadow: inset 0 -1px 0 hsl(var(--border) / 0.5);
   }
 
