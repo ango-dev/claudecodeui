@@ -1092,6 +1092,17 @@
     box-shadow: 0 1px 2px hsl(var(--shadow-color) / 0.04);
   }
 
+  /* The combined queue card is the top of the message box: same surface and
+     border, following the box's focus colour. */
+  [data-slot="queued-attached"] {
+    border-color: hsl(var(--input));
+    background-color: hsl(var(--card));
+  }
+
+  .chat-composer-shell:has([data-slot="prompt-input-box"]:focus-within) [data-slot="queued-attached"] {
+    border-color: hsl(var(--muted-foreground) / 0.45);
+  }
+
   /* Slightly denser UI on desktop: every rem-based size (type, padding,
      heights) scales to 15/16. Phones keep the 16px root because iOS zooms
      into inputs whose text is smaller than 16px. */

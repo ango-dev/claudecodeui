@@ -10,6 +10,8 @@ type QueuedMessageMergedCardProps = {
   onDelete: (id: string) => void;
   onEditAll: () => void;
   onDeleteAll: () => void;
+  /** The activity tab sits on the card's top edge, so that edge is square. */
+  flushTop?: boolean;
 };
 
 type QueuedSectionProps = {
@@ -124,6 +126,7 @@ export default function QueuedMessageMergedCard({
   onDelete,
   onEditAll,
   onDeleteAll,
+  flushTop = false,
 }: QueuedMessageMergedCardProps) {
   const { t } = useTranslation('chat');
   const bodyRef = useRef<HTMLDivElement | null>(null);
@@ -165,10 +168,13 @@ export default function QueuedMessageMergedCard({
     <section
       data-testid="queued-message-merged-card"
       aria-label={t('input.queue.listLabel', { defaultValue: 'Queued messages' })}
-      className="settings-content-enter mx-auto mb-2 max-w-[54.25rem] rounded-xl border border-dashed border-primary/25 bg-primary/[0.04]"
+      // Drawn as the top of the message box it sits on: the same surface and
+      // border (see `queued-attached` in index.css), joined flush to it.
+      data-slot="queued-attached"
+      className={`settings-content-enter mx-auto max-w-[54.25rem] border border-b-0 ${flushTop ? 'rounded-t-none' : 'rounded-t-lg'}`}
     >
       {/* On phones the send hint drops to its own line under the label and actions instead of truncating. */}
-      <div className="flex flex-wrap items-center gap-x-1.5 py-1 pl-3 pr-1 text-[11px] font-medium leading-4 text-primary/70">
+      <div className="flex flex-wrap items-center gap-x-1.5 py-1 pl-3 pr-1 text-[11px] font-medium leading-4 text-muted-foreground">
         <span className="shrink-0 uppercase tracking-wide">{t('input.queue.label', { defaultValue: 'Queued' })}</span>
         {count > 1 && (
           <span data-testid="queued-merged-count" className="shrink-0 tabular-nums">
@@ -182,7 +188,7 @@ export default function QueuedMessageMergedCard({
         )}
         <span
           title={sendHint}
-          className="order-last min-w-0 basis-full truncate pb-0.5 pr-2 text-muted-foreground/60 sm:order-none sm:basis-auto sm:pb-0 sm:pr-0"
+          className="order-last min-w-0 basis-full truncate pb-0.5 pr-2 font-normal text-muted-foreground/70 sm:order-none sm:basis-auto sm:pb-0 sm:pr-0"
         >
           <span className="hidden sm:inline">· </span>
           {sendHint}
@@ -220,9 +226,9 @@ export default function QueuedMessageMergedCard({
         ref={bodyRef}
         tabIndex={0}
         aria-label={t('input.queue.mergedLabel', { defaultValue: 'Queued follow-ups, as they will be sent' })}
-        className="scrollbar-thin max-h-32 overflow-y-auto overscroll-y-contain rounded-b-xl border-t border-dashed border-primary/15 px-3 py-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary/40"
+        className="scrollbar-thin max-h-32 overflow-y-auto overscroll-y-contain border-t border-border/50 px-3 py-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary/40"
       >
-        <ol className="divide-y divide-dashed divide-primary/15">
+        <ol className="divide-y divide-border/50">
           {queuedDrafts.map((draft) =>
             isSlashCommand(draft) ? (
               <CommandSection key={draft.id} draft={draft} onDelete={onDelete} />

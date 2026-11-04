@@ -280,6 +280,11 @@ export default function ChatComposer({
   // Hide the thinking/status bar while any permission request is pending
   const hasPendingPermissions = pendingPermissionRequests.length > 0;
   const hasActivityIndicator = Boolean(activity && !hasPendingPermissions);
+  // The combined queue card is drawn as the top of the message box, so the
+  // box's top corners go square under it, and the card's do under the
+  // activity tab when nothing else sits between them.
+  const hasAttachedQueue = combineQueuedMessages && queuedDrafts.length > 0;
+  const queueTouchesActivityTab = hasActivityIndicator && scheduledMessages.length === 0 && !isEditingSentMessage;
 
   // Enter while a reply is running always adds another message to the queue;
   // combined, it joins the message already waiting there.
@@ -352,6 +357,7 @@ export default function ChatComposer({
       <QueuedMessageRow
         queuedDrafts={queuedDrafts}
         combined={combineQueuedMessages}
+        flushTop={queueTouchesActivityTab}
         onEdit={onEditQueuedDraft}
         onDelete={onDeleteQueuedDraft}
         onEditAll={onEditAllQueuedDrafts}
@@ -415,7 +421,7 @@ export default function ChatComposer({
             className={[
               'relative rounded-[var(--radius)] border',
               isTextareaExpanded ? 'chat-input-expanded' : '',
-              hasActivityIndicator ? 'rounded-t-none' : '',
+              hasActivityIndicator || hasAttachedQueue ? 'rounded-t-none' : '',
             ].filter(Boolean).join(' ')}
           >
           {isDragActive && (

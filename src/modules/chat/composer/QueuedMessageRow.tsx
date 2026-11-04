@@ -15,6 +15,8 @@ type QueuedMessageStripProps = {
 type QueuedMessageRowProps = QueuedMessageStripProps & {
   /** True when the server merges the queue into one message (the default); false sends each draft as its own turn. */
   combined: boolean;
+  /** The composer's activity tab sits on the combined card's top edge. */
+  flushTop?: boolean;
   /** Takes every queued draft back into the message box (combined mode). */
   onEditAll: () => void;
   /** Clears the whole queue (combined mode). */
@@ -39,7 +41,7 @@ function QueuedMessageCard({ draft, position, onEdit, onDelete }: QueuedMessageC
   return (
     <li
       data-testid="queued-message-card"
-      className="settings-content-enter flex h-14 w-[13.5rem] shrink-0 snap-start items-start gap-2 rounded-xl border border-dashed border-primary/25 bg-primary/[0.04] py-1.5 pl-2 pr-1 sm:w-60"
+      className="settings-content-enter flex h-14 w-[13.5rem] shrink-0 snap-start items-start gap-2 rounded-xl border border-border bg-card py-1.5 pl-2 pr-1 sm:w-60"
     >
       <span
         className={[
@@ -169,6 +171,7 @@ function QueuedMessageStrip({ queuedDrafts, onEdit, onDelete }: QueuedMessageStr
 export default function QueuedMessageRow({
   queuedDrafts,
   combined,
+  flushTop,
   onEdit,
   onDelete,
   onEditAll,
@@ -177,6 +180,7 @@ export default function QueuedMessageRow({
   if (combined) {
     return (
       <QueuedMessageMergedCard
+        flushTop={flushTop}
         queuedDrafts={queuedDrafts}
         onDelete={onDelete}
         onEditAll={onEditAll}
