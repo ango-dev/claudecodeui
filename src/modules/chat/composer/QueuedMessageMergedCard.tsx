@@ -169,9 +169,13 @@ export default function QueuedMessageMergedCard({
       data-testid="queued-message-merged-card"
       aria-label={t('input.queue.listLabel', { defaultValue: 'Queued messages' })}
       // Drawn as the top of the message box it sits on: the same surface and
-      // border (see `queued-attached` in index.css), joined flush to it.
+      // border (see `queued-attached` in index.css), joined flush to it. Under
+      // the activity tab the top is square in effect: the half-pixel radius is
+      // there because WebKit pixel-snaps the borders of a box with a rounded
+      // corner but draws an all-square one a fraction off, so its side borders
+      // would blur and miss the message box's at the join.
       data-slot="queued-attached"
-      className={`settings-content-enter mx-auto max-w-[54.25rem] border border-b-0 ${flushTop ? 'rounded-t-none' : 'rounded-t-lg'}`}
+      className={`settings-content-enter mx-auto max-w-[54.25rem] border border-b-0 ${flushTop ? 'rounded-t-[0.5px]' : 'rounded-t-lg'}`}
     >
       {/* On phones the send hint drops to its own line under the label and actions instead of truncating. */}
       <div className="flex flex-wrap items-center gap-x-1.5 py-1 pl-3 pr-1 text-[11px] font-medium leading-4 text-muted-foreground">
