@@ -23,6 +23,7 @@
 >
 > - **Claude Code only.** Cursor, Codex and OpenCode are hidden and were not tested with this fork's interface. They can be shown again under Settings → Agents → Advanced, but may not work properly.
 > - **English only.** Text added or changed in this fork was not translated; other languages show it in English.
+> - **Made with AI.** Most of this fork's changes were written with an AI coding assistant (Claude Code). They are tested, but may still contain mistakes. Report problems with them to this fork, not to CloudCLI.
 >
 > **Companion plugins:** forks of existing CloudCLI plugins, restyled to match this fork's theme. Credit for each goes to its original author; see each repo.
 >
