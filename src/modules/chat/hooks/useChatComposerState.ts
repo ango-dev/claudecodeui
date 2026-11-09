@@ -15,7 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { api } from '@/shared/api';
 import { PROVIDER_PERMISSION_PREFERENCE_KEYS } from '@/shared/constants';
 import { readUserPreference } from '@/shared/userSettings';
-import { isPromptCommand, withPastedTexts } from '@/shared/utils';
+import { createLocalMessageId, isPromptCommand, withPastedTexts } from '@/shared/utils';
 import type { BackgroundSendChoice, BackgroundSendPrompt, BackgroundStopReason, CommandModalPayload, CostCommandData, HelpCommandData, MarkSessionProcessing, ModelCommandData, PastedText, PendingSteer, QueuedDraft, SessionActivityMap, StatusCommandData, SteerOutcome,QueuedSendOptions,ChatAttachment,ChatMessage,PendingPermissionRequest,PermissionMode,SessionEstablishedContext,Project,ProjectSession,LLMProvider,SlashCommand } from '@/shared/types';
 import { grantClaudeToolPermission } from '@/modules/chat/utils/chatPermissions';
 import {
@@ -1377,8 +1377,12 @@ export function useChatComposerState({
       }
 
       const attachmentRecords = uploadedAttachments as ChatAttachment[];
+      // The echo's id goes with the send, and the server opens the run with
+      // the prompt under that id: other tabs show it, this one keeps its echo.
+      const clientMessageId = createLocalMessageId();
       const userMessage: ChatMessage = {
         type: 'user',
+        clientMessageId,
         content: currentInput,
         images: attachmentRecords.filter(isImageAttachment),
         files: attachmentRecords.filter((attachment) => !isImageAttachment(attachment)),
@@ -1412,6 +1416,7 @@ export function useChatComposerState({
         sessionId: targetSessionId,
         ...(editingAnchorId ? { anchorId: editingAnchorId } : {}),
         content: messageContent,
+        clientMessageId,
         options: {
           ...sendOptions,
           attachments: uploadedAttachments,

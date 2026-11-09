@@ -185,12 +185,12 @@ throws is answered with `INTERNAL_ERROR`.**
 
 | `type` | Payload | What the server does |
 | --- | --- | --- |
-| `chat.send` | `sessionId`, `content`, `options` | Resolves the session row, registers the run, dispatches to the provider runtime (`:146-158`). On a session whose previous turn left background work running, the new turn's CLI process supersedes the one that work runs under, so the work is stopped or finishes unheard; the composer asks the user before sending such a turn |
-| `chat.edit-send` | as above plus `anchorId` | Announces `history_truncated`, rewinds or resumes the provider transcript at the anchor, then dispatches (`:314-408`) |
+| `chat.send` | `sessionId`, `content`, `options`, `clientMessageId?` | Resolves the session row, registers the run, opens it with the turn's prompt (a user `text` row flagged `isTurnPrompt`, under `clientMessageId` when it is a plain token, so the sender recognises its own echo), dispatches to the provider runtime (`:146-158`). On a session whose previous turn left background work running, the new turn's CLI process supersedes the one that work runs under, so the work is stopped or finishes unheard; the composer asks the user before sending such a turn |
+| `chat.edit-send` | as above plus `anchorId` | Announces `history_truncated`, rewinds or resumes the provider transcript at the anchor, announces the replacement prompt, then dispatches (`:314-408`) |
 | `chat.steer` | `sessionId`, `messageId` (a UUID), `content`, `options?` | Delivers the message into the session's running turn instead of starting one: the provider writes it to the CLI's still-open stdin with priority `next`, the model reads it at its next tool-call boundary, and the provider echoes it on the run's stream at that moment (so every tab sees where it was read). The sender gets `chat_steer_accepted` once the provider has taken it. A turn that ends before reading it is held open for the follow-up turn the CLI runs it in |
 | `chat.abort` | `sessionId` | Aborts the runtime and emits the terminal `complete` on its behalf (`:415-438`) |
 | `chat.stop-task` | `sessionId`, `taskId` | Stops one background task (agent, workflow or backgrounded command) through the provider runtime; the runtime reports the stop on the session's stream |
-| `chat.subscribe` | `sessions: [{ sessionId, lastSeq }]` | Acks with `chat_subscribed`, attaches this socket to a running run — or to a completed one whose session still has background work — and replays what was missed for running runs (`:448-504`) |
+| `chat.subscribe` | `sessions: [{ sessionId, lastSeq }]` | Records these as the sessions this socket has open (replacing the previous frame's; `[]` leaves them all), so every run that later starts in one of them streams here too; acks with `chat_subscribed`, attaches this socket to a running run — or to a completed one whose session still has background work — and replays what was missed for running runs (`:448-504`) |
 | `chat.permission-response` | `requestId`, `allow`, `updatedInput?`, `message?`, `rememberEntry?` | Resolves one pending tool approval (`:511-522`) |
 
 These are built in exactly three client files: the composer builds sends, aborts and
@@ -421,10 +421,21 @@ sockets, and everything written to it is translated before it goes anywhere.**
   connection whose `readyState` is not open as it iterates. Nothing sweeps on close, and
   nothing needs to.
 
-A run started with `connection: null` — a scheduled message firing with no browser attached
-(`chat-run-registry.service.ts:171-177`, `runDetachedChatTurn` at
-`chat-websocket.service.ts:550-581`) — still records everything into the buffer, so whoever
-subscribes later replays it from `seq` 1.
+A run started with `connection: null` — a scheduled or queued message the server sends
+itself (`runDetachedChatTurn` in `chat-websocket.service.ts`) — still records everything into
+the buffer, so whoever subscribes later replays it from `seq` 1.
+
+**RULE: every socket that has a session open watches each run of it from the start, whoever
+started it.** `startRun` adds the session's viewers — the sockets whose latest
+`chat.subscribe` named it — to the new run's writer. Before this, only the sender and
+sockets that subscribed while the run was already going were in the audience, so a page left
+open on a session saw nothing of a queued or scheduled turn, or of a turn sent from another
+tab, until a reload. Switching sessions replaces a socket's viewed set and a closed socket is
+forgotten (`forgetConnection`), so no later run of a session the socket left reaches it. Runs
+open with their prompt (`isTurnPrompt`, plus `queuedMessageIds` for a queued turn) because no
+provider echoes the prompt it was started with; clients retire that row once the persisted
+transcript holds the same message, as they do their own optimistic echo. Covered by
+`tests/chat-run-viewers.test.ts`.
 
 ## Drop, reconnect, replay
 

@@ -73,7 +73,8 @@ export class ChatSessionWriter {
 
   constructor(options: ChatSessionWriterOptions) {
     this.options = options;
-    // A run started by a timer has no audience yet. Everything still goes
+    // A run the server starts itself has no requesting socket; the registry
+    // adds the session's viewers right after this. Everything still goes
     // through `decorateOutboundEvent` into the run's replay buffer, so a
     // client that subscribes mid-run catches up from the beginning.
     if (options.connection) {

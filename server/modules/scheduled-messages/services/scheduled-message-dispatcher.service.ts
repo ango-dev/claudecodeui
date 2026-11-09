@@ -26,6 +26,12 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 let unsubscribeRunCompleted: (() => void) | null = null;
 let unsubscribeBackgroundWorkEnded: (() => void) | null = null;
 /**
+ * Passes scheduled for a moment after a run or held work ends. Cleared with the
+ * poll on close: a pass that fired after the dispatcher was closed would still
+ * send with the runtime it was started with.
+ */
+const pendingAfterRunPolls = new Set<ReturnType<typeof setTimeout>>();
+/**
  * Sessions whose scheduled sends are still going, from this pass or an
  * earlier one: from the claim until the last turn of the session's due backlog
  * has ended (see sendUntilTurnEnds). Their next due rows stay pending (and keep
@@ -149,6 +155,11 @@ async function sendClaimedQueuedTurn(
       userId: candidate.userId,
       content: turn.content,
       options: queuedTurnOptions(turn),
+      // Every entry the turn took, so the cards of all of them drop as it starts.
+      queuedMessageIds: claimed.flatMap((entry) => {
+        const id = entry && typeof entry === 'object' ? (entry as { id?: unknown }).id : null;
+        return typeof id === 'string' && id ? [id] : [];
+      }),
     },
     { runtime },
   );
@@ -441,6 +452,14 @@ export function initializeScheduledMessageDispatcher(runtime: ProviderRuntimeGat
     // it sent is held open (see runDispatchPass).
     void runDispatchPass(runtime);
   };
+  const pollAfterDelay = () => {
+    const timer = setTimeout(() => {
+      pendingAfterRunPolls.delete(timer);
+      poll();
+    }, AFTER_RUN_DELAY_MS);
+    timer.unref?.();
+    pendingAfterRunPolls.add(timer);
+  };
 
   pollTimer = setInterval(poll, POLL_INTERVAL_MS);
   // Never keep the process alive just to poll for scheduled messages.
@@ -450,13 +469,13 @@ export function initializeScheduledMessageDispatcher(runtime: ProviderRuntimeGat
   // poll interval later; the next one in the queue goes when its own turn
   // ends. The poll still covers a missed or failed pass.
   unsubscribeRunCompleted = chatRunRegistry.onRunCompleted(() => {
-    setTimeout(poll, AFTER_RUN_DELAY_MS).unref?.();
+    pollAfterDelay();
   });
   // A turn that waited for background work rather than stop it goes when the
   // process holding that work ends; no run completes then, since that run's
   // `complete` went out when its turn did.
   unsubscribeBackgroundWorkEnded = runtime.onBackgroundWorkEnded(() => {
-    setTimeout(poll, AFTER_RUN_DELAY_MS).unref?.();
+    pollAfterDelay();
   });
 
   // Catch up on anything that came due while the server was not running.
@@ -468,6 +487,10 @@ export function closeScheduledMessageDispatcher(): void {
     clearInterval(pollTimer);
     pollTimer = null;
   }
+  for (const timer of pendingAfterRunPolls) {
+    clearTimeout(timer);
+  }
+  pendingAfterRunPolls.clear();
   unsubscribeRunCompleted?.();
   unsubscribeRunCompleted = null;
   unsubscribeBackgroundWorkEnded?.();

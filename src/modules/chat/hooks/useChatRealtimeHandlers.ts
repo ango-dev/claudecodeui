@@ -4,6 +4,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { ServerEvent,MarkSessionIdle,MarkSessionProcessing,PendingPermissionRequest,ProjectSession,LLMProvider,NormalizedMessage,GetSessionActivity,MarkSessionBackground,SideQuestionEvent,SteerOutcome } from '@/shared/types';
 import { showCompletionTitleIndicator } from '@/modules/chat/utils/pageTitleNotification';
 import { playChatCompletionSound, playNotificationSound } from '@/shared/utils';
+import { forgetSentQueuedMessages } from '@/shared/chatDrafts';
 import type { SessionStore } from '@/modules/chat/hooks/useSessionStore';
 import { normalizedToChatMessages } from '@/modules/chat/hooks/useChatMessages';
 import { sideQuestionStore } from '@/modules/chat/hooks/useSideQuestions';
@@ -318,11 +319,26 @@ export function useChatRealtimeHandlers({
         sessionStore.appendRealtime(sid, msg as unknown as NormalizedMessage);
       }
 
-      // A user message on the live stream is a steered message the agent just
-      // read (the turn's own prompt is never echoed); the composer drops its
-      // card if it is one of its own.
+      // A user message on the live stream is either a steered message the
+      // agent just read — the composer drops its card if it is one of its own
+      // — or the prompt the run opened with.
       if (sid && msg.kind === 'text' && msg.role === 'user' && typeof msg.id === 'string') {
-        onSteerOutcome?.(sid, msg.id, 'delivered');
+        if (msg.isTurnPrompt === true) {
+          // A run has started, possibly one this tab did not send (a queued
+          // or scheduled message, another tab's turn): show it as busy now
+          // rather than at the next running-sessions poll, so Enter queues
+          // instead of colliding with it.
+          onSessionProcessing?.(sid);
+          // The queued messages it was made of are sent; their cards go now.
+          if (Array.isArray(msg.queuedMessageIds)) {
+            forgetSentQueuedMessages(
+              sid,
+              msg.queuedMessageIds.filter((id): id is string => typeof id === 'string'),
+            );
+          }
+        } else {
+          onSteerOutcome?.(sid, msg.id, 'delivered');
+        }
       }
 
       // --- UI side effects for specific kinds ---

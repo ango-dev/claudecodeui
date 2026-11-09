@@ -93,8 +93,11 @@ function findServerEchoForLocalUser(
 }
 
 /**
- * Removes local optimistic user rows once a corresponding persisted turn is
- * available. Matches are one-to-one so repeated sends cannot claim one row.
+ * Removes live-only user rows once a corresponding persisted turn is
+ * available: this client's optimistic echoes (`local_` ids) and the turn-prompt
+ * rows the server opens every run with (`isTurnPrompt`), which stand in for the
+ * prompt the same way for tabs that did not send it. Matches are one-to-one so
+ * repeated sends cannot claim one row.
  */
 export function removeOptimisticUserEchoes(
   serverMessages: NormalizedMessage[],
@@ -103,7 +106,7 @@ export function removeOptimisticUserEchoes(
   const claimedServerIds = new Set<string>();
 
   return realtimeMessages.filter((message) => {
-    if (!message.id.startsWith('local_')) {
+    if (!message.id.startsWith('local_') && message.isTurnPrompt !== true) {
       return true;
     }
 

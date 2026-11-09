@@ -271,11 +271,71 @@ function readVerifiedAttachments(clientOptions: AnyRecord): ChatAttachmentDescri
   );
 }
 
+type ChatRunHandle = NonNullable<ReturnType<typeof chatRunRegistry.startRun>>;
+
 /**
- * Registers the run and hands the turn to the provider runtime.
+ * The id a client may give the optimistic echo of the message it sends
+ * (`clientMessageId` on `chat.send` / `chat.edit-send`). It is repeated on the
+ * turn's prompt event so that client recognises its own echo; anything else is
+ * replaced by a server id.
+ */
+const CLIENT_MESSAGE_ID_PATTERN = /^[A-Za-z0-9_-]{1,100}$/;
+
+/**
+ * Puts the turn's own prompt on the run's stream, as a user `text` row
+ * flagged `isTurnPrompt`, before the provider is asked for anything.
+ *
+ * No provider echoes the prompt it was started with, so until now the only
+ * copy on screen was the sending tab's optimistic echo. Every other viewer —
+ * another tab, or the tab that has the session open when the server sends a
+ * queued or scheduled message — saw the reply arrive under nothing, or (as
+ * nothing told it a run had started) saw nothing at all until a reload.
+ *
+ * Going through the writer gives it a `seq` and a place in the replay buffer,
+ * so a tab that subscribes mid-run gets it first. The flag lets clients retire
+ * the row once the persisted transcript has the same message, the way they
+ * retire their own optimistic echo; `queuedMessageIds` tells them which queued
+ * messages this turn took, so their queue cards drop at once.
+ */
+function announceTurnPrompt(
+  run: ChatRunHandle,
+  input: {
+    provider: LLMProvider;
+    sessionId: string;
+    content: string;
+    attachments: ChatAttachmentDescriptor[];
+    clientMessageId: unknown;
+    queuedMessageIds: string[];
+  },
+): void {
+  const id = typeof input.clientMessageId === 'string' && CLIENT_MESSAGE_ID_PATTERN.test(input.clientMessageId)
+    ? input.clientMessageId
+    : `prompt_${randomUUID()}`;
+  const images = input.attachments.filter(isImageAttachmentDescriptor);
+  const files = input.attachments.filter((descriptor) => !isImageAttachmentDescriptor(descriptor));
+
+  run.writer.send({
+    kind: 'text',
+    role: 'user',
+    id,
+    sessionId: input.sessionId,
+    provider: input.provider,
+    timestamp: new Date().toISOString(),
+    content: input.content,
+    ...(images.length > 0 ? { images } : {}),
+    ...(files.length > 0 ? { files } : {}),
+    isTurnPrompt: true,
+    ...(input.queuedMessageIds.length > 0 ? { queuedMessageIds: input.queuedMessageIds } : {}),
+  });
+}
+
+/**
+ * Registers the run, announces its prompt, and hands the turn to the provider
+ * runtime.
  *
  * `extraRuntimeOptions` is how an edited message asks the provider to resume
  * partway instead of continuing from the tip; a normal send passes nothing.
+ * `queuedMessageIds` names the queued messages a server-sent turn is made of.
  */
 async function dispatchRun(
   ws: WebSocket | null,
@@ -284,8 +344,15 @@ async function dispatchRun(
   session: NonNullable<ReturnType<typeof sessionsDb.getSessionById>>,
   data: AnyRecord,
   dependencies: ChatWebSocketDependencies,
-  extraRuntimeOptions: AnyRecord = {},
-  beforeRun?: (run: NonNullable<ReturnType<typeof chatRunRegistry.startRun>>) => void | Promise<void>,
+  {
+    extraRuntimeOptions = {},
+    beforeRun,
+    queuedMessageIds = [],
+  }: {
+    extraRuntimeOptions?: AnyRecord;
+    beforeRun?: (run: ChatRunHandle) => void | Promise<void>;
+    queuedMessageIds?: string[];
+  } = {},
 ): Promise<{ started: boolean; error: string | null }> {
   const provider = session.provider as LLMProvider;
 
@@ -340,6 +407,16 @@ async function dispatchRun(
     // be taken back. Inside the try so a rewind that throws still releases the
     // run instead of leaving the session processing forever.
     await beforeRun?.(run);
+    // After `beforeRun`: an edit's `history_truncated` has to reach the other
+    // tabs first, or their truncation would cut the replacement too.
+    announceTurnPrompt(run, {
+      provider,
+      sessionId,
+      content: command,
+      attachments: uniqueAttachments,
+      clientMessageId: data.clientMessageId,
+      queuedMessageIds,
+    });
     await dependencies.runtime.run(provider, command, runtimeOptions, run.writer);
   } catch (error) {
     failure = error instanceof Error ? error.message : String(error);
@@ -575,42 +652,44 @@ async function handleChatEditSend(
     session,
     data,
     dependencies,
-    // `null` is meaningful: the edited turn was the first prompt, so the
-    // conversation starts over instead of resuming.
-    rewinds
-      ? {}
-      : { resumeAnchorId: resumeThroughId ?? undefined, resumeFromScratch: resumeThroughId === null },
-    async (run) => {
-      // Emitted through the run's writer so it is sequenced and replayed like
-      // any other event — a second tab watching this session has to truncate
-      // too.
-      //
-      // Before the rewind, not after it. A rewind that has to branch spawns a
-      // process and waits on a JSON-RPC round trip, and holding the frame
-      // until that came back left the message the user had just edited away
-      // sitting on screen for about a second — the very flicker this feature
-      // exists to avoid. Announcing first is safe because a rewind that fails
-      // still ends the run, and the terminal `complete` makes every client
-      // re-read the transcript, which puts back anything that turned out not
-      // to have been replaced after all.
-      run.writer.send({
-        kind: 'history_truncated',
-        provider,
-        sessionId,
-        anchorId,
-      });
+    {
+      // `null` is meaningful: the edited turn was the first prompt, so the
+      // conversation starts over instead of resuming.
+      extraRuntimeOptions: rewinds
+        ? {}
+        : { resumeAnchorId: resumeThroughId ?? undefined, resumeFromScratch: resumeThroughId === null },
+      beforeRun: async (run) => {
+        // Emitted through the run's writer so it is sequenced and replayed like
+        // any other event — a second tab watching this session has to truncate
+        // too.
+        //
+        // Before the rewind, not after it. A rewind that has to branch spawns a
+        // process and waits on a JSON-RPC round trip, and holding the frame
+        // until that came back left the message the user had just edited away
+        // sitting on screen for about a second — the very flicker this feature
+        // exists to avoid. Announcing first is safe because a rewind that fails
+        // still ends the run, and the terminal `complete` makes every client
+        // re-read the transcript, which puts back anything that turned out not
+        // to have been replaced after all.
+        run.writer.send({
+          kind: 'history_truncated',
+          provider,
+          sessionId,
+          anchorId,
+        });
 
-      if (rewinds) {
-        try {
-          await sessionsService.rewindSessionForEdit(sessionId, resumeThroughId);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          sendProtocolError(ws, 'EDIT_REWIND_FAILED', `Could not rewind the conversation: ${message}`, sessionId);
-          // Ends the run before the provider is asked to continue a
-          // conversation that was not rewound after all.
-          throw error;
+        if (rewinds) {
+          try {
+            await sessionsService.rewindSessionForEdit(sessionId, resumeThroughId);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            sendProtocolError(ws, 'EDIT_REWIND_FAILED', `Could not rewind the conversation: ${message}`, sessionId);
+            // Ends the run before the provider is asked to continue a
+            // conversation that was not rewound after all.
+            throw error;
+          }
         }
-      }
+      },
     },
   );
 }
@@ -786,6 +865,16 @@ function handleChatSubscribe(
 ): void {
   const targets = Array.isArray(data.sessions) ? data.sessions : [];
 
+  // The frame says which sessions this socket now has open (a client sends
+  // one when it opens a session, and an empty one when it leaves them all).
+  // Recorded so the next run of those sessions reaches it however it starts —
+  // a queued or scheduled message the server sends, or a turn sent from
+  // another tab — and so a session it left no longer does.
+  chatRunRegistry.setViewedSessions(ws, targets.flatMap((target: unknown) => {
+    const sessionId = target && typeof target === 'object' ? (target as AnyRecord).sessionId : null;
+    return typeof sessionId === 'string' && sessionId.trim() ? [sessionId.trim()] : [];
+  }));
+
   for (const target of targets) {
     if (!target || typeof target !== 'object') {
       continue;
@@ -863,7 +952,8 @@ function handlePermissionResponse(data: AnyRecord, dependencies: ChatWebSocketDe
  * Handles authenticated chat websocket messages used by the main chat panel.
  *
  * Inbound protocol (client to server):
- * - `chat.send`                { sessionId, content, options? }
+ * - `chat.send`                { sessionId, content, options?, clientMessageId? }
+ * - `chat.edit-send`           { sessionId, anchorId, content, options?, clientMessageId? }
  * - `chat.side_question`       { sessionId, sideQuestionId, question, options?: { model? } }
  * - `chat.steer`               { sessionId, messageId, content, options? }
  * - `chat.abort`               { sessionId }
@@ -872,18 +962,20 @@ function handlePermissionResponse(data: AnyRecord, dependencies: ChatWebSocketDe
  * - `chat.permission-response` { requestId, allow, updatedInput?, message?, rememberEntry? }
  *
  * Outbound protocol (server to client): every frame is `kind`-based — either
- * a provider `NormalizedMessage` (with `seq`) or a gateway event
+ * a provider `NormalizedMessage` (with `seq`; every run opens with its prompt
+ * as a user `text` row flagged `isTurnPrompt`) or a gateway event
  * (`chat_subscribed`, `chat_steer_accepted`, `session_upserted`,
  * `loading_progress`, `protocol_error`, `side_question`).
  */
 /**
- * Runs a turn for a session with no client attached.
+ * Runs a turn the server starts itself, with no requesting client.
  *
- * Used by scheduled messages, which fire from a timer: there is no socket to
- * report errors to and no audience to stream to. The run is registered exactly
- * like an interactive one, so anyone who opens the session while it is going
- * subscribes and replays it from the start, and the session shows as busy
- * everywhere in the meantime.
+ * Used by scheduled and queued messages, which fire from a timer or from the
+ * previous turn ending: there is no socket to report errors to. The run is
+ * registered exactly like an interactive one: every socket that has the
+ * session open watches it from its prompt on, anyone who opens the session
+ * while it is going subscribes and replays it from the start, and the session
+ * shows as busy everywhere in the meantime.
  *
  * Resolves when the provider run settles. Returns false when the session has
  * gone away or is busy without `interruptActiveRun`, which the caller reports
@@ -901,6 +993,11 @@ export async function runDetachedChatTurn(
      * land mid-run, so the timer outranks whatever is running.
      */
     interruptActiveRun?: boolean;
+    /**
+     * The queued messages this turn is made of, repeated on its prompt event
+     * so viewers drop their queue cards as the turn starts.
+     */
+    queuedMessageIds?: string[];
   },
   dependencies: ChatWebSocketDependencies,
 ): Promise<{ started: boolean; error: string | null }> {
@@ -938,6 +1035,7 @@ export async function runDetachedChatTurn(
     session,
     { sessionId: input.sessionId, content: input.content, options: input.options ?? {} },
     dependencies,
+    { queuedMessageIds: input.queuedMessageIds ?? [] },
   );
 }
 
@@ -1034,5 +1132,6 @@ export function handleChatConnection(
   ws.on('close', () => {
     console.log('[INFO] Chat client disconnected');
     connectedClients.delete(ws);
+    chatRunRegistry.forgetConnection(ws);
   });
 }

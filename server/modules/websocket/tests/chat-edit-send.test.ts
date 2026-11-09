@@ -185,6 +185,25 @@ test('every subscribed client is told to drop the superseded turns', async () =>
   });
 });
 
+test('the replacement prompt is announced after the truncation, so other tabs keep it', async () => {
+  await withGateway('claude', async ({ socket }) => {
+    socket.emit('message', JSON.stringify({
+      type: 'chat.edit-send',
+      sessionId: SESSION_ID,
+      anchorId: 'e-u2',
+      content: 'replacement',
+      clientMessageId: 'local_1_edit',
+    }));
+    await settle();
+
+    const truncationIndex = socket.frames.findIndex((frame) => frame.kind === 'history_truncated');
+    const promptIndex = socket.frames.findIndex((frame) => frame.isTurnPrompt === true);
+    assert.ok(truncationIndex >= 0 && promptIndex > truncationIndex, 'the prompt follows the truncation');
+    assert.equal(socket.frames[promptIndex].content, 'replacement');
+    assert.equal(socket.frames[promptIndex].id, 'local_1_edit');
+  });
+});
+
 test('an edit without an anchor is refused', async () => {
   await withGateway('claude', async ({ socket, runs }) => {
     socket.emit('message', JSON.stringify({

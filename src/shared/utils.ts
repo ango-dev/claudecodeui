@@ -315,6 +315,17 @@ export const withPastedTexts = (pastedTexts: PastedText[], typed: string): strin
   return parts.filter((part) => part.trim()).join('\n\n');
 };
 
+/**
+ * A fresh id for a client-side optimistic chat row, `local_<time>_<random>`.
+ * The `local_` prefix is what the session store reads to retire such a row
+ * once the persisted transcript holds the message. Used by chat for every
+ * echo it adds, and by the composer to pick a sent message's echo id up front
+ * so it can hand the same id to the server with the send.
+ */
+export const createLocalMessageId = (): string => (
+  `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+);
+
 // ---------------------------
 
 

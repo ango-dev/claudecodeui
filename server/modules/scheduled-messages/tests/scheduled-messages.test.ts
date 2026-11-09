@@ -171,6 +171,53 @@ test('a queued message is sent by the server without a browser connection', asyn
   });
 });
 
+test('a tab with the session open sees a queued turn start, naming every queued message it took', async () => {
+  await withIsolatedDatabase(async (userId) => {
+    sessionDraftsDb.saveDraft(userId, SESSION_ID, {
+      text: '',
+      queuedMessages: [
+        { id: 'q-first', content: 'run the tests' },
+        { id: 'q-second', content: 'then fix what fails' },
+      ],
+    });
+    const tab = openTab();
+    chatRunRegistry.setViewedSessions(tab as never, [SESSION_ID]);
+
+    const runs: RunCall[] = [];
+    // Combining is on by default, so both go as one turn.
+    assert.equal(await dispatchQueuedMessages(createRuntime(runs)), 1);
+
+    const prompt = tab.frames.find((frame) => frame.isTurnPrompt === true);
+    assert.ok(prompt, 'the turn\'s prompt reaches the open tab');
+    assert.equal(prompt.kind, 'text');
+    assert.equal(prompt.role, 'user');
+    assert.equal(prompt.content, 'run the tests\n\nthen fix what fails');
+    assert.deepEqual(prompt.queuedMessageIds, ['q-first', 'q-second']);
+    assert.equal(prompt.sessionId, SESSION_ID);
+    // The stub runtime ends without a complete; the gateway's own ends the run on the tab too.
+    assert.ok(tab.frames.some((frame) => frame.kind === 'complete'));
+  });
+});
+
+test('a tab with the session open sees a scheduled turn start', async () => {
+  await withIsolatedDatabase(async (userId) => {
+    scheduledMessagesService.schedule({
+      userId,
+      sessionId: SESSION_ID,
+      content: 'good morning, check the build',
+      scheduledFor: new Date(Date.now() - 1_000).toISOString(),
+    });
+    const tab = openTab();
+    chatRunRegistry.setViewedSessions(tab as never, [SESSION_ID]);
+
+    await dispatchDueScheduledMessages(createRuntime([]));
+
+    const prompt = tab.frames.find((frame) => frame.isTurnPrompt === true);
+    assert.equal(prompt?.content, 'good morning, check the build');
+    assert.equal(prompt?.queuedMessageIds, undefined);
+  });
+});
+
 test('a queued message stays pending while its session is busy', async () => {
   await withIsolatedDatabase(async (userId) => {
     sessionDraftsDb.saveDraft(userId, SESSION_ID, {

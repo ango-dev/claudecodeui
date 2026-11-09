@@ -303,6 +303,22 @@ export function removeQueuedMessage(scope: string, id: string): void {
   });
 }
 
+/**
+ * Drops messages the server has already sent from one scope's queue, in this
+ * tab only. Used by chat when a run's turn-prompt event names the queued
+ * messages it was made of, so their cards go as the turn starts instead of on
+ * the next re-read. Nothing is sent: the server took them out of its copy
+ * when it claimed them.
+ */
+export function forgetSentQueuedMessages(scope: string, ids: string[]): void {
+  if (ids.length === 0) {
+    return;
+  }
+  const sent = new Set(ids);
+  const queue = drafts.get(scope)?.queuedMessages ?? [];
+  setDraft(scope, { queuedMessages: queue.filter((queued) => !sent.has(queued.id)) });
+}
+
 /** Subscribes to any draft change; returns the unsubscribe function. */
 export function subscribeToChatDrafts(listener: () => void): () => void {
   listeners.add(listener);

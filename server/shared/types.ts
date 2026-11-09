@@ -494,6 +494,19 @@ export type NormalizedMessage = {
   images?: unknown;
   /** Non-image files attached to a user turn after provider history normalization. */
   files?: unknown;
+  /**
+   * Set only on the user row the chat gateway puts at the start of every run:
+   * the turn's own prompt, which no provider echoes. Live-only — history
+   * never carries it — so clients treat the row like their optimistic echo
+   * and retire it once the persisted transcript holds the same message.
+   */
+  isTurnPrompt?: boolean;
+  /**
+   * On a turn-prompt row, the ids of the queued messages the turn was made of
+   * (a queued turn can combine several), so clients drop their queue cards
+   * as soon as the turn starts.
+   */
+  queuedMessageIds?: string[];
   toolName?: string;
   toolInput?: unknown;
   toolId?: string;

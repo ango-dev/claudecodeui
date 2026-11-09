@@ -758,6 +758,17 @@ export function useSessionStore() {
 
   const appendRealtime = useCallback((sessionId: string, msg: NormalizedMessage) => {
     const slot = getSlot(sessionId);
+    // A user message can reach the store twice under one id: the sending
+    // tab's optimistic echo and the run's turn-prompt row that repeats it
+    // (in either order — a new chat flushes its echo only once the session
+    // id is known), or a prompt replayed after a reconnect. One row is shown.
+    if (
+      msg.kind === 'text'
+      && msg.role === 'user'
+      && slot.realtimeMessages.some((existing) => existing.id === msg.id)
+    ) {
+      return;
+    }
     const normalizedMessage =
       msg.sessionId === sessionId
         ? msg

@@ -382,6 +382,12 @@ export type ChatMessage = {
    */
   replacesAnchorId?: string;
   /**
+   * Set on the optimistic echo of a sent message: the id its store row gets,
+   * which the send also hands the server so the run's turn-prompt row comes
+   * back under the same id and is recognised as this echo, not a second copy.
+   */
+  clientMessageId?: string;
+  /**
    * The model that produced this assistant turn, as the provider reported it
    * on the transcript row. Absent on user turns and on rows the provider
    * fabricated locally, so the footer shows nothing rather than guessing.
@@ -610,6 +616,17 @@ export type NormalizedMessage = {
   compact?: CompactionInfo;
   images?: Array<{ path?: string; data?: string; name?: string }>;
   files?: Array<{ path?: string; name?: string; mimeType?: string; size?: number }>;
+  /**
+   * Set by the backend on the user row it puts at the start of every run: the
+   * turn's own prompt, so every tab watching the session shows it — including
+   * one that did not send it, such as a queued or scheduled message the server
+   * sent. Live-only, so the store retires it once the persisted transcript
+   * holds the same message, exactly like a `local_` optimistic echo. Its `id`
+   * is the sender's echo id when a tab sent the turn.
+   */
+  isTurnPrompt?: boolean;
+  /** On a turn-prompt row, the queued messages the turn took, so their queue cards drop as it starts. */
+  queuedMessageIds?: string[];
   toolName?: string;
   toolInput?: unknown;
   toolId?: string;

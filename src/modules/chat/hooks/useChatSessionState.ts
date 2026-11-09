@@ -12,6 +12,7 @@ import { normalizedToChatMessages } from '@/modules/chat/hooks/useChatMessages';
 import { isScrollAtRest, usesScrollAnchorFallback, waitForScrollRest } from '@/modules/chat/hooks/useScrollAnchorFallback';
 import { findSearchTargetIndex, resolveSearchWindowSize } from '@/modules/chat/utils/searchTargetLocator';
 import { readSelectedProvider } from '@/shared/selectedProvider';
+import { createLocalMessageId } from '@/shared/utils';
 import type { SearchTarget } from '@/modules/chat/utils/searchTargetLocator';
 import { sideQuestionStore, useSideQuestions } from '@/modules/chat/hooks/useSideQuestions';
 import { mergeSideQuestions } from '@/modules/chat/utils/sideQuestions';
@@ -168,7 +169,9 @@ function chatMessageToNormalized(
   sessionId: string,
   provider: LLMProvider,
 ): NormalizedMessage | null {
-  const id = `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  // A sent message's echo was given its id up front, so the run's turn-prompt
+  // row (which repeats it) is recognised as this echo; anything else gets one.
+  const id = msg.clientMessageId ?? createLocalMessageId();
   const ts = msg.timestamp instanceof Date
     ? msg.timestamp.toISOString()
     : typeof msg.timestamp === 'number'
@@ -939,7 +942,14 @@ export function useChatSessionState({
   // Session replay/subscription remains active regardless of which main tab is
   // visible. Only persisted-history HTTP traffic is visibility-gated below.
   useEffect(() => {
-    if (!selectedSession || !selectedProject || !ws) return;
+    if (!ws) return;
+    if (!selectedSession || !selectedProject) {
+      // The server adds a socket to every new run of the sessions its latest
+      // subscribe named. With no session open any more, name none, so a run
+      // the server later starts in the one just left is not streamed here.
+      sendMessage({ type: 'chat.subscribe', sessions: [] });
+      return;
+    }
 
     statusCheckSentAtRef.current.set(selectedSession.id, Date.now());
     sendMessage({

@@ -1,6 +1,7 @@
 import { sessionsDb } from '@/modules/database/index.js';
 import { ChatSessionWriter } from '@/modules/websocket/services/chat-session-writer.service.js';
 import { broadcastSessionUpserted } from '@/modules/websocket/services/session-upsert-broadcast.service.js';
+import { WS_OPEN_STATE } from '@/modules/websocket/services/websocket-state.service.js';
 import type {
   LLMProvider,
   NormalizedMessage,
@@ -70,6 +71,40 @@ let retainCompletedRun: (appSessionId: string) => boolean = () => false;
 
 /** Told the app session id each time a run ends; see `onRunCompleted`. */
 const completionListeners = new Set<(appSessionId: string) => void>();
+
+/**
+ * Which sessions each chat socket is looking at, as its latest
+ * `chat.subscribe` named them, and the same relation keyed the other way.
+ *
+ * A socket used to join a run's audience only by sending `chat.send` or by
+ * subscribing while the run was already going. A run the server starts on
+ * its own — a queued message going once the previous turn ends, a scheduled
+ * message coming due — or one another tab starts begins after the page
+ * subscribed, so the page that has the session open saw nothing of it until
+ * a reload. `startRun` reads this to put every current viewer in the new
+ * run's audience.
+ *
+ * Only the latest frame counts: switching sessions replaces the set, so a
+ * socket is never added to a run of a session it has navigated away from.
+ * Entries go when the socket closes (`forgetConnection`).
+ */
+const viewedSessionsByConnection = new Map<RealtimeClientConnection, Set<string>>();
+const viewersBySession = new Map<string, Set<RealtimeClientConnection>>();
+
+function removeViewer(connection: RealtimeClientConnection): void {
+  const viewed = viewedSessionsByConnection.get(connection);
+  if (!viewed) {
+    return;
+  }
+  for (const sessionId of viewed) {
+    const viewers = viewersBySession.get(sessionId);
+    viewers?.delete(connection);
+    if (viewers && viewers.size === 0) {
+      viewersBySession.delete(sessionId);
+    }
+  }
+  viewedSessionsByConnection.delete(connection);
+}
 
 /**
  * Schedules one run's eviction. The timer is bound to the run it was armed
@@ -218,10 +253,11 @@ export const chatRunRegistry = {
     provider: LLMProvider;
     providerSessionId: string | null;
     /**
-     * The socket that asked for this run, or `null` for one nobody is watching
-     * — a scheduled message fires with no browser attached. The writer's event
-     * buffer still records everything, so a client that subscribes later
-     * replays the run from its start.
+     * The socket that asked for this run, or `null` for one the server starts
+     * itself — a scheduled or queued message. Either way every socket that
+     * has the session open is added as well. The writer's event buffer
+     * records everything, so a client that subscribes later replays the run
+     * from its start.
      */
     connection: RealtimeClientConnection | null;
     userId: string | number | null;
@@ -254,8 +290,49 @@ export const chatRunRegistry = {
       decorateOutboundEvent: (message) => decorateAndRecordEvent(run, message),
     });
 
+    // Everyone who has the session open watches the run from its first event,
+    // whoever started it. The writer's audience is a set, so the socket that
+    // sent the turn (usually a viewer too) is not added twice.
+    for (const viewer of viewersBySession.get(input.appSessionId) ?? []) {
+      if (viewer.readyState === WS_OPEN_STATE) {
+        run.writer.updateWebSocket(viewer);
+      }
+    }
+
     runs.set(input.appSessionId, run);
     return run;
+  },
+
+  /**
+   * Records the sessions a socket is now looking at, replacing whatever it
+   * named before. Called for every `chat.subscribe` frame, so the next run of
+   * any of these sessions reaches the socket however it is started (see
+   * `viewersBySession`). It does not attach the socket to a run already going;
+   * `attachConnection` does that.
+   */
+  setViewedSessions(connection: RealtimeClientConnection, sessionIds: Iterable<string>): void {
+    removeViewer(connection);
+    const viewed = new Set(sessionIds);
+    if (viewed.size === 0) {
+      return;
+    }
+    viewedSessionsByConnection.set(connection, viewed);
+    for (const sessionId of viewed) {
+      let viewers = viewersBySession.get(sessionId);
+      if (!viewers) {
+        viewers = new Set();
+        viewersBySession.set(sessionId, viewers);
+      }
+      viewers.add(connection);
+    }
+  },
+
+  /**
+   * Forgets a socket that has closed, so no later run adds it. Runs it is
+   * already watching drop it themselves the next time they find it closed.
+   */
+  forgetConnection(connection: RealtimeClientConnection): void {
+    removeViewer(connection);
   },
 
   getRun(appSessionId: string): ChatRun | undefined {
@@ -355,5 +432,7 @@ export const chatRunRegistry = {
    */
   clearAll(): void {
     runs.clear();
+    viewedSessionsByConnection.clear();
+    viewersBySession.clear();
   },
 };

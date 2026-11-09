@@ -297,3 +297,18 @@ test('reset clears the drafts so the next user does not see them', async () => {
   assert.equal(store.readDraftText('session-a'), '');
   assert.equal(localStorage.getItem('chat-drafts'), null);
 });
+
+test('messages the server sent drop from the queue here without a request', async () => {
+  const store = await loadStore();
+  await store.appendQueuedMessage('session-a', { id: 'q-1', content: 'first' });
+  await store.appendQueuedMessage('session-a', { id: 'q-2', content: 'second' });
+  await store.appendQueuedMessage('session-a', { id: 'q-3', content: 'third' });
+  queueRequests.length = 0;
+
+  // The server claimed and sent the first two as one turn.
+  store.forgetSentQueuedMessages('session-a', ['q-1', 'q-2']);
+
+  assert.deepEqual(store.readQueuedMessages('session-a').map((message) => message.id), ['q-3']);
+  // It already took them out of its own copy; an unqueue would be a wasted round trip.
+  assert.deepEqual(queueRequests, []);
+});
