@@ -95,6 +95,7 @@ type ListOverrides = {
   onSessionSelect?: (session: SessionWithProvider, projectName: string) => void;
   selectedSession?: SessionWithProvider | null;
   onArchiveSessions?: (sessionIds: string[]) => void;
+  onArchiveSession?: (sessionId: string) => void;
 };
 
 const baseProps = (overrides: ListOverrides = {}) => ({
@@ -117,6 +118,7 @@ const baseProps = (overrides: ListOverrides = {}) => ({
   onSaveEditingSession: noop,
   onProjectSelect: noop,
   onSessionSelect: noop,
+  onArchiveSession: noop,
   onDeleteSession: noop,
   onLoadMoreSessions: noop,
   onNewSession: noop,
@@ -731,12 +733,14 @@ test('right-clicking an unticked row while selecting adds it before the bulk men
 });
 
 test('a row menu archives just that session', () => {
+  const onArchiveSession = vi.fn();
   const onArchiveSessions = vi.fn();
-  renderSessions({ onArchiveSessions });
+  renderSessions({ onArchiveSession, onArchiveSessions });
 
   const s2Options = recordedOptionsProps.filter((props) => props.sessionId === 's2').at(-1);
-  act(() => (s2Options!.onArchive as () => void)());
-  assert.deepEqual(onArchiveSessions.mock.calls[0][0], ['s2']);
+  act(() => (s2Options!.onArchiveSession as (sessionId: string) => void)('s2'));
+  assert.deepEqual(onArchiveSession.mock.calls, [['s2']]);
+  assert.equal(onArchiveSessions.mock.calls.length, 0, 'a single row does not take the bulk path');
 });
 
 test('a view-only list (the Running tab) offers no New Session, selection or editing', () => {

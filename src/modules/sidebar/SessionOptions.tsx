@@ -18,7 +18,7 @@ type SessionOptionsProps = {
    * which case rename is withheld rather than guessed — it is keyed by project.
    */
   projectId: string | null;
-  /** A running session cannot be deleted or forked, matching the Projects row. */
+  /** A running session cannot be archived, deleted or forked, matching the Projects row. */
   isProcessing: boolean;
   isEditing: boolean;
   renameDraft: string;
@@ -26,15 +26,15 @@ type SessionOptionsProps = {
   onStartEditingSession: (projectId: string, sessionId: string, initialName: string) => void;
   onCancelEditingSession: () => void;
   onSaveEditingSession: (projectId: string, sessionId: string, summary: string, provider: LLMProvider) => void;
+  /** Archives at once (reversible from the Archive tab), so unlike delete it skips a confirmation. */
+  onArchiveSession: (sessionId: string) => void;
   onDeleteSession: (sessionId: string, sessionTitle: string) => void;
   /** Bound by the caller, which owns the session object the fork needs. */
   onFork?: () => void;
-  /** Withheld where the row has nowhere to send a delete. */
+  /** Withheld where the row has nowhere to send an archive or delete. */
   canDelete?: boolean;
   /** Starts a bulk selection with this session; absent where the row has no bulk actions. */
   onSelectForBulk?: () => void;
-  /** Archives the session at once (reversible); absent where the row cannot archive. */
-  onArchive?: () => void;
   /** Opens the options menu at a pointer position (the row's right-click). */
   openAt?: { x: number; y: number } | null;
   /** Keeps the "⋯" button visible on touch screens, which cannot hover to reveal it. */
@@ -52,7 +52,8 @@ type SessionOptionsProps = {
  * Shared by the Projects list and the Conversations list so the two rows cannot
  * drift — the first cut of the Conversations row copied this markup, which is
  * how two rows end up diverging one fix at a time. Callers keep only what is
- * genuinely theirs: where the controls sit, and whether deleting is offered.
+ * genuinely theirs: where the controls sit, and whether archiving and deleting
+ * are offered.
  */
 export default function SessionOptions({
   sessionId,
@@ -66,11 +67,11 @@ export default function SessionOptions({
   onStartEditingSession,
   onCancelEditingSession,
   onSaveEditingSession,
+  onArchiveSession,
   onDeleteSession,
   onFork,
   canDelete = true,
   onSelectForBulk,
-  onArchive,
   openAt,
   showOnTouch = false,
   readOnly = false,
@@ -199,17 +200,17 @@ export default function SessionOptions({
               closeOnSelect: false,
               onSelect: handleCopyAction,
             },
-            ...(onArchive && canDelete && !isProcessing && !readOnly ? [{
+            // Archive and Delete are separate: archiving is reversible, deleting
+            // asks for confirmation and is permanent.
+            ...(canDelete && !isProcessing && !readOnly ? [{
               key: 'archive',
               label: 'Archive',
               showDividerBefore: true,
-              onSelect: onArchive,
-            }] : []),
-            ...(canDelete && !isProcessing && !readOnly ? [{
+              onSelect: () => onArchiveSession(sessionId),
+            }, {
               key: 'delete',
               label: 'Delete',
               isDanger: true,
-              showDividerBefore: !onArchive,
               onSelect: () => onDeleteSession(sessionId, sessionName),
             }] : []),
           ]}

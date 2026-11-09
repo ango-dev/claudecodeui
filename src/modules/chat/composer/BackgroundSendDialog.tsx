@@ -5,6 +5,10 @@ import type { BackgroundSendChoice, BackgroundSendPrompt } from '@/shared/types'
 
 type BackgroundSendDialogProps = {
   prompt: BackgroundSendPrompt | null;
+  /** False until the capability matrix has loaded, or for a provider it does not list; the side-question button is left out rather than offered and then refused. */
+  supportsSideQuestions?: boolean;
+  /** False only for an attachment-only composer: a side question cannot carry attachments, so an empty question would be refused silently. Defaults to true so existing callers, which only ever opened this dialog with typed text, keep working. */
+  hasText?: boolean;
   onResolve: (choice: BackgroundSendChoice) => void;
 };
 
@@ -13,7 +17,8 @@ type BackgroundSendDialogProps = {
  * session's background work: an edit of a sent message, or a message the
  * process holding that work cannot take (a different reasoning effort, say).
  * The choices are to send anyway, queue the message until the work finishes,
- * or cancel; an edit cannot be queued, so it has no Queue.
+ * ask it as a side question instead (when the provider can), or cancel; an
+ * edit can be neither queued nor asked on the side, so it has only Send anyway.
  *
  * Drawn like the app's other themed dialogs (AppDialogHost). Cancel comes
  * first in the DOM so Dialog's open-focus lands on it: an Enter pressed right
@@ -21,7 +26,7 @@ type BackgroundSendDialogProps = {
  * Escape and a click outside also cancel; sending anyway takes a deliberate
  * click or Tab.
  */
-export default function BackgroundSendDialog({ prompt, onResolve }: BackgroundSendDialogProps) {
+export default function BackgroundSendDialog({ prompt, supportsSideQuestions = false, hasText = true, onResolve }: BackgroundSendDialogProps) {
   const { t } = useTranslation('chat');
   const isEdit = prompt?.reason === 'edit';
 
@@ -87,6 +92,12 @@ export default function BackgroundSendDialog({ prompt, onResolve }: BackgroundSe
           {!isEdit && (
             <Button type="button" variant="outline" size="sm" onClick={() => onResolve('queue')}>
               {t('claudeStatus.backgroundTask.prompt.queue', { defaultValue: 'Queue' })}
+            </Button>
+          )}
+          {/* An edit replaces a sent message, so asking on the side instead is no answer to it. */}
+          {!isEdit && supportsSideQuestions && hasText && (
+            <Button type="button" variant="outline" size="sm" onClick={() => onResolve('sideQuestion')}>
+              {t('claudeStatus.backgroundTask.prompt.sideQuestion', { defaultValue: 'Side question' })}
             </Button>
           )}
           <Button type="button" variant="destructive" size="sm" onClick={() => onResolve('send')}>

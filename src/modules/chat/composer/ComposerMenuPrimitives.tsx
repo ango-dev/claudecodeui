@@ -5,12 +5,12 @@ import { cn } from '@/shared/utils';
 import type { ComposerMenuAnchor } from '@/shared/types';
 
 /**
- * Shared shell for the composer popovers (model/effort, permissions, schedule
- * and preset prompts) so they share one surface, one heading style and one row
- * style.
+ * Shared shell for the composer popovers (model/effort, permissions, schedule,
+ * preset prompts and send options) so they share one surface, one heading
+ * style and one row style.
  *
  * Used by chat's ComposerModelMenu, ComposerPermissionMenu,
- * ScheduleMessagePopover and PromptPresetMenu.
+ * ScheduleMessagePopover, PromptPresetMenu and ComposerSendMenu.
  */
 export function ComposerMenuSurface({
   anchor,
@@ -58,7 +58,7 @@ export function ComposerMenuHeading({ children }: { children: ReactNode }) {
   );
 }
 
-/** Used by chat's ComposerModelMenu, ScheduleMessagePopover and PromptPresetMenu to divide a popover's sections. */
+/** Used by chat's ComposerModelMenu, ScheduleMessagePopover, PromptPresetMenu and ComposerSendMenu to divide a popover's sections. */
 export function ComposerMenuSeparator() {
   return <div className="my-1 h-px bg-border" aria-hidden />;
 }
@@ -66,7 +66,8 @@ export function ComposerMenuSeparator() {
 /**
  * Used by chat's ComposerModelMenu, ComposerPermissionMenu,
  * ScheduleMessagePopover and PromptPresetMenu to render one selectable row with
- * its checked state.
+ * its checked state, and by ComposerSendMenu for rows that can be disabled or
+ * need the destructive (Stop) styling.
  */
 export function ComposerMenuItem({
   label,
@@ -76,9 +77,10 @@ export function ComposerMenuItem({
   onSelect,
   role = 'menuitemradio',
   trailing,
-  disabled,
+  disabled = false,
   title,
   className,
+  destructive = false,
 }: {
   label: ReactNode;
   description?: ReactNode;
@@ -87,23 +89,27 @@ export function ComposerMenuItem({
   onSelect: () => void;
   role?: 'menuitemradio' | 'menuitem';
   trailing?: ReactNode;
+  /** Row cannot be selected; dimmed and marked `disabled`/`aria-disabled`. */
   disabled?: boolean;
   title?: string;
   className?: string;
+  /** Destructive styling (red text) for rows like Stop or Send anyway. Defaults off for the model/permission/schedule menus. */
+  destructive?: boolean;
 }) {
   return (
     <button
       type="button"
       role={role}
       aria-checked={role === 'menuitemradio' ? isSelected : undefined}
-      onClick={onSelect}
+      onClick={disabled ? undefined : onSelect}
       disabled={disabled}
+      aria-disabled={disabled || undefined}
       title={title}
       className={cn(
         'flex w-full items-start gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors',
         'hover:bg-accent focus-visible:bg-accent focus-visible:outline-none',
         'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent',
-        isSelected ? 'text-foreground' : 'text-foreground/90',
+        destructive ? 'text-destructive' : isSelected ? 'text-foreground' : 'text-foreground/90',
         className,
       )}
     >
@@ -114,7 +120,8 @@ export function ComposerMenuItem({
           <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">{description}</span>
         )}
       </span>
-      <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center">
+      {/* At least the check's width; a wider hint (the send menu's "Alt+↵") grows it instead of spilling out. */}
+      <span className="mt-0.5 flex h-4 min-w-4 shrink-0 items-center justify-end">
         {trailing ?? (isSelected ? <Check className="h-3.5 w-3.5 text-foreground" /> : null)}
       </span>
     </button>

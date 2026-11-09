@@ -11,6 +11,7 @@ import { providerRuntimeService } from '@/modules/providers/services/provider-ru
 import { providerTokenUsageService } from '@/modules/providers/services/provider-token-usage.service.js';
 import { providerSkillsService } from '@/modules/providers/services/skills.service.js';
 import { sessionConversationsSearchService } from '@/modules/providers/services/session-conversations-search.service.js';
+import { sideQuestionsService } from '@/modules/providers/services/side-questions.service.js';
 import { sessionsService } from '@/modules/providers/services/sessions.service.js';
 import { checkSendStopsBackgroundWork } from '@/modules/websocket/index.js';
 import type {
@@ -23,7 +24,7 @@ import type {
   ProviderSkillCreateInput,
   UpsertProviderMcpServerInput,
 } from '@/shared/types.js';
-import { AppError, asyncHandler, createApiSuccessResponse } from '@/shared/utils.js';
+import { AppError, asyncHandler, createApiSuccessResponse, SIDE_QUESTION_ID_PATTERN } from '@/shared/utils.js';
 
 const router = express.Router();
 
@@ -72,6 +73,18 @@ const parseSendCheckOptions = (body: unknown): Record<string, unknown> => {
     });
   }
   return options as Record<string, unknown>;
+};
+
+const parseSideQuestionId = (value: unknown): string => {
+  const sideQuestionId = readPathParam(value, 'sideQuestionId').trim();
+  if (!SIDE_QUESTION_ID_PATTERN.test(sideQuestionId)) {
+    throw new AppError('Invalid sideQuestionId.', {
+      code: 'INVALID_SIDE_QUESTION_ID',
+      statusCode: 400,
+    });
+  }
+
+  return sideQuestionId;
 };
 
 /** A workflow run id as the harness mints one (`wf_16fbf852-274`). */
@@ -1003,6 +1016,26 @@ router.post(
   }),
 );
 
+// Declared before the generic `/sessions/:sessionId` routes below, like every
+// other session-specific route in this file.
+router.delete(
+  '/sessions/:sessionId/side-questions/:sideQuestionId',
+  asyncHandler(async (req: Request, res: Response) => {
+    const sessionId = parseSessionId(req.params.sessionId);
+    const sideQuestionId = parseSideQuestionId(req.params.sideQuestionId);
+    // `dismiss` broadcasts the `dismissed` event itself, through the same
+    // connected-clients fan-out the `chat.side_question` handler uses.
+    const deleted = sideQuestionsService.dismiss(sessionId, sideQuestionId);
+    if (!deleted) {
+      throw new AppError('Side question not found.', {
+        code: 'SIDE_QUESTION_NOT_FOUND',
+        statusCode: 404,
+      });
+    }
+    res.json(createApiSuccessResponse({ deleted: true }));
+  }),
+);
+
 // Must stay registered after the static and session-specific routes so their
 // literals never match the generic `:sessionId` parameter.
 router.get(
@@ -1067,7 +1100,11 @@ router.get(
       limit,
       offset,
     });
-    res.json(createApiSuccessResponse(result));
+    // The session's whole side-question list, on every page: side questions
+    // are not part of the paged transcript, and the client wants to draw
+    // every one of them regardless of which page it is looking at.
+    const sideQuestions = sideQuestionsService.listForSession(sessionId);
+    res.json(createApiSuccessResponse({ ...result, sideQuestions }));
   }),
 );
 

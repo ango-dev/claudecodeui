@@ -14,7 +14,8 @@ import { PlusIcon, Loader2, ArrowUpIcon, PencilIcon } from 'lucide-react';
 
 import { useVoiceInput } from '@/modules/chat/hooks/useVoiceInput';
 import { useVoiceAvailable } from '@/modules/chat/hooks/useVoiceAvailable';
-import type { BackgroundSendChoice, BackgroundSendPrompt, PastedText, QueuedDraft, ScheduledMessage, SlashCommand,SessionActivity,PendingPermissionRequest,PermissionMode,ProviderModelOption } from '@/shared/types';
+import { MCP_ELICITATION_TOOL_NAME } from '@/shared/constants';
+import type { BackgroundSendChoice, BackgroundSendPrompt, PastedText, PendingSteer, QueuedDraft, ScheduledMessage, SlashCommand,SessionActivity,PendingPermissionRequest,PermissionMode,ProviderModelOption } from '@/shared/types';
 import { formatShortcut } from '@/shared/utils';
 import {
   PromptInput,
@@ -33,6 +34,7 @@ import VoiceInputButton from '@/modules/chat/composer/VoiceInputButton';
 import PermissionRequestsBanner from '@/modules/chat/composer/PermissionRequestsBanner';
 import TokenUsageSummary from '@/modules/chat/composer/TokenUsageSummary';
 import QueuedMessageRow from '@/modules/chat/composer/QueuedMessageRow';
+import SteeredMessageCard from '@/modules/chat/composer/SteeredMessageCard';
 import BackgroundSendDialog from '@/modules/chat/composer/BackgroundSendDialog';
 import PastedTextAttachment from '@/modules/chat/composer/PastedTextAttachment';
 import { ScheduleMessagePopover } from '@/modules/chat/composer/ScheduleMessagePopover';
@@ -40,11 +42,16 @@ import { ScheduledMessageList } from '@/modules/chat/composer/ScheduledMessageLi
 import ComposerModelMenu from '@/modules/chat/composer/ComposerModelMenu';
 import ComposerPermissionMenu from '@/modules/chat/composer/ComposerPermissionMenu';
 import PromptPresetMenu from '@/modules/chat/composer/PromptPresetMenu';
+import ComposerSendMenu from '@/modules/chat/composer/ComposerSendMenu';
 
 type MentionableFile = {
   name: string;
   path: string;
 };
+
+// A stable empty default, so a composer with no steered messages (every
+// caller but the chat tab) does not get a new array each render.
+const NO_PENDING_STEERS: PendingSteer[] = [];
 
 type ChatComposerProps = {
   pendingPermissionRequests: PendingPermissionRequest[];
@@ -56,6 +63,8 @@ type ChatComposerProps = {
   activity: SessionActivity | null;
   isLoading: boolean;
   onAbortSession: () => void;
+  /** Whether the viewed session can currently be interrupted; threaded to the send menu's Stop row, which otherwise looks actionable while `onAbortSession` already no-ops. Defaults to true so existing callers and tests, which never had a non-interruptible turn, keep working. */
+  canAbortSession?: boolean;
   permissionMode: PermissionMode;
   availablePermissionModes: PermissionMode[];
   onSelectPermissionMode: (mode: PermissionMode) => void;
@@ -90,6 +99,14 @@ type ChatComposerProps = {
   combineQueuedMessages: boolean;
   onEditAllQueuedDrafts: () => void;
   onDeleteAllQueuedDrafts: () => void;
+  /** Handle send menu choices (queue, steer, side question). */
+  onSendMenuChoice?: (choice: 'queue' | 'steer' | 'sideQuestion' | 'send') => void;
+  /** False until the capability matrix has loaded, or for a provider it does not list; passed through to the send menu and the background-send dialog so neither offers a side question that would be refused. */
+  supportsSideQuestions?: boolean;
+  /** Whether the provider can take a message into a running turn; gates the send menu's Steer row the same way `supportsSideQuestions` gates its row. */
+  supportsSteering?: boolean;
+  /** Messages sent into the running turn that the agent has not read yet, each shown on top of the message box until its echo lands in the transcript. */
+  pendingSteers?: PendingSteer[];
   attachedFiles: File[];
   onRemoveAttachment: (index: number) => void;
   /** Long pastes shown as cards; sent ahead of the typed text. */
@@ -136,8 +153,8 @@ type ChatComposerProps = {
 
 /**
  * Rendered by chat's ChatInterface as the whole input area: textarea, pending
- * attachments, queued messages, permission banner, voice input and the
- * model/permission popovers that drive the next turn.
+ * attachments, steered and queued messages, permission banner, voice input,
+ * the send menu and the model/permission popovers that drive the next turn.
  */
 export default function ChatComposer({
   pendingPermissionRequests,
@@ -146,6 +163,7 @@ export default function ChatComposer({
   activity,
   isLoading,
   onAbortSession,
+  canAbortSession = true,
   permissionMode,
   availablePermissionModes,
   onSelectPermissionMode,
@@ -174,6 +192,10 @@ export default function ChatComposer({
   combineQueuedMessages,
   onEditAllQueuedDrafts,
   onDeleteAllQueuedDrafts,
+  onSendMenuChoice,
+  supportsSideQuestions,
+  supportsSteering = false,
+  pendingSteers = NO_PENDING_STEERS,
   attachedFiles,
   pastedTexts,
   onChangePastedText,
@@ -272,25 +294,33 @@ export default function ChatComposer({
   const isRecording = voiceState === 'recording';
   const isTranscribing = voiceState === 'transcribing';
 
-  // Detect if the AskUserQuestion interactive panel is active
+  // Detect if an interactive panel that takes the person's answer is active:
+  // a question from the agent, or an MCP server's request for input.
   const hasQuestionPanel = pendingPermissionRequests.some(
-    (r) => r.toolName === 'AskUserQuestion'
+    (r) => r.toolName === 'AskUserQuestion' || r.toolName === MCP_ELICITATION_TOOL_NAME
   );
 
   // Hide the thinking/status bar while any permission request is pending
   const hasPendingPermissions = pendingPermissionRequests.length > 0;
   const hasActivityIndicator = Boolean(activity && !hasPendingPermissions);
-  // The combined queue card is drawn as the top of the message box, so the
-  // box's top corners go square under it, and the card's do under the
-  // activity tab when nothing else sits between them.
+  // Steered messages and the combined queue card are drawn as one block on
+  // top of the message box, so the box's top corners go square under it, and
+  // the block's do under the activity tab when nothing else sits between them.
   const hasAttachedQueue = combineQueuedMessages && queuedDrafts.length > 0;
-  const queueTouchesActivityTab = hasActivityIndicator && scheduledMessages.length === 0 && !isEditingSentMessage;
+  const hasAttachedStack = pendingSteers.length > 0 || hasAttachedQueue;
+  const hasQueuedStrip = !combineQueuedMessages && queuedDrafts.length > 0;
+  const stackTouchesActivityTab = hasActivityIndicator && scheduledMessages.length === 0 && !isEditingSentMessage && !hasQueuedStrip;
 
   // Enter while a reply is running always adds another message to the queue;
   // combined, it joins the message already waiting there.
   // Anything to send besides the typed text: attached files or pasted texts.
   const hasAttachments = attachedFiles.length > 0 || pastedTexts.length > 0;
-  const canQueueDraft = isLoading && Boolean(input.trim() || hasAttachments);
+  const hasAnyInput = Boolean(input.trim() || hasAttachments);
+  const canQueueDraft = isLoading && hasAnyInput;
+  // While a reply is running, a caret beside the queue button opens the
+  // other ways to send: steer it into the turn, ask it on the side, or stop.
+  // Enter and the button itself keep queueing.
+  const showsSendMenu = canQueueDraft && !isRecording && !isTranscribing;
   const addsToQueuedMessage = combineQueuedMessages && queuedDrafts.length > 0;
   const submitHint = canQueueDraft
     ? addsToQueuedMessage
@@ -299,13 +329,26 @@ export default function ChatComposer({
     : sendByCtrlEnter
       ? t('input.hintText.ctrlEnter', { send: formatShortcut('Mod', 'Enter'), newLine: formatShortcut('Shift', 'Enter') })
       : t('input.hintText.enter', { newLine: formatShortcut('Shift', 'Enter') });
-  const submitAriaLabel = canQueueDraft
+  // Transcribing shows a disabled spinner, which neither queues nor stops.
+  const submitAriaLabel = canQueueDraft && !isTranscribing
     ? addsToQueuedMessage
       ? t('input.queue.append', { defaultValue: 'Add to queued message' })
       : t('input.queue.sendNext', { defaultValue: 'Queue next message' })
-    : isLoading
+    // With an empty composer during a turn the button is the one-tap Stop.
+    : isLoading && !isRecording && !isTranscribing
       ? t('input.stop')
       : t('input.send');
+
+  const queuedMessages = (
+    <QueuedMessageRow
+      queuedDrafts={queuedDrafts}
+      combined={combineQueuedMessages}
+      onEdit={onEditQueuedDraft}
+      onDelete={onDeleteQueuedDraft}
+      onEditAll={onEditAllQueuedDrafts}
+      onDeleteAll={onDeleteAllQueuedDrafts}
+    />
+  );
 
   return (
     <div className="chat-composer-shell relative flex-shrink-0 px-2 pt-0 sm:px-4 md:px-4">
@@ -351,18 +394,34 @@ export default function ChatComposer({
 
       <BackgroundSendDialog
         prompt={backgroundSendPrompt}
+        supportsSideQuestions={supportsSideQuestions}
+        hasText={Boolean(input.trim())}
         onResolve={onResolveBackgroundSendPrompt}
       />
 
-      <QueuedMessageRow
-        queuedDrafts={queuedDrafts}
-        combined={combineQueuedMessages}
-        flushTop={queueTouchesActivityTab}
-        onEdit={onEditQueuedDraft}
-        onDelete={onDeleteQueuedDraft}
-        onEditAll={onEditAllQueuedDrafts}
-        onDeleteAll={onDeleteAllQueuedDrafts}
-      />
+      {/* Separate-turns mode: the queued strip stands on its own above the box. */}
+      {!combineQueuedMessages && queuedMessages}
+
+      {hasAttachedStack && (
+        <div
+          // Drawn as the top of the message box it sits on: the same surface
+          // and border (see `queued-attached` in index.css), joined flush to
+          // it. Steered messages come first, as the agent reads them before
+          // the queued follow-ups are sent. Under the activity tab the top is
+          // square in effect: the half-pixel radius is there because WebKit
+          // pixel-snaps the borders of a box with a rounded corner but draws
+          // an all-square one a fraction off, so its side borders would blur
+          // and miss the message box's at the join.
+          data-slot="queued-attached"
+          data-testid="composer-attached-stack"
+          className={`settings-content-enter mx-auto max-w-[54.25rem] divide-y divide-primary/15 border border-b-0 ${stackTouchesActivityTab ? 'rounded-t-[0.5px]' : 'rounded-t-lg'}`}
+        >
+          {pendingSteers.map((steer) => (
+            <SteeredMessageCard key={steer.messageId} steer={steer} providerLabel={providerLabel} />
+          ))}
+          {combineQueuedMessages && queuedMessages}
+        </div>
+      )}
 
       {!hasQuestionPanel && <div className="relative mx-auto max-w-[54.25rem]">
         {showFileDropdown && filteredFiles.length > 0 && (
@@ -417,11 +476,11 @@ export default function ChatComposer({
           <div
             data-slot="prompt-input-box"
             // Read by a pending plan's ⌘↩ / Ctrl+Enter: with nothing to send here, the keys build the plan.
-            data-composer-empty={!input.trim() && !hasAttachments ? 'true' : 'false'}
+            data-composer-empty={!hasAnyInput ? 'true' : 'false'}
             className={[
               'relative rounded-[var(--radius)] border',
               isTextareaExpanded ? 'chat-input-expanded' : '',
-              hasActivityIndicator || hasAttachedQueue ? 'rounded-t-none' : '',
+              hasActivityIndicator || hasAttachedStack ? 'rounded-t-none' : '',
             ].filter(Boolean).join(' ')}
           >
           {isDragActive && (
@@ -469,7 +528,7 @@ export default function ChatComposer({
 
           <PromptInputBody>
             <div ref={inputHighlightRef} aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl">
-              <div className="chat-input-placeholder block w-full whitespace-pre-wrap break-words py-2 pl-4 pr-12 text-sm leading-6 text-transparent">
+              <div className={`chat-input-placeholder block w-full whitespace-pre-wrap break-words py-2 pl-4 ${showsSendMenu ? 'pr-20' : 'pr-12'} text-sm leading-6 text-transparent`}>
                 {renderInputWithMentions(input)}
               </div>
             </div>
@@ -489,34 +548,63 @@ export default function ChatComposer({
               placeholder={placeholder}
               // One line when empty, like Claude Code; it still grows as you type.
               rows={1}
-              className="pr-12"
+              // Room for the send button, and the send-options caret beside it while a reply runs.
+              className={showsSendMenu ? 'pr-20' : 'pr-12'}
             />
         </PromptInputBody>
 
+            {showsSendMenu && (
+              <ComposerSendMenu
+                state="responding"
+                hasInput={hasAnyInput}
+                hasText={Boolean(input.trim())}
+                canAbortSession={canAbortSession}
+                supportsSideQuestions={supportsSideQuestions}
+                supportsSteering={supportsSteering}
+                sendByCtrlEnter={sendByCtrlEnter}
+                className="absolute bottom-1 right-10"
+                onSelect={(choice) => {
+                  if (choice === 'stop') {
+                    onAbortSession();
+                    return;
+                  }
+                  onSendMenuChoice?.(choice);
+                }}
+              />
+            )}
+
             <PromptInputSubmit
               onClick={
-                canQueueDraft
-                  ? (e: MouseEvent<HTMLButtonElement>) => {
-                      e.preventDefault();
-                      onSubmit(e);
-                    }
-                  : isLoading
-                    ? onAbortSession
-                    : isRecording
-                      ? (e: MouseEvent<HTMLButtonElement>) => {
-                          e.preventDefault();
-                          voiceStop({ send: true });
-                        }
-                      : undefined
+                isTranscribing
+                  ? undefined
+                  : canQueueDraft
+                    ? (e: MouseEvent<HTMLButtonElement>) => {
+                        e.preventDefault();
+                        onSubmit(e);
+                      }
+                    : isLoading && !isRecording
+                      ? onAbortSession
+                      : isRecording
+                        ? (e: MouseEvent<HTMLButtonElement>) => {
+                            e.preventDefault();
+                            voiceStop({ send: true });
+                          }
+                        : undefined
               }
               disabled={
-                isLoading
-                  ? false
-                  : isRecording
-                    ? false
-                    : isTranscribing
-                      ? true
-                      : !input.trim() && !hasAttachments
+                // Transcribing shows a spinner, but it is not a turn: disable
+                // the button so a tap cannot reach `onAbortSession` and end an
+                // unrelated in-flight turn.
+                isTranscribing
+                  ? true
+                  : isLoading
+                    // With an empty composer this button is the one-tap Stop,
+                    // so it disables on `canAbortSession` like the send menu's
+                    // Stop row does; queueing and voice-stop always work.
+                    ? !canQueueDraft && !isRecording && !canAbortSession
+                    : isRecording
+                      ? false
+                      : !hasAnyInput
               }
               aria-label={submitAriaLabel}
               title={submitAriaLabel}

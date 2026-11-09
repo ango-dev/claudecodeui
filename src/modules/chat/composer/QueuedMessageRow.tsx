@@ -15,8 +15,6 @@ type QueuedMessageStripProps = {
 type QueuedMessageRowProps = QueuedMessageStripProps & {
   /** True when the server merges the queue into one message (the default); false sends each draft as its own turn. */
   combined: boolean;
-  /** The composer's activity tab sits on the combined card's top edge. */
-  flushTop?: boolean;
   /** Takes every queued draft back into the message box (combined mode). */
   onEditAll: () => void;
   /** Clears the whole queue (combined mode). */
@@ -165,13 +163,13 @@ function QueuedMessageStrip({ queuedDrafts, onEdit, onDelete }: QueuedMessageStr
 /**
  * Rendered by chat's ChatComposer to show the messages queued for a busy
  * session: by default as one merged card matching the single message the
- * server sends, or, when the user turned combining off, as a strip of cards
- * sent one per turn.
+ * server sends (the composer draws it in the block on top of the message
+ * box), or, when the user turned combining off, as a strip of cards sent one
+ * per turn.
  */
 export default function QueuedMessageRow({
   queuedDrafts,
   combined,
-  flushTop,
   onEdit,
   onDelete,
   onEditAll,
@@ -180,7 +178,6 @@ export default function QueuedMessageRow({
   if (combined) {
     return (
       <QueuedMessageMergedCard
-        flushTop={flushTop}
         queuedDrafts={queuedDrafts}
         onDelete={onDelete}
         onEditAll={onEditAll}

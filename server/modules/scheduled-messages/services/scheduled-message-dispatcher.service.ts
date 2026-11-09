@@ -23,11 +23,22 @@ const POLL_INTERVAL_MS = 30_000;
 const AFTER_RUN_DELAY_MS = 1_000;
 
 let pollTimer: ReturnType<typeof setInterval> | null = null;
-let dispatchInFlight = false;
-// A pass was asked for while one ran; it runs again when that one ends.
-let dispatchRequested = false;
 let unsubscribeRunCompleted: (() => void) | null = null;
 let unsubscribeBackgroundWorkEnded: (() => void) | null = null;
+/**
+ * Sessions whose scheduled sends are still going, from this pass or an
+ * earlier one: from the claim until the last turn of the session's due backlog
+ * has ended (see sendUntilTurnEnds). Their next due rows stay pending (and keep
+ * their banner) until then, so they neither overtake nor interrupt those
+ * turns, and their queued turns wait too.
+ */
+const sessionsSending = new Set<string>();
+/**
+ * Per session, the queued turn a pass is starting: its busy check, claim and
+ * run reservation. Passes overlap, so a later pass's attempt for the session
+ * waits for it rather than racing it; the turn itself is not waited for.
+ */
+const queuedTurnStarts = new Map<string, Promise<void>>();
 
 function readOptions(raw: string): Record<string, unknown> {
   try {
@@ -169,13 +180,18 @@ async function sendClaimedQueuedTurn(
  * Only the next turn is asked about, with the options it would be sent with
  * (for a combined turn, its last entry's): the queue goes in order, so nothing
  * behind it may overtake it, and holding it holds back every entry it takes.
+ *
+ * It also waits while a scheduled send for the session is going (see
+ * sessionsSending): that send can still be starting (aborting the run it
+ * interrupts), or between the turns of its due backlog, and its next row would
+ * interrupt a queued turn started in that gap.
  */
 async function isSessionBusy(
   sessionId: string,
   turn: QueuedChatMessage | null,
   runtime: ProviderRuntimeGateway,
 ): Promise<boolean> {
-  if (chatRunRegistry.isProcessing(sessionId)) {
+  if (chatRunRegistry.isProcessing(sessionId) || sessionsSending.has(sessionId)) {
     return true;
   }
   // Malformed entries are claimed only to be dropped; they send nothing.
@@ -203,27 +219,59 @@ async function isSessionBusy(
  * queued messages merged into one turn (see planQueuedTurn). One turn per
  * session per pass: the turn it starts makes the session busy, and the next
  * goes when that turn ends. Returns the number of turns claimed.
+ *
+ * Sessions go side by side. A session's attempt waits for any attempt an
+ * overlapping pass is still starting for it (see queuedTurnStarts), then
+ * plans from the copy of the queue this pass listed: if the earlier attempt
+ * claimed from it, the claim below finds the queue changed and leaves it to
+ * the pass that turn's end triggers. Resolves once the turns it started have
+ * settled, which for a turn handed to a process held open for background work
+ * can be long after the turn itself ended; nothing waits on that.
  */
 export async function dispatchQueuedMessages(runtime: ProviderRuntimeGateway): Promise<number> {
   const candidates = sessionDraftsDb.listQueuedMessages();
   let claimed = 0;
 
-  await Promise.all(candidates.map(async (candidate) => {
+  const startQueuedTurn = async (
+    candidate: QueuedSessionMessageRecord,
+    previousStart: Promise<void> | undefined,
+  ): Promise<{ sending: Promise<void> } | null> => {
+    await previousStart;
     const plan = planQueuedTurn(
       candidate.queuedMessages,
       isQueuedMessageCombiningEnabled(candidate.userId),
     );
     if (plan.count === 0 || await isSessionBusy(candidate.sessionId, plan.turn, runtime)) {
-      return;
+      return null;
     }
     // Claimed against the copy the plan was made from, so a queue edited
     // meanwhile is left for the next pass to plan afresh.
     const taken = sessionDraftsDb.claimQueuedMessages(candidate, plan.count);
     if (taken === null) {
-      return;
+      return null;
     }
     claimed += 1;
-    await sendClaimedQueuedTurn(candidate, taken, plan.turn, runtime);
+    // runDetachedChatTurn reserves the session's run before its first await
+    // (a queued turn never interrupts), so once this call returns the run is
+    // registered and a later attempt's busy check sees it. Wrapped, so this
+    // start resolves now rather than adopting the send, which lasts the turn.
+    return { sending: sendClaimedQueuedTurn(candidate, taken, plan.turn, runtime) };
+  };
+
+  await Promise.all(candidates.map(async (candidate) => {
+    const { sessionId } = candidate;
+    const attempt = startQueuedTurn(candidate, queuedTurnStarts.get(sessionId));
+    const started = attempt.then(() => undefined, () => undefined);
+    queuedTurnStarts.set(sessionId, started);
+    let start: { sending: Promise<void> } | null;
+    try {
+      start = await attempt;
+    } finally {
+      if (queuedTurnStarts.get(sessionId) === started) {
+        queuedTurnStarts.delete(sessionId);
+      }
+    }
+    await start?.sending;
   }));
 
   return claimed;
@@ -268,7 +316,7 @@ async function sendClaimedMessage(
 }
 
 /**
- * Sends every message whose time has come.
+ * Sends every message whose time has come and returns how many it handled.
  *
  * Exported so a test can drive one pass without waiting on the timer.
  */
@@ -278,7 +326,7 @@ export async function dispatchDueScheduledMessages(
 ): Promise<number> {
   // Claimed before any of them runs, so a long turn cannot let the next poll
   // pick the same message up again.
-  const due = scheduledMessagesDb.claimDue(now);
+  const due = scheduledMessagesDb.claimDue(now, sessionsSending);
   if (due.length === 0) {
     return 0;
   }
@@ -289,13 +337,91 @@ export async function dispatchDueScheduledMessages(
     announceScheduledMessagesChanged(sessionId);
   }
 
-  // Sequentially: a session can only have one run at a time, and two due
-  // messages for the same session must not race each other into it.
-  for (const row of due) {
-    await sendClaimedMessage(row, runtime);
-  }
+  // Sessions side by side, since a turn can stay open a long time (see
+  // runDispatchPass). A session's rows that were due at `now` go one after
+  // another in this pass, each claimed only when the earlier turn ends, so
+  // none is recorded as sent while it still waits and no poll gap opens
+  // between them. A turn the user starts meanwhile is still interrupted, as
+  // any scheduled send interrupts the active run.
+  let sent = 0;
+  await Promise.all(due.map(async (first) => {
+    const sessionId = first.session_id;
+    sessionsSending.add(sessionId);
+    try {
+      let row: ScheduledMessageRow | null = first;
+      while (row) {
+        const claimedRow: ScheduledMessageRow = row;
+        await sendUntilTurnEnds(sessionId, () => sendClaimedMessage(claimedRow, runtime));
+        sent += 1;
+        row = scheduledMessagesDb.claimNextDue(sessionId, now);
+        if (row) announceScheduledMessagesChanged(sessionId);
+      }
+    } catch (error) {
+      logPassFailure(error);
+    } finally {
+      sessionsSending.delete(sessionId);
+    }
+  }));
 
-  return due.length;
+  return sent;
+}
+
+/**
+ * Starts a send (`send`, which runs one turn for `sessionId`) and resolves once
+ * that turn is over: when the run it started completes in the registry, or
+ * when the send settles, whichever comes first. The send keeps going after
+ * that and still records its own outcome.
+ *
+ * A Claude turn that leaves background work running completes at its result,
+ * but its send stays pending while the CLI process is held open for that work
+ * (up to the runtime's idle ceiling). The session takes its next turn in the
+ * meantime — the held process takes it when it can — so a due backlog or a
+ * queued turn behind it must not wait for the hold.
+ */
+async function sendUntilTurnEnds(sessionId: string, send: () => Promise<void>): Promise<void> {
+  // The run a scheduled send interrupts completes first; only a run registered
+  // after it, which is this send's own, ends this send's turn.
+  const runBefore = chatRunRegistry.getRun(sessionId);
+  let unsubscribe = () => {};
+  const turnEnded = new Promise<void>((resolve) => {
+    unsubscribe = chatRunRegistry.onRunCompleted((completedSessionId) => {
+      if (completedSessionId === sessionId && chatRunRegistry.getRun(sessionId) !== runBefore) {
+        // A tick later, so a send that settles with its turn (most do) wins and
+        // has recorded a failure before the session's next row is claimed.
+        setImmediate(resolve);
+      }
+    });
+  });
+  try {
+    await Promise.race([send(), turnEnded]);
+  } finally {
+    unsubscribe();
+  }
+}
+
+function logPassFailure(error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error('[ScheduledMessages] Dispatch pass failed', { error: message });
+}
+
+/**
+ * One poll's work. A send waits for its whole turn, a turn the user leaves
+ * waiting on a tool approval can stay open indefinitely, and a Claude send
+ * whose turn leaves background work running (a Monitor, say) stays pending
+ * until that work reports back, so passes must not wait on each other: claims
+ * are transactional (a queued claim is a compare-and-set on the session's
+ * queue), a session's sends chain across passes, and a queued turn skips a
+ * session that is still busy.
+ *
+ * Exported so a test can drive overlapping passes.
+ */
+export function runDispatchPass(runtime: ProviderRuntimeGateway): Promise<void> {
+  return Promise.all([
+    // First, so a due send that starts a run at once has registered it before
+    // the queued pass checks whether that session is busy.
+    dispatchDueScheduledMessages(runtime).catch(logPassFailure),
+    dispatchQueuedMessages(runtime).catch(logPassFailure),
+  ]).then(() => undefined);
 }
 
 /**
@@ -311,27 +437,9 @@ export function initializeScheduledMessageDispatcher(runtime: ProviderRuntimeGat
   }
 
   const poll = () => {
-    // A pass that overruns the interval must not be started again underneath
-    // itself; the claim is transactional but the runs are not. One asked for
-    // meanwhile (a run just ended) runs once this one is done.
-    if (dispatchInFlight) {
-      dispatchRequested = true;
-      return;
-    }
-    dispatchInFlight = true;
-    dispatchRequested = false;
-    void dispatchDueScheduledMessages(runtime)
-      .then(() => dispatchQueuedMessages(runtime))
-      .catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-        console.error('[ScheduledMessages] Dispatch pass failed', { error: message });
-      })
-      .finally(() => {
-        dispatchInFlight = false;
-        if (dispatchRequested) {
-          poll();
-        }
-      });
+    // Not gated on an earlier pass: one can stay pending for as long as a turn
+    // it sent is held open (see runDispatchPass).
+    void runDispatchPass(runtime);
   };
 
   pollTimer = setInterval(poll, POLL_INTERVAL_MS);

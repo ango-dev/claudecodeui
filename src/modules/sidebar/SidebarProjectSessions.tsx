@@ -29,6 +29,7 @@ type SidebarProjectSessionsProps = {
   onCancelEditingSession: () => void;
   onSaveEditingSession: (projectName: string, sessionId: string, summary: string, provider: LLMProvider) => void;
   onSessionSelect: (session: SessionWithProvider, projectName: string) => void;
+  onArchiveSession: (sessionId: string) => void;
   onDeleteSession: (sessionId: string, sessionTitle: string) => void;
   onForkSession?: (session: SessionWithProvider) => void;
   onLoadMoreSessions: (projectId: string) => void;
@@ -84,6 +85,7 @@ export default function SidebarProjectSessions({
   onCancelEditingSession,
   onSaveEditingSession,
   onSessionSelect,
+  onArchiveSession,
   onDeleteSession,
   onForkSession,
   onLoadMoreSessions,
@@ -216,13 +218,13 @@ export default function SidebarProjectSessions({
               onCancelEditingSession={onCancelEditingSession}
               onSaveEditingSession={onSaveEditingSession}
               onSessionSelect={onSessionSelect}
+              onArchiveSession={onArchiveSession}
               onDeleteSession={onDeleteSession}
               onForkSession={onForkSession}
               isSelecting={isSelecting}
               isChecked={checkedSessionIds.has(session.id)}
               onToggleSessionSelected={onToggleSessionSelected}
               onModifierSelect={handleRowModifierSelect}
-              onArchiveSessions={onArchiveSessions}
               onBulkContextMenu={handleRowBulkContextMenu}
               readOnly={readOnly}
               t={t}

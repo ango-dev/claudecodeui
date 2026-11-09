@@ -28,6 +28,8 @@ type SidebarSessionItemProps = {
   onCancelEditingSession: () => void;
   onSaveEditingSession: (projectName: string, sessionId: string, summary: string, provider: LLMProvider) => void;
   onSessionSelect: (session: SessionWithProvider, projectName: string) => void;
+  /** The menu's Archive: archives this session at once; stable identity. */
+  onArchiveSession: (sessionId: string) => void;
   onDeleteSession: (sessionId: string, sessionTitle: string) => void;
   /** Branches this session into an independent one; absent when its provider cannot. */
   onForkSession?: (session: SessionWithProvider) => void;
@@ -42,8 +44,6 @@ type SidebarSessionItemProps = {
    * menu's Select item: starts or extends the bulk selection. Stable identity.
    */
   onModifierSelect: (projectId: string, sessionId: string, mode: 'toggle' | 'range') => void;
-  /** Archives sessions at once (the menu's Archive); stable identity. */
-  onArchiveSessions?: (sessionIds: string[]) => void;
   /** Right-click while selecting: opens the list's bulk menu at the pointer. Stable identity. */
   onBulkContextMenu?: (projectId: string, sessionId: string, point: { x: number; y: number }) => void;
   /** View only (the Running tab): no selecting, and the menu only copies the id. */
@@ -51,7 +51,7 @@ type SidebarSessionItemProps = {
   t: TFunction;
 };
 
-/** Rendered by SidebarProjectSessions for one session row, including its rename, copy and delete controls. */
+/** Rendered by SidebarProjectSessions for one session row, including its rename, copy, fork, archive and delete controls. */
 function SidebarSessionItem({
   project,
   session,
@@ -67,13 +67,13 @@ function SidebarSessionItem({
   onCancelEditingSession,
   onSaveEditingSession,
   onSessionSelect,
+  onArchiveSession,
   onDeleteSession,
   onForkSession,
   isSelecting,
   isChecked,
   onToggleSessionSelected,
   onModifierSelect,
-  onArchiveSessions,
   onBulkContextMenu,
   readOnly = false,
   t,
@@ -259,10 +259,10 @@ function SidebarSessionItem({
             onStartEditingSession={onStartEditingSession}
             onCancelEditingSession={onCancelEditingSession}
             onSaveEditingSession={onSaveEditingSession}
+            onArchiveSession={onArchiveSession}
             onDeleteSession={onDeleteSession}
             onFork={onForkSession ? () => onForkSession(session) : undefined}
             onSelectForBulk={() => onModifierSelect(project.projectId, session.id, 'toggle')}
-            onArchive={onArchiveSessions ? () => onArchiveSessions([session.id]) : undefined}
             openAt={contextMenuAt}
             showOnTouch={isSelected}
             readOnly={readOnly}

@@ -346,10 +346,8 @@ export default function SidebarRecentConversations({
                 onStartEditingSession={sessionActions.onStartEditingSession}
                 onCancelEditingSession={sessionActions.onCancelEditingSession}
                 onSaveEditingSession={sessionActions.onSaveEditingSession}
+                onArchiveSession={sessionActions.onArchiveSession}
                 onDeleteSession={sessionActions.onDeleteSession}
-                onArchive={sessionActions.onArchiveSessions
-                  ? () => sessionActions.onArchiveSessions?.([conversation.sessionId])
-                  : undefined}
                 onSelectForBulk={() => toggleRow(conversation.sessionId)}
                 openAt={contextMenu?.sessionId === conversation.sessionId ? contextMenu.point : null}
                 showOnTouch={isSelected}
