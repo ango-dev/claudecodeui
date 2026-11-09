@@ -165,7 +165,7 @@ test('a Claude Code that names models in displayName and lists full ids still gi
   const primary = catalog.OPTIONS.filter((option) => !option.group).map((option) => option.label);
   const more = catalog.OPTIONS.filter((option) => option.group === 'more').map((option) => option.label);
   assert.deepEqual(primary, ['Default (Opus 5.5)', 'Opus 5.5', 'Haiku 5.5'], 'names, not summaries, and one entry per model');
-  assert.deepEqual(more.slice(0, 2), ['Haiku 4.5', 'Sonnet 5'], 'earlier models in Claude Code\'s order');
+  assert.deepEqual(more.slice(0, 3), ['Fable 5.1', 'Haiku 4.5', 'Sonnet 5'], 'earlier models in Claude Code\'s order');
   assert.ok(more.includes('Opus 4.8'));
   assert.equal(new Set(more).size, more.length, 'no model twice');
   assert.ok(!more.includes('Opus 5.5'), 'what the main list offers is not repeated');

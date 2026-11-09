@@ -51,7 +51,7 @@ export const CLAUDE_PREDEFINED_MODELS: ProviderModelsDefinition = {
     {
       value: 'best',
       label: 'Best available',
-      description: 'Use Fable 5 when available, otherwise the latest Opus model.',
+      description: 'Use Fable 5.2 when available, otherwise the latest Opus model.',
       effort: {
         default: 'high',
         values: [
@@ -66,7 +66,7 @@ export const CLAUDE_PREDEFINED_MODELS: ProviderModelsDefinition = {
     },
     {
       value: 'fable',
-      label: 'Fable 5',
+      label: 'Fable 5.2',
       description: 'Most capable Claude model for the hardest, longest-running tasks.',
       effort: {
         default: 'high',
@@ -181,6 +181,7 @@ const PRIMARY_MODEL_ORDER = ['default', 'opus', 'fable', 'sonnet', 'haiku'];
  * each model's API support; Haiku 4.5 has none.
  */
 const PREVIOUS_CLAUDE_MODELS: { value: string; label: string; effortLevels: string[] }[] = [
+  { value: 'claude-fable-5-1', label: 'Fable 5.1', effortLevels: FULL_EFFORT_LEVELS },
   { value: 'claude-haiku-4-5', label: 'Haiku 4.5', effortLevels: [] },
   { value: 'claude-sonnet-5', label: 'Sonnet 5', effortLevels: FULL_EFFORT_LEVELS },
   { value: 'claude-opus-5', label: 'Opus 5', effortLevels: FULL_EFFORT_LEVELS },
