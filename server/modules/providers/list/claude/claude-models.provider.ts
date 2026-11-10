@@ -192,6 +192,29 @@ const PREVIOUS_CLAUDE_MODELS: { value: string; label: string; effortLevels: stri
   { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6', effortLevels: EFFORT_LEVELS_WITHOUT_XHIGH },
 ];
 
+/**
+ * The newest model of each family. The quick list always offers these: when
+ * Claude Code's alias for a family runs an older model (an older Claude Code,
+ * or a provider it maps to an earlier release), the newest one takes the
+ * alias's place and the alias moves to "More models". Update on each release.
+ */
+const LATEST_CLAUDE_MODELS: { value: string; label: string }[] = [
+  { value: 'claude-opus-5-5', label: 'Opus 5.5' },
+  { value: 'claude-fable-5-2', label: 'Fable 5.2' },
+  { value: 'claude-sonnet-5-5', label: 'Sonnet 5.5' },
+  { value: 'claude-haiku-5-5', label: 'Haiku 5.5' },
+];
+
+/** A Claude model id's family and version ("claude-fable-5-2" is fable 5.2), or null for an alias or another id. */
+const parseClaudeModelVersion = (model: string): { family: string; version: number } | null => {
+  const match = /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/.exec(model);
+  if (!match) {
+    return null;
+  }
+  const [, family, major, minor] = match;
+  return { family, version: Number(major) + Number(minor ?? 0) / 100 };
+};
+
 /** Claude Code recommends `high`; a model without it recommends its strongest level below. */
 const buildEffort = (levels: string[]): ProviderModelOption['effort'] => {
   if (levels.length === 0) {
@@ -308,6 +331,54 @@ export function buildClaudeModelsDefinition(models: ModelInfo[]): ProviderModels
         resolvesTo: model.value,
         effort: buildEffort(model.effortLevels),
       });
+    }
+  }
+
+  // The quick list offers each family's newest model. An alias that runs an
+  // older one gives its place to the newest (a full id Claude Code accepts)
+  // and joins "More models" under the model it runs.
+  const newestByFamily = new Map<string, { value: string; label: string; version: number }>();
+  const consider = (value: string, label: string) => {
+    const parsed = parseClaudeModelVersion(value);
+    if (!parsed) {
+      return;
+    }
+    const known = newestByFamily.get(parsed.family);
+    if (!known || parsed.version > known.version) {
+      newestByFamily.set(parsed.family, { value, label, version: parsed.version });
+    }
+  };
+  for (const entry of entries) {
+    consider(entry.runs, readableClaudeModelName(entry.runs));
+  }
+  for (const model of LATEST_CLAUDE_MODELS) {
+    consider(model.value, model.label);
+  }
+  for (const [index, option] of primary.entries()) {
+    const runs = baseModelId(option.resolvesTo ?? option.value);
+    const parsed = parseClaudeModelVersion(runs);
+    // Only a family's plain alias (`fable`, not `default` or `fable[1m]`).
+    if (!parsed || option.value !== parsed.family) {
+      continue;
+    }
+    const newest = newestByFamily.get(parsed.family);
+    if (!newest || newest.version <= parsed.version) {
+      continue;
+    }
+    primary[index] = {
+      ...option,
+      value: newest.value,
+      label: newest.label,
+      resolvesTo: newest.value,
+    };
+    primaryRuns.delete(runs);
+    primaryRuns.add(newest.value);
+    const listed = more.findIndex((candidate) => baseModelId(candidate.resolvesTo ?? candidate.value) === newest.value);
+    if (listed !== -1) {
+      more.splice(listed, 1);
+    }
+    if (!more.some((candidate) => baseModelId(candidate.resolvesTo ?? candidate.value) === runs)) {
+      more.push({ ...option, label: readableClaudeModelName(runs), group: 'more' });
     }
   }
 

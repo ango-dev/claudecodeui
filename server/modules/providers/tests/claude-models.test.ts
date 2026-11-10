@@ -132,7 +132,9 @@ test('Claude Code\'s model list becomes the catalog, named after what each alias
   const primary = catalog.OPTIONS.filter((option) => !option.group);
 
   assert.equal(catalog.DEFAULT, 'default');
-  assert.deepEqual(primary.map((option) => option.label), ['Default (Sonnet 5.5)', 'Opus 5.5', 'Sonnet 5.5', 'Haiku 4.5']);
+  // This Claude Code's haiku alias still runs Haiku 4.5: the newest Haiku takes its place.
+  assert.deepEqual(primary.map((option) => option.label), ['Default (Sonnet 5.5)', 'Opus 5.5', 'Sonnet 5.5', 'Haiku 5.5']);
+  assert.equal(primary[3].value, 'claude-haiku-5-5');
   assert.equal(primary[1].description, 'Best for everyday, complex tasks');
   assert.equal(primary[1].effort?.default, 'high', 'Claude Code recommends high effort');
   assert.ok(primary[1].effort?.values.some((value) => value.value === 'ultracode'), 'xhigh models offer ultracode');
@@ -141,6 +143,40 @@ test('Claude Code\'s model list becomes the catalog, named after what each alias
   const more = catalog.OPTIONS.filter((option) => option.group === 'more').map((option) => option.value);
   assert.ok(more.includes('claude-opus-4-8'));
   assert.ok(!more.includes('claude-haiku-4-5'), 'an earlier model an alias already resolves to is not listed twice');
+  assert.ok(more.includes('haiku'), 'the alias running the older model moves to More models');
+});
+
+test('the quick list always offers each family\'s newest model, whatever its alias runs', () => {
+  // A Claude Code whose fable alias runs an earlier Fable (an older release,
+  // or a provider it maps to one), and which lists the newest by full id.
+  const catalog = buildClaudeModelsDefinition([
+    { value: 'default', resolvedModel: 'claude-opus-5-5', displayName: 'Default (recommended)', description: 'Opus 5.5 · Best for everyday, complex tasks' },
+    { value: 'opus', resolvedModel: 'claude-opus-5-5', displayName: 'Opus 5.5', description: 'Best for everyday, complex tasks', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high', 'xhigh', 'max'] },
+    { value: 'fable', resolvedModel: 'claude-fable-5', displayName: 'Fable 5', description: 'Most capable for your hardest and longest-running tasks', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high', 'xhigh', 'max'] },
+    { value: 'claude-fable-5-2', displayName: 'Fable 5.2', description: 'Most capable for your hardest and longest-running tasks' },
+    { value: 'claude-fable-5-1', displayName: 'Fable 5.1', description: 'Most capable for your hardest and longest-running tasks' },
+  ] as never);
+  const primary = catalog.OPTIONS.filter((option) => !option.group);
+  const more = catalog.OPTIONS.filter((option) => option.group === 'more');
+
+  assert.deepEqual(primary.map((option) => option.label), ['Default (Opus 5.5)', 'Opus 5.5', 'Fable 5.2']);
+  assert.equal(primary[2].value, 'claude-fable-5-2');
+  assert.equal(primary[2].effort?.default, 'high', 'keeps the family alias\'s effort levels');
+  assert.ok(!more.some((option) => option.value === 'claude-fable-5-2'), 'not listed twice');
+  assert.equal(more.find((option) => option.value === 'fable')?.label, 'Fable 5', 'the alias moves to More models under what it runs');
+
+  // An older Claude Code that does not know the newest Fable at all still offers it.
+  const older = buildClaudeModelsDefinition([
+    { value: 'default', resolvedModel: 'claude-opus-5-5', displayName: 'Default (recommended)' },
+    { value: 'fable', resolvedModel: 'claude-fable-5-1', displayName: 'Fable 5.1' },
+  ] as never);
+  assert.deepEqual(older.OPTIONS.filter((option) => !option.group).map((option) => option.label), ['Default (Opus 5.5)', 'Fable 5.2']);
+
+  // When the alias already runs the newest, nothing changes.
+  const current = buildClaudeModelsDefinition([
+    { value: 'fable', resolvedModel: 'claude-fable-5-2', displayName: 'Fable 5.2' },
+  ] as never);
+  assert.deepEqual(current.OPTIONS.filter((option) => !option.group).map((option) => option.value), ['fable']);
 });
 
 test('the Claude catalog falls back to the static list when Claude Code cannot be read', async () => {
