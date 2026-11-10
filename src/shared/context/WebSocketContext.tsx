@@ -49,6 +49,18 @@ export const useWebSocket = () => {
   return context;
 };
 
+/**
+ * The page's `chat.presence` frame: whether it is visible and has focus. The
+ * server uses the latest one per socket to choose the single page that plays
+ * a finished turn's completion sound when the session is open in several
+ * places (tabs, windows, devices), preferring the one in front of the user.
+ */
+const readPagePresenceFrame = () => ({
+  type: 'chat.presence',
+  visible: document.visibilityState === 'visible',
+  focused: document.hasFocus(),
+});
+
 const buildWebSocketUrl = (token: string | null) => {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   if (IS_PLATFORM) return `${protocol}//${window.location.host}/ws`; // Platform mode: Use same domain as the page (goes through proxy)
@@ -105,6 +117,8 @@ const useWebSocketProviderState = (): WebSocketContextType => {
 
       websocket.onopen = () => {
         setConnectionStatus('connected');
+        // A new socket starts with no presence on the server; report it first.
+        websocket.send(JSON.stringify(readPagePresenceFrame()));
         if (hasConnectedRef.current) {
           // This is a reconnect — signal so components can catch up on missed messages
           dispatch({ kind: 'websocket_reconnected', timestamp: Date.now() });
@@ -184,6 +198,26 @@ const useWebSocketProviderState = (): WebSocketContextType => {
       setConnectionStatus('connecting');
     };
   }, [connect, isAuthLoading, user]); // reconnect after authentication or token refresh
+
+  // Keep the server's view of this page current as the user switches tabs,
+  // windows or apps, so a finished turn dings where they are looking. Only an
+  // open socket is told; one that opens later reports on `onopen` instead.
+  useEffect(() => {
+    const reportPresence = () => {
+      const socket = wsRef.current;
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify(readPagePresenceFrame()));
+      }
+    };
+    document.addEventListener('visibilitychange', reportPresence);
+    window.addEventListener('focus', reportPresence);
+    window.addEventListener('blur', reportPresence);
+    return () => {
+      document.removeEventListener('visibilitychange', reportPresence);
+      window.removeEventListener('focus', reportPresence);
+      window.removeEventListener('blur', reportPresence);
+    };
+  }, []);
 
   const sendMessage = useCallback((message: unknown) => {
     const socket = wsRef.current;

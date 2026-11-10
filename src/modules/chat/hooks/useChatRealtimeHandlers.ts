@@ -18,6 +18,9 @@ const hasActionablePermissionRequests = (requests: Array<{ toolName?: unknown }>
   return Array.isArray(requests) && requests.some((request) => isActionablePermissionRequest(request));
 };
 
+/** How many finished runs per session are remembered for `complete` dedupe; a page only ever re-sees recent ones. */
+const HANDLED_RUNS_PER_SESSION = 20;
+
 type UseChatRealtimeHandlersArgs = {
   isActive: boolean;
   subscribe: (listener: (event: ServerEvent) => void) => () => void;
@@ -97,6 +100,11 @@ export function useChatRealtimeHandlers({
   activeViewSessionIdRef.current = selectedSession?.id || currentSessionId || null;
   const isActiveRef = useRef(isActive);
   isActiveRef.current = isActive;
+  // The runs (by the gateway's `runId`) whose `complete` this page has already
+  // acted on, per session, oldest first. A run ends with exactly one
+  // `complete`, but the same frame reaching the page again — a replay, a
+  // second attach — must not mark the session idle twice or ding again.
+  const handledRunIdsRef = useRef(new Map<string, string[]>());
 
   // Keep the latest pending-permission snapshot available to the websocket
   // listener so back-to-back permission events can dedupe and re-arm the
@@ -344,6 +352,17 @@ export function useChatRealtimeHandlers({
       // --- UI side effects for specific kinds ---
       switch (msg.kind) {
         case 'complete': {
+          // A `complete` this page has already acted on changes nothing; acting
+          // again would ding twice and could idle a session's newer run.
+          const runId = typeof msg.runId === 'string' && msg.runId ? msg.runId : null;
+          if (sid && runId) {
+            const handledRunIds = handledRunIdsRef.current.get(sid) ?? [];
+            if (handledRunIds.includes(runId)) {
+              break;
+            }
+            handledRunIdsRef.current.set(sid, [...handledRunIds, runId].slice(-HANDLED_RUNS_PER_SESSION));
+          }
+
           // Flush any remaining streaming state
           if (streamTimerRef.current) {
             clearTimeout(streamTimerRef.current);
@@ -379,9 +398,16 @@ export function useChatRealtimeHandlers({
           }
 
           // Celebrate only successful runs (failed runs end with success: false).
+          // Every page shows the title indicator, but the sound plays in one
+          // place only: when the session is open in several tabs or devices
+          // the server marks a single page's copy with `playSound: true` (the
+          // one in front of the user) and the rest with `false`. A server
+          // that does not choose leaves the field out, and the page plays.
           if (msg.success !== false) {
             showCompletionTitleIndicator();
-            void playChatCompletionSound();
+            if (msg.playSound !== false) {
+              void playChatCompletionSound();
+            }
           }
 
           // The session id is stable for the whole conversation (allocated

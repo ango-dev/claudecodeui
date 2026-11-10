@@ -192,6 +192,7 @@ throws is answered with `INTERNAL_ERROR`.**
 | `chat.stop-task` | `sessionId`, `taskId` | Stops one background task (agent, workflow or backgrounded command) through the provider runtime; the runtime reports the stop on the session's stream |
 | `chat.subscribe` | `sessions: [{ sessionId, lastSeq }]` | Records these as the sessions this socket has open (replacing the previous frame's; `[]` leaves them all), so every run that later starts in one of them streams here too; acks with `chat_subscribed`, attaches this socket to a running run — or to a completed one whose session still has background work — and replays what was missed for running runs (`:448-504`) |
 | `chat.permission-response` | `requestId`, `allow`, `updatedInput?`, `message?`, `rememberEntry?` | Resolves one pending tool approval (`:511-522`) |
+| `chat.presence` | `visible`, `focused` | Records whether this socket's page is in front of the user; no reply. Sent by `WebSocketContext.tsx` when a socket opens and on every `visibilitychange`, `focus` and `blur`. Read when a run completes, to choose the one socket whose copy of `complete` says `playSound: true` |
 
 These are built in exactly three client files: the composer builds sends, aborts and
 permission answers (`useChatComposerState.ts:825-837`, `:1121-1124`, `:1149-1156`),
@@ -292,7 +293,7 @@ Two kinds in those unions never appear where you would look for them:
 | `stream_delta`, `stream_end` | Provider runtime | `useChatRealtimeHandlers`, flushed on a 100 ms timer (`:189-221`) |
 | `status` | Provider runtime | Activity indicator; `text === 'token_budget'` updates the context counter, and only for the viewed session (`:329-343`) |
 | `error` | Provider runtime | A message row. **Not** terminal |
-| `complete` | Runtime, or synthesised by the registry | Terminal: clears processing state and triggers a REST tail refresh (`:237-279`) |
+| `complete` | Runtime, or synthesised by the registry | Terminal: clears processing state and triggers a REST tail refresh (`:237-279`). Carries the run's `runId`; the client ignores a `complete` whose `runId` it has already handled. Exactly one socket of the run's audience gets `playSound: true` and plays the completion sound; the others get `false` and show only the title indicator |
 | `permission_request`, `permission_resolved`, `permission_cancelled` | Provider runtime | The permission banner and its pending list (`:285-328`) |
 | `history_truncated` | `chat-websocket.service.ts:388-393` | `sessionStore.truncateAt` (`:116-124`) |
 | `chat_subscribed` | `chat-websocket.service.ts:485-492` | Authoritative processing state plus pending permissions (`:126-155`) |
@@ -391,6 +392,16 @@ Three things cooperate:
   run cannot terminate that new run. The session-keyed `completeRun` (`:279-286`) would.
   This is pinned by *a finished run's safety net cannot complete the session's next run*
   in `tests/chat-run-registry.test.ts`.
+
+**One sound per finished turn, in one place.** Every socket that has a session open is
+in its runs' audience, so a session open in two tabs, or on a laptop and a phone, gets each
+`complete` on every page — and each page used to play the completion sound. The registry
+stamps the `complete` with the run's `runId`, and the writer sends one socket's copy with
+`playSound: true` and every other copy with `playSound: false`. The chosen socket is, in
+order: a page that reported focus, a visible one, the page the user looked at most
+recently, the socket that sent the turn, then the first watcher (`chat.presence` frames;
+see `pickCompletionSoundConnection`). The client ignores a `complete` whose `runId` it has
+already handled. Covered by `tests/chat-completion-sound.test.ts`.
 
 Note that `error` is **not** terminal — providers emit it for mid-run stderr as well, which
 is why the client treats it as a plain row (`useChatRealtimeHandlers.ts:281-283`).

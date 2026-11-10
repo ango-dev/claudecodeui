@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { sessionsDb } from '@/modules/database/index.js';
 import { ChatSessionWriter } from '@/modules/websocket/services/chat-session-writer.service.js';
 import { broadcastSessionUpserted } from '@/modules/websocket/services/session-upsert-broadcast.service.js';
@@ -25,6 +27,12 @@ type ChatRunStatus = 'running' | 'completed';
  *   can replay exactly the events it missed via `chat.subscribe`.
  */
 type ChatRun = {
+  /**
+   * Stable id of this one run, stamped on its terminal `complete` so a client
+   * can recognise a `complete` it has already acted on (and ding once per
+   * finished turn, however many times the frame reaches it).
+   */
+  runId: string;
   appSessionId: string;
   provider: LLMProvider;
   providerSessionId: string | null;
@@ -90,6 +98,53 @@ const completionListeners = new Set<(appSessionId: string) => void>();
  */
 const viewedSessionsByConnection = new Map<RealtimeClientConnection, Set<string>>();
 const viewersBySession = new Map<string, Set<RealtimeClientConnection>>();
+
+/**
+ * What each chat socket last said about its page (`chat.presence`): whether
+ * the page is visible and whether it has focus, and when it was last in front
+ * of the user. Read only when a run completes, to pick the one socket of the
+ * run's audience whose page plays the completion sound — a session open in two
+ * tabs, or on a laptop and a phone, used to ding once per page.
+ */
+type ConnectionPresence = {
+  visible: boolean;
+  focused: boolean;
+  /** When the page was last visible: now while it is, or the moment it was hidden. */
+  lastActiveAt: number;
+};
+
+const presenceByConnection = new Map<RealtimeClientConnection, ConnectionPresence>();
+
+/**
+ * Picks the socket whose page plays the completion sound for a finished run,
+ * from the open sockets the `complete` is about to reach. In order of
+ * preference: a focused page, a visible one, the page the user looked at most
+ * recently, the socket that sent the turn, then the first watcher. A page that
+ * never reported its presence ranks below every page that did.
+ */
+function pickCompletionSoundConnection(
+  audience: RealtimeClientConnection[],
+  sender: RealtimeClientConnection | null,
+): RealtimeClientConnection | null {
+  let chosen: RealtimeClientConnection | null = null;
+  let chosenRank: [number, number, number] = [-1, -1, -1];
+  for (const connection of audience) {
+    const presence = presenceByConnection.get(connection);
+    const rank: [number, number, number] = [
+      presence?.focused ? 2 : presence?.visible ? 1 : 0,
+      presence?.lastActiveAt ?? 0,
+      connection === sender ? 1 : 0,
+    ];
+    // Compared field by field; strictly greater, so equal ranks keep the
+    // earlier watcher.
+    const differingField = rank.findIndex((value, index) => value !== chosenRank[index]);
+    if (differingField !== -1 && rank[differingField] > chosenRank[differingField]) {
+      chosen = connection;
+      chosenRank = rank;
+    }
+  }
+  return chosen;
+}
 
 function removeViewer(connection: RealtimeClientConnection): void {
   const viewed = viewedSessionsByConnection.get(connection);
@@ -159,6 +214,7 @@ function decorateAndRecordEvent(run: ChatRun, message: NormalizedMessage): Norma
     // The provider may report its own id here; the frontend only ever knows
     // the app id, so the "actual" id is by definition the app id as well.
     outbound.actualSessionId = run.appSessionId;
+    outbound.runId = run.runId;
     run.status = 'completed';
     run.completedAt = Date.now();
     evictRunLater(run);
@@ -268,6 +324,7 @@ export const chatRunRegistry = {
     }
 
     const run: ChatRun = {
+      runId: randomUUID(),
       appSessionId: input.appSessionId,
       provider: input.provider,
       providerSessionId: input.providerSessionId,
@@ -288,6 +345,7 @@ export const chatRunRegistry = {
         recordProviderSessionId(run, providerSessionId);
       },
       decorateOutboundEvent: (message) => decorateAndRecordEvent(run, message),
+      chooseCompletionSoundConnection: (audience) => pickCompletionSoundConnection(audience, input.connection),
     });
 
     // Everyone who has the session open watches the run from its first event,
@@ -328,11 +386,30 @@ export const chatRunRegistry = {
   },
 
   /**
+   * Records whether a socket's page is visible and focused, as its latest
+   * `chat.presence` frame said. The page in front of the user is the one that
+   * plays a finished run's completion sound (see `pickCompletionSoundConnection`).
+   */
+  setConnectionPresence(connection: RealtimeClientConnection, presence: { visible: boolean; focused: boolean }): void {
+    const previous = presenceByConnection.get(connection);
+    const wasInFront = Boolean(previous?.visible || previous?.focused);
+    const isInFront = presence.visible || presence.focused;
+    presenceByConnection.set(connection, {
+      visible: presence.visible,
+      focused: presence.focused,
+      // A page going to the background was in front until now; one already in
+      // the background keeps the moment it left.
+      lastActiveAt: isInFront || wasInFront ? Date.now() : previous?.lastActiveAt ?? 0,
+    });
+  },
+
+  /**
    * Forgets a socket that has closed, so no later run adds it. Runs it is
    * already watching drop it themselves the next time they find it closed.
    */
   forgetConnection(connection: RealtimeClientConnection): void {
     removeViewer(connection);
+    presenceByConnection.delete(connection);
   },
 
   getRun(appSessionId: string): ChatRun | undefined {
@@ -432,6 +509,7 @@ export const chatRunRegistry = {
    */
   clearAll(): void {
     runs.clear();
+    presenceByConnection.clear();
     viewedSessionsByConnection.clear();
     viewersBySession.clear();
   },

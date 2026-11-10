@@ -960,10 +960,12 @@ function handlePermissionResponse(data: AnyRecord, dependencies: ChatWebSocketDe
  * - `chat.stop-task`           { sessionId, taskId }
  * - `chat.subscribe`           { sessions: [{ sessionId, lastSeq? }] }
  * - `chat.permission-response` { requestId, allow, updatedInput?, message?, rememberEntry? }
+ * - `chat.presence`            { visible, focused }
  *
  * Outbound protocol (server to client): every frame is `kind`-based — either
  * a provider `NormalizedMessage` (with `seq`; every run opens with its prompt
- * as a user `text` row flagged `isTurnPrompt`) or a gateway event
+ * as a user `text` row flagged `isTurnPrompt`, and ends with one `complete`
+ * carrying the run's `runId` and, for exactly one socket, `playSound: true`) or a gateway event
  * (`chat_subscribed`, `chat_steer_accepted`, `session_upserted`,
  * `loading_progress`, `protocol_error`, `side_question`).
  */
@@ -1117,6 +1119,14 @@ export function handleChatConnection(
           return;
         case 'chat.permission-response':
           handlePermissionResponse(data, dependencies);
+          return;
+        case 'chat.presence':
+          // Whether this page is in front of the user; decides which of a
+          // run's watchers plays the completion sound. No reply.
+          chatRunRegistry.setConnectionPresence(ws, {
+            visible: data.visible === true,
+            focused: data.focused === true,
+          });
           return;
         default:
           sendProtocolError(ws, 'UNKNOWN_MESSAGE_TYPE', `Unknown message type "${messageType}".`);

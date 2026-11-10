@@ -25,6 +25,12 @@ type ChatSessionWriterOptions = {
    * `complete` after an abort already completed the run).
    */
   decorateOutboundEvent: (message: NormalizedMessage) => NormalizedMessage | null;
+  /**
+   * Picks, from the open sockets a run's `complete` is about to reach, the
+   * one whose page plays the completion sound. Implemented by the chat run
+   * registry, which knows which pages are in front of the user.
+   */
+  chooseCompletionSoundConnection: (audience: RealtimeClientConnection[]) => RealtimeClientConnection | null;
 };
 
 /**
@@ -159,18 +165,34 @@ export class ChatSessionWriter {
   }
 
   private forward(message: NormalizedMessage): void {
-    const payload = JSON.stringify(message);
-
     // Sending is also when dead sockets get collected: a refreshed tab leaves
     // its old connection behind, and without dropping it here the set would
     // grow for the whole life of the run. Deleting during iteration is safe
     // for a Set — the removed entry is simply not revisited.
+    const audience: RealtimeClientConnection[] = [];
     for (const connection of this.connections) {
       if (connection.readyState === WS_OPEN_STATE) {
-        connection.send(payload);
+        audience.push(connection);
       } else {
         this.connections.delete(connection);
       }
+    }
+
+    if (message.kind !== 'complete') {
+      const payload = JSON.stringify(message);
+      for (const connection of audience) {
+        connection.send(payload);
+      }
+      return;
+    }
+
+    // A finished turn should ding in one place, not once per page that has
+    // the session open: exactly one socket's copy says `playSound: true`.
+    const soundConnection = this.options.chooseCompletionSoundConnection(audience);
+    const withSound = JSON.stringify({ ...message, playSound: true });
+    const withoutSound = JSON.stringify({ ...message, playSound: false });
+    for (const connection of audience) {
+      connection.send(connection === soundConnection ? withSound : withoutSound);
     }
   }
 }
