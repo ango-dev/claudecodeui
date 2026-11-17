@@ -39,7 +39,9 @@
     "clearSelection": "Clear",
     "clearSelectionMenu": "Clear selection",
     "deleteSelected_one": "Delete {{count}} session",
-    "deleteSelected_other": "Delete {{count}} sessions"
+    "deleteSelected_other": "Delete {{count}} sessions",
+    "expandForks": "Expand forks of {{session}}",
+    "collapseForks": "Collapse forks of {{session}}"
   },
   "tooltips": {
     "viewEnvironments": "View Environments",

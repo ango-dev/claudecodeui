@@ -10,7 +10,7 @@ import type {
   RefObject,
   TouchEvent,
 } from 'react';
-import { PlusIcon, Loader2, ArrowUpIcon, PencilIcon } from 'lucide-react';
+import { EraserIcon, PlusIcon, Loader2, ArrowUpIcon, PencilIcon } from 'lucide-react';
 
 import { useVoiceInput } from '@/modules/chat/hooks/useVoiceInput';
 import { useVoiceAvailable } from '@/modules/chat/hooks/useVoiceAvailable';
@@ -78,6 +78,8 @@ type ChatComposerProps = {
   modelsLoading: boolean;
   tokenBudget: Record<string, unknown> | null;
   onShowTokenUsage: () => void;
+  /** Clears the session's context; absent when the session cannot be cleared. */
+  onClearContext?: () => void;
   slashCommandsCount: number;
   onSubmit: (event: FormEvent<HTMLFormElement> | MouseEvent<HTMLButtonElement> | TouchEvent<HTMLButtonElement>) => void;
   isDragActive: boolean;
@@ -176,6 +178,7 @@ export default function ChatComposer({
   onSelectModel,
   modelsLoading,
   tokenBudget,
+  onClearContext,
   onShowTokenUsage,
   onSubmit,
   isDragActive,
@@ -420,6 +423,14 @@ export default function ChatComposer({
             <SteeredMessageCard key={steer.messageId} steer={steer} providerLabel={providerLabel} />
           ))}
           {combineQueuedMessages && queuedMessages}
+        </div>
+      )}
+
+      {/* The question panel replaces the input, but how to answer often depends on
+          how much context is left, so the token usage stays reachable below it. */}
+      {hasQuestionPanel && (
+        <div className="mx-auto flex max-w-[54.25rem] justify-end">
+          <TokenUsageSummary usage={tokenBudget} onClick={onShowTokenUsage} />
         </div>
       )}
 
@@ -668,6 +679,19 @@ export default function ChatComposer({
               onSelectModel={onSelectModel}
               modelsLoading={modelsLoading}
             />
+
+            {/* Clearing sits beside the context ring it empties. */}
+            {onClearContext && (
+              <PromptInputButton
+                tooltip={{ content: t('misc.clearContext') }}
+                onClick={onClearContext}
+                // A running turn is still writing to the context being cleared.
+                disabled={isLoading}
+                aria-label={t('misc.clearContext')}
+              >
+                <EraserIcon />
+              </PromptInputButton>
+            )}
 
             {/* Context use, after the model as in Claude Code. */}
             <TokenUsageSummary usage={tokenBudget} onClick={onShowTokenUsage} />

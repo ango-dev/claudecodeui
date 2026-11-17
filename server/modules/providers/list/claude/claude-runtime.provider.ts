@@ -2618,6 +2618,7 @@ export const claudeRuntime = {
   stopBackgroundTask: stopClaudeSDKTask,
   wouldStopBackgroundWork: wouldClaudeSDKSendStopBackgroundWork,
   onBackgroundWorkEnded: onClaudeSDKBackgroundWorkEnded,
+  releaseHeldProcess: releaseHeldSession,
   askSideQuestion,
   steer: steerClaudeSDKSession,
 };

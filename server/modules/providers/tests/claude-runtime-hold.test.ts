@@ -7,6 +7,7 @@ import test from 'node:test';
 import { ClaudeSessionsProvider } from '@/modules/providers/list/claude/claude-sessions.provider.js';
 import { CLAUDE_PREDEFINED_MODELS } from '@/modules/providers/list/claude/claude-models.provider.js';
 import {
+  claudeRuntime,
   listClaudeSDKBackgroundWork,
   queryClaudeSDK,
   onClaudeSDKBackgroundWorkEnded,
@@ -579,6 +580,40 @@ test('a model or permission change is switched on the held process', async () =>
     await secondRun;
     first.script.emit(taskNotification('a1', 'toolu_agent', 'stopped'));
     await waitFor(() => first.script.released());
+    first.script.end();
+    await firstRun;
+  });
+});
+
+// Clearing a session's context lets go of its held process (sessionsService
+// .clearSessionContext). The clear is refused while the tracker lists work, so
+// the process it meets is one held on the static rule, which lists none.
+test('a process released for a context clear does not take the next message', async () => {
+  await withTwoRuns(async ({ first, second, firstSent, secondSent, startFirst, startSecond }) => {
+    const firstRun = startFirst();
+    await settle();
+    first.script.emit(init());
+    first.script.emit(toolUse('toolu_monitor', 'Monitor', { command: 'tail -f x', description: 'watch', timeout_ms: 1000 }));
+    first.script.emit(ack('toolu_monitor', 'Monitor started', {}));
+    first.script.emit(result());
+    await waitFor(() => firstSent.some((message) => message.kind === 'complete'));
+    assert.equal(first.script.released(), false, 'the process is held for its Monitor');
+    assert.deepEqual(listClaudeSDKBackgroundWork(), [], 'with no work the clear\'s busy check could see');
+
+    claudeRuntime.releaseHeldProcess(SESSION_ID);
+    // The clear lets the held process go.
+    await waitFor(() => first.script.released());
+
+    const secondRun = startSecond();
+    await settle();
+    assert.equal(first.script.prompts.length, 1, 'the old context is sent nothing more');
+    second.script.emit(init());
+    second.script.emit(result());
+    second.script.end();
+    await secondRun;
+    assert.equal(second.script.prompts.length, 1, 'a new process takes the message');
+    assert.ok(secondSent.some((message) => message.kind === 'complete'));
+
     first.script.end();
     await firstRun;
   });

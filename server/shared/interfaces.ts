@@ -76,6 +76,16 @@ export interface IProviderRuntime {
    */
   onBackgroundWorkEnded?(listener: (sessionId: string) => void): () => void;
   /**
+   * Lets go of a process the runtime still holds open for the session after
+   * its turn ended, stopping what that process still has going, so nothing
+   * more runs in its context and the session's next turn starts a fresh
+   * process. Used when the session's context is cleared: a held process would
+   * otherwise take the next message, or push a follow-up turn, in the
+   * conversation the user just left. A no-op when no process is held; only a
+   * runtime that holds processes past a turn implements it.
+   */
+  releaseHeldProcess?(sessionId: string): void;
+  /**
    * Asks a side question on the provider runtime while a session is active.
    *
    * A provider with this method uses its native fork capability; one without it

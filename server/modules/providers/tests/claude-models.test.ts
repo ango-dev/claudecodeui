@@ -4,11 +4,76 @@ import test from 'node:test';
 import {
   buildClaudeModelsDefinition,
   CLAUDE_PREDEFINED_MODELS,
+  CLAUDE_ULTRACODE_EFFORT,
   ClaudeProviderModels,
   extractClaudeEventModel,
+  findClaudeModelOption,
 } from '@/modules/providers/list/claude/claude-models.provider.js';
 
 const SESSION_ID = 'session-1';
+
+// Pinned versions as Claude Code's own model picker declares them: id, effort default,
+// whether xhigh is offered. `null` marks a model with no effort control.
+const PINNED_MODELS: ReadonlyArray<[id: string, defaultEffort: string | null, xhigh: boolean]> = [
+  ['claude-fable-5-2', 'medium', true],
+  ['claude-fable-5-1', 'high', true],
+  ['claude-fable-5', 'high', true],
+  ['claude-opus-5-5', 'medium', true],
+  ['claude-opus-5', 'high', true],
+  ['claude-opus-4-8', 'high', true],
+  ['claude-opus-4-7', 'xhigh', true],
+  ['claude-opus-4-6', 'high', false],
+  ['claude-sonnet-5-5', 'medium', true],
+  ['claude-sonnet-5', 'high', true],
+  ['claude-sonnet-4-6', 'high', false],
+  ['claude-haiku-5-5', 'medium', true],
+  ['claude-haiku-4-5-20251001', null, false],
+];
+
+test('offers each pinned version with the effort levels and default Claude Code uses for it', () => {
+  for (const [id, defaultEffort, xhigh] of PINNED_MODELS) {
+    const option = findClaudeModelOption(id);
+    assert.ok(option, `${id} is missing from the catalog`);
+
+    if (defaultEffort === null) {
+      assert.equal(option.effort, undefined, `${id} should have no effort control`);
+      continue;
+    }
+
+    const levels = option.effort?.values.map((level) => level.value) ?? [];
+    assert.equal(option.effort?.default, defaultEffort, `${id} default effort`);
+    assert.ok(levels.includes(defaultEffort), `${id} default must be one of its levels`);
+    assert.equal(levels.includes('xhigh'), xhigh, `${id} xhigh`);
+  }
+});
+
+test('offers ultracode only on xhigh-capable pinned versions outside the Haiku family', () => {
+  for (const [id, , xhigh] of PINNED_MODELS) {
+    const levels = findClaudeModelOption(id)?.effort?.values.map((level) => level.value) ?? [];
+    const expected = xhigh && !id.startsWith('claude-haiku-');
+    assert.equal(levels.includes(CLAUDE_ULTRACODE_EFFORT), expected, `${id} ultracode`);
+  }
+});
+
+test('keeps the aliases first, the default unchanged, and every model id unique', () => {
+  const values = CLAUDE_PREDEFINED_MODELS.OPTIONS.map((option) => option.value);
+
+  assert.equal(CLAUDE_PREDEFINED_MODELS.DEFAULT, 'default');
+  assert.deepEqual(values.slice(0, 9), [
+    'default', 'best', 'fable', 'sonnet', 'sonnet[1m]', 'opus', 'opus[1m]', 'haiku', 'opusplan',
+  ]);
+  assert.equal(new Set(values).size, values.length);
+});
+
+test('offers Haiku the effort levels Claude Code accepts for it, starting at its own default', () => {
+  const haikuEffort = findClaudeModelOption('haiku')?.effort;
+  const levels = haikuEffort?.values.map((level) => level.value);
+
+  assert.deepEqual(levels, ['low', 'medium', 'high', 'xhigh', 'max']);
+  // The level Claude Code runs Haiku at when none is sent, so adding the control changes nothing by itself.
+  assert.equal(haikuEffort?.default, 'medium');
+  assert.equal(levels?.includes(CLAUDE_ULTRACODE_EFFORT), false);
+});
 
 test('ignores the <synthetic> placeholder Claude Code stamps on synthesized rows', () => {
   assert.equal(
@@ -138,7 +203,8 @@ test('Claude Code\'s model list becomes the catalog, named after what each alias
   assert.equal(primary[1].description, 'Best for everyday, complex tasks');
   assert.equal(primary[1].effort?.default, 'high', 'Claude Code recommends high effort');
   assert.ok(primary[1].effort?.values.some((value) => value.value === 'ultracode'), 'xhigh models offer ultracode');
-  assert.equal(primary[3].effort, undefined, 'a model without effort support offers none');
+  assert.equal(primary[3].effort?.default, 'medium', 'the newest Haiku brings its own effort levels');
+  assert.ok(!primary[3].effort?.values.some((value) => value.value === 'ultracode'), 'no ultracode for Haiku');
 
   const more = catalog.OPTIONS.filter((option) => option.group === 'more').map((option) => option.value);
   assert.ok(more.includes('claude-opus-4-8'));
@@ -161,7 +227,7 @@ test('the quick list always offers each family\'s newest model, whatever its ali
 
   assert.deepEqual(primary.map((option) => option.label), ['Default (Opus 5.5)', 'Opus 5.5', 'Fable 5.2']);
   assert.equal(primary[2].value, 'claude-fable-5-2');
-  assert.equal(primary[2].effort?.default, 'high', 'keeps the family alias\'s effort levels');
+  assert.equal(primary[2].effort?.default, 'medium', 'Fable 5.2\'s own effort default, from the pinned list');
   assert.ok(!more.some((option) => option.value === 'claude-fable-5-2'), 'not listed twice');
   assert.equal(more.find((option) => option.value === 'fable')?.label, 'Fable 5', 'the alias moves to More models under what it runs');
 
@@ -201,7 +267,7 @@ test('a Claude Code that names models in displayName and lists full ids still gi
   const primary = catalog.OPTIONS.filter((option) => !option.group).map((option) => option.label);
   const more = catalog.OPTIONS.filter((option) => option.group === 'more').map((option) => option.label);
   assert.deepEqual(primary, ['Default (Opus 5.5)', 'Opus 5.5', 'Haiku 5.5'], 'names, not summaries, and one entry per model');
-  assert.deepEqual(more.slice(0, 3), ['Fable 5.1', 'Haiku 4.5', 'Sonnet 5'], 'earlier models in Claude Code\'s order');
+  assert.deepEqual(more.slice(0, 4), ['Fable 5.2', 'Fable 5.1', 'Fable 5', 'Opus 5'], 'other versions by family, newest first, as Claude Code\'s picker lists them');
   assert.ok(more.includes('Opus 4.8'));
   assert.equal(new Set(more).size, more.length, 'no model twice');
   assert.ok(!more.includes('Opus 5.5'), 'what the main list offers is not repeated');

@@ -70,6 +70,8 @@ type UseChatComposerStateArgs = {
   onSessionEstablished?: (sessionId: string, context: SessionEstablishedContext) => void;
   onFileOpen?: (filePath: string, diffInfo?: unknown) => void;
   onShowSettings?: () => void;
+  /** Runs the `/clear` command: clears the open session's context. */
+  onClearContext?: () => void;
   scrollToBottom: () => void;
   addMessage: (msg: ChatMessage) => void;
   setIsUserScrolledUp: (isScrolledUp: boolean) => void;
@@ -184,6 +186,14 @@ const uploadAttachmentFiles = async (files: File[]): Promise<unknown[]> => {
  * It has no queue id until it is queued.
  */
 type ComposerSubmission = Omit<QueuedDraft, 'id'>;
+
+/**
+ * What a send took from the composer: the typed text (what a chat's draft
+ * holds) and the pasted-text cards sent ahead of it. Pasted texts, like
+ * attachments, are shared by every chat, so the cleanup after a send that
+ * outlasted a chat switch removes exactly these and nothing typed since.
+ */
+type ComposerSendParts = { typedText: string; pastedTexts: PastedText[] };
 
 /**
  * A session's queue as the draft store holds it, oldest first. `files` holds
@@ -316,6 +326,7 @@ export function useChatComposerState({
   onSessionEstablished,
   onFileOpen,
   onShowSettings,
+  onClearContext,
   scrollToBottom,
   addMessage,
   setIsUserScrolledUp,
@@ -518,11 +529,15 @@ export function useChatComposerState({
           onShowSettings?.();
           break;
 
+        case 'clear':
+          onClearContext?.();
+          break;
+
         default:
           console.warn('Unknown built-in command action:', action);
       }
     },
-    [onFileOpen, onShowSettings, addMessage],
+    [onClearContext, onFileOpen, onShowSettings, addMessage],
   );
 
   const closeCommandModal = useCallback(() => {
@@ -876,7 +891,20 @@ export function useChatComposerState({
   // while editing a sent message must not leave `editingAnchorId` set over
   // the now-empty composer, which previously turned the next plain send into
   // a `chat.edit-send` that replaced the edited turn and everything after it.
-  const clearComposerAfterSideQuestion = useCallback(() => {
+  //
+  // `scope` is the chat the question was typed in: a send that waited for an
+  // upload can be answered from the background-work dialog after a chat
+  // switch, and the chat open by then keeps its text. The chat left keeps text edited since, too.
+  const clearComposerAfterSideQuestion = useCallback((text: string, scope: string | null = draftScopeRef.current) => {
+    if (scope !== draftScopeRef.current) {
+      if (scope && readDraftText(scope) === text) {
+        writeDraftText(scope, '');
+      }
+      return;
+    }
+    if (scope) {
+      writeDraftText(scope, '');
+    }
     setInput('');
     inputValueRef.current = '';
     setEditingAnchorId(null);
@@ -884,9 +912,6 @@ export function useChatComposerState({
     setIsTextareaExpanded(false);
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-    }
-    if (draftScopeRef.current) {
-      writeDraftText(draftScopeRef.current, '');
     }
   }, [resetCommandMenuState, setInput]);
 
@@ -901,7 +926,7 @@ export function useChatComposerState({
   // here, means every caller gets the same `noSession` message instead of
   // each needing its own copy of the check.
   const askSideQuestionAndClear = useCallback(
-    (sessionId: string | null, text: string) => {
+    (sessionId: string | null, text: string, scope?: string | null) => {
       if (!supportsSideQuestions) {
         addMessage({
           type: 'error',
@@ -919,7 +944,7 @@ export function useChatComposerState({
         return;
       }
       if (askSideQuestion(sessionId, text, { model: currentProviderModel }, isConnected)) {
-        clearComposerAfterSideQuestion();
+        clearComposerAfterSideQuestion(text, scope);
       }
     },
     [addMessage, askSideQuestion, clearComposerAfterSideQuestion, currentProviderModel, isConnected, supportsSideQuestions, t],
@@ -933,7 +958,9 @@ export function useChatComposerState({
     (
       queuedSessionKey: string,
       message: { content: string; options: QueuedSendOptions; uploadedAttachments: unknown[]; files: File[] },
-      fromComposerInput: boolean,
+      // What the message took from the composer; null when it did not come
+      // from the composer input (a plan follow-up, a refused steer).
+      takenFromComposer: ComposerSendParts | null,
     ) => {
       // The card shows at once; the store takes it back out if the server
       // refuses it.
@@ -949,6 +976,14 @@ export function useChatComposerState({
           return;
         }
         queuedFilesRef.current.delete(id);
+        // Its files come back for the retry whenever the chat it was queued
+        // for is open when the refusal arrives, also after a switch away and
+        // back: all were taken from this composer. Browser files cannot
+        // follow it into a composer that is not open. The text comes back
+        // with Up, as the error says.
+        if (message.files.length > 0 && sessionKeyRef.current === queuedSessionKey) {
+          setAttachedFiles((current) => [...message.files.filter((file) => !current.includes(file)), ...current]);
+        }
         addMessage({
           type: 'error',
           content: `Could not queue your message${result.reason ? `: ${result.reason}` : ''}. Press Up in the message box to get it back, then try again.`,
@@ -961,17 +996,28 @@ export function useChatComposerState({
       // recallable even when it dispatches without this composer.
       recordSentMessage(message.content, queuedSessionKey);
 
-      // A plan follow-up is not the composer's input, and if the user
-      // changed sessions during upload the input now belongs to another
-      // session: either way it is left as it is.
-      if (!fromComposerInput || sessionKeyRef.current !== queuedSessionKey) {
+      // A plan follow-up is not the composer's input: it is left as it is.
+      if (!takenFromComposer) {
+        return;
+      }
+      // Attachments and pasted texts are not kept per chat: the queued ones
+      // leave even when another chat is open now, or a send from there would
+      // take them along.
+      setAttachedFiles((files) => files.filter((file) => !message.files.includes(file)));
+      setPastedTexts((current) => current.filter((pasted) => !takenFromComposer.pastedTexts.includes(pasted)));
+      if (sessionKeyRef.current !== queuedSessionKey) {
+        // The user changed sessions during the upload. The composer they left
+        // still holds the text as its draft: clear it, or going back and
+        // pressing Enter would queue the same message a second time. Text
+        // edited there since stays.
+        if (readDraftText(queuedSessionKey) === takenFromComposer.typedText) {
+          writeDraftText(queuedSessionKey, '');
+        }
         return;
       }
 
       setInput('');
       inputValueRef.current = '';
-      setAttachedFiles([]);
-      setPastedTexts([]);
       setFileErrors(new Map());
       resetCommandMenuState();
       setIsTextareaExpanded(false);
@@ -998,7 +1044,11 @@ export function useChatComposerState({
   // composer at once, as a sent message does, and waits as a card until the
   // agent reads it. Attachments must already be uploaded.
   const steerIntoRunningTurn = useCallback(
-    (message: { content: string; attachments: File[]; uploadedAttachments: unknown[] }, steerSessionKey: string) => {
+    (
+      message: { content: string; attachments: File[]; uploadedAttachments: unknown[] },
+      steerSessionKey: string,
+      takenFromComposer: ComposerSendParts,
+    ) => {
       const messageId = createSteerMessageId();
       updatePendingSteers((current) => [...current, {
         messageId,
@@ -1016,13 +1066,15 @@ export function useChatComposerState({
         options: { attachments: message.uploadedAttachments },
       });
       recordSentMessage(message.content, steerSessionKey);
+      // Attachments and pasted texts are not kept per chat: the steered ones
+      // leave even when another chat is open now. The pasted texts went out
+      // with it, ahead of the typed text.
+      setAttachedFiles((files) => files.filter((file) => !message.attachments.includes(file)));
+      setPastedTexts((current) => current.filter((pasted) => !takenFromComposer.pastedTexts.includes(pasted)));
 
       if (sessionKeyRef.current === steerSessionKey) {
         setInput('');
         inputValueRef.current = '';
-        setAttachedFiles([]);
-        // The pasted texts went out with it, ahead of the typed text.
-        setPastedTexts([]);
         setFileErrors(new Map());
         resetCommandMenuState();
         setIsTextareaExpanded(false);
@@ -1032,7 +1084,7 @@ export function useChatComposerState({
         if (draftScopeRef.current) {
           writeDraftText(draftScopeRef.current, '');
         }
-      } else if (readDraftText(steerSessionKey) === message.content) {
+      } else if (readDraftText(steerSessionKey) === takenFromComposer.typedText) {
         // The user changed sessions during the upload; the composer they left
         // must not still hold the message as its draft.
         writeDraftText(steerSessionKey, '');
@@ -1075,7 +1127,7 @@ export function useChatComposerState({
         options: buildSendOptions(steer.content),
         uploadedAttachments: steer.uploadedAttachments,
         files: steer.attachments,
-      }, false);
+      }, null);
     },
     [buildSendOptions, queueMessage, updatePendingSteers],
   );
@@ -1134,6 +1186,8 @@ export function useChatComposerState({
       const currentInput = queuedSubmission ? typedInput : withPastedTexts(pastedTexts, typedInput);
       const summaryInput = typedInput.trim() ? typedInput : currentInput;
       const currentAttachments = queuedSubmission?.attachments ?? attachedFiles;
+      // A follow-up submitted in place of the input takes no pasted cards.
+      const sentParts: ComposerSendParts = { typedText: typedInput, pastedTexts: queuedSubmission ? [] : pastedTexts };
       const previouslyUploadedAttachments = queuedSubmission?.uploadedAttachments ?? [];
       if (
         (
@@ -1145,6 +1199,9 @@ export function useChatComposerState({
       ) {
         return;
       }
+      // The chat this send belongs to: the upload and session allocation below can outlast a
+      // chat switch, and the cleanup at the end must not empty whichever chat is open by then.
+      const submittedScope = draftScopeRef.current;
 
       // `/btw <question>` never becomes a turn: checked before the in-flight
       // queue below, since that branch runs before slash-command
@@ -1205,7 +1262,7 @@ export function useChatComposerState({
             content: currentInput,
             attachments: currentAttachments,
             uploadedAttachments,
-          }, queuedSessionKey);
+          }, queuedSessionKey, sentParts);
           return;
         }
 
@@ -1214,7 +1271,7 @@ export function useChatComposerState({
           options: queuedOptions,
           uploadedAttachments,
           files: currentAttachments,
-        }, !queuedSubmission);
+        }, queuedSubmission ? null : sentParts);
         return;
       }
 
@@ -1360,7 +1417,7 @@ export function useChatComposerState({
           return;
         }
         if (choice === 'sideQuestion') {
-          askSideQuestionAndClear(targetSessionId, typedInput);
+          askSideQuestionAndClear(targetSessionId, typedInput, submittedScope);
           return;
         }
         if (choice === 'queue') {
@@ -1371,7 +1428,7 @@ export function useChatComposerState({
             options: sendOptions,
             uploadedAttachments,
             files: currentAttachments,
-          }, !queuedSubmission);
+          }, queuedSubmission ? null : sentParts);
           return;
         }
       }
@@ -1422,27 +1479,38 @@ export function useChatComposerState({
           attachments: uploadedAttachments,
         },
       });
-      setEditingAnchorId(null);
+      // Only this send's edit: an edit begun in another chat during the upload stays.
+      setEditingAnchorId((current) => (current === editingAnchorId ? null : current));
 
       // Recorded under the (possibly just-allocated) session id, so the first
       // message of a new chat lands in the history of the session the user is
       // navigated to. Queued drafts were recorded when they were queued; the
       // consecutive-duplicate check keeps this second call a no-op.
       recordSentMessage(currentInput, targetSessionId);
+      // Attachments and pasted texts are not kept per chat, so only the ones just sent go.
+      setAttachedFiles((files) => files.filter((file) => !currentAttachments.includes(file)));
+      setPastedTexts((current) => current.filter((pasted) => !sentParts.pastedTexts.includes(pasted)));
+      // A brand-new chat moves from its project scope to its allocated session id meanwhile.
+      const stillOpen = draftScopeRef.current === submittedScope || draftScopeRef.current === targetSessionId;
+      if (!stillOpen) {
+        // The chat left keeps text the user went back and edited during the
+        // upload. Its draft holds the typed text only, not the pasted cards.
+        if (submittedScope && readDraftText(submittedScope) === typedInput) {
+          writeDraftText(submittedScope, '');
+        }
+        return;
+      }
+      if (submittedScope) {
+        writeDraftText(submittedScope, '');
+      }
       setInput('');
       inputValueRef.current = '';
       resetCommandMenuState();
-      setAttachedFiles([]);
-      setPastedTexts([]);
       setFileErrors(new Map());
       setIsTextareaExpanded(false);
 
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
-      }
-
-      if (draftScopeRef.current) {
-        writeDraftText(draftScopeRef.current, '');
       }
     },
     [

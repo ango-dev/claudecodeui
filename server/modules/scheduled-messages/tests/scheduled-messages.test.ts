@@ -398,6 +398,226 @@ test('a queued message does not wait for background work its session\'s last tur
   });
 });
 
+/** Lets the run-settled microtask and the detached turn it starts finish. */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 5; i += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+}
+
+test('a queued message is sent as soon as the run it waited on settles, not on the next poll', async () => {
+  await withIsolatedDatabase(async (userId) => {
+    const runs: RunCall[] = [];
+    initializeScheduledMessageDispatcher(createRuntime(runs));
+    // The catch-up pass that init starts finds nothing; only the settle can send.
+    await settle();
+    try {
+      const run = chatRunRegistry.startRun({
+        appSessionId: SESSION_ID,
+        provider: 'claude',
+        providerSessionId: null,
+        connection: null,
+        userId,
+      });
+      sessionDraftsDb.saveDraft(userId, SESSION_ID, {
+        text: '',
+        queuedMessages: [{ content: 'send when this turn ends' }],
+      });
+      await settle();
+      assert.equal(runs.length, 0, 'the session is still busy');
+
+      run!.writer.sendComplete({ exitCode: 0 });
+      // Well before the follow-up pass a moment later.
+      await settle();
+
+      assert.equal(runs.length, 1);
+      assert.equal(runs[0].command, 'send when this turn ends');
+      assert.equal(sessionDraftsDb.getDrafts(userId).length, 0);
+    } finally {
+      closeScheduledMessageDispatcher();
+    }
+  });
+});
+
+test('a queued turn sent as its run ends still waits when it would stop the background work that run left going', async () => {
+  await withIsolatedDatabase(async (userId) => {
+    // One per turn, so the head is a turn of its own.
+    setCombineQueuedMessages(userId, false);
+    let holding = false;
+    const asked: Array<Record<string, unknown>> = [];
+    const runs: RunCall[] = [];
+    const runtime = createRuntime(runs, 'ok', [], () => holding, {
+      wouldStopBackgroundWork: async (_provider, _sessionId, options) => {
+        asked.push(options);
+        return holding && options.effort === 'max' ? { stops: true, reason: 'effort' } : { stops: false };
+      },
+    });
+    // As the Claude runtime does at a turn's `result`: the run's `complete`
+    // goes out, and in the same step the process is held open for the work.
+    const endTurnLeavingWork = () => {
+      const run = chatRunRegistry.startRun({
+        appSessionId: SESSION_ID,
+        provider: 'claude',
+        providerSessionId: null,
+        connection: null,
+        userId,
+      });
+      run!.writer.sendComplete({ exitCode: 0 });
+      holding = true;
+    };
+
+    initializeScheduledMessageDispatcher(runtime);
+    await settle();
+    try {
+      // The held process runs at another effort: a new process would take
+      // this turn and stop the work, so it waits.
+      sessionDraftsDb.saveDraft(userId, SESSION_ID, {
+        text: '',
+        queuedMessages: [{ content: 'think harder', options: { effort: 'max' } }],
+      });
+      endTurnLeavingWork();
+      await settle();
+      assert.equal(runs.length, 0);
+      assert.equal(asked.length, 1);
+      assert.equal(asked[0].effort, 'max');
+      assert.deepEqual(contents(userId), ['think harder']);
+
+      // One the held process can take goes as soon as its turn ends, work or not.
+      sessionDraftsDb.saveDraft(userId, SESSION_ID, {
+        text: '',
+        queuedMessages: [{ content: 'carry on' }],
+      });
+      holding = false;
+      endTurnLeavingWork();
+      await settle();
+      assert.deepEqual(runs.map((run) => run.command), ['carry on']);
+      assert.equal(sessionDraftsDb.getDrafts(userId).length, 0);
+    } finally {
+      closeScheduledMessageDispatcher();
+    }
+  });
+});
+
+test('a closed dispatcher no longer sends on run settle', async () => {
+  await withIsolatedDatabase(async (userId) => {
+    const runs: RunCall[] = [];
+    initializeScheduledMessageDispatcher(createRuntime(runs));
+    // Let the catch-up pass that init starts finish before shutting down.
+    await settle();
+    closeScheduledMessageDispatcher();
+
+    const run = chatRunRegistry.startRun({
+      appSessionId: SESSION_ID,
+      provider: 'claude',
+      providerSessionId: null,
+      connection: null,
+      userId,
+    });
+    sessionDraftsDb.saveDraft(userId, SESSION_ID, {
+      text: '',
+      queuedMessages: [{ content: 'left for the poll' }],
+    });
+    run!.writer.sendComplete({ exitCode: 0 });
+    await settle();
+
+    assert.equal(runs.length, 0);
+    assert.deepEqual(contents(userId), ['left for the poll']);
+  });
+});
+
+test('a run settling just before the dispatcher closes does not send', async () => {
+  await withIsolatedDatabase(async (userId) => {
+    const runs: RunCall[] = [];
+    initializeScheduledMessageDispatcher(createRuntime(runs));
+    await settle();
+
+    const run = chatRunRegistry.startRun({
+      appSessionId: SESSION_ID,
+      provider: 'claude',
+      providerSessionId: null,
+      connection: null,
+      userId,
+    });
+    sessionDraftsDb.saveDraft(userId, SESSION_ID, {
+      text: '',
+      queuedMessages: [{ content: 'left for the poll' }],
+    });
+    // Same tick: the settle notification is still pending when we close.
+    run!.writer.sendComplete({ exitCode: 0 });
+    closeScheduledMessageDispatcher();
+    await settle();
+
+    assert.equal(runs.length, 0);
+    assert.deepEqual(contents(userId), ['left for the poll']);
+  });
+});
+
+test('a queued turn waits for the due messages of its session instead of being interrupted by them', async () => {
+  await withIsolatedDatabase(async (userId) => {
+    for (const [content, ageMs] of [['due first', 120_000], ['due second', 60_000]] as const) {
+      scheduledMessagesService.schedule({
+        userId,
+        sessionId: SESSION_ID,
+        content,
+        scheduledFor: new Date(Date.now() - ageMs).toISOString(),
+      });
+    }
+    sessionDraftsDb.saveDraft(userId, SESSION_ID, { text: '', queuedMessages: [{ content: 'queued' }] });
+
+    // The queued turn keeps running until released, so a due message that
+    // lands after it would have to interrupt it.
+    const runs: string[] = [];
+    const aborts: string[] = [];
+    let releaseQueued: () => void = () => {};
+    const queuedDone = new Promise<void>((resolve) => {
+      releaseQueued = resolve;
+    });
+    const runtime = {
+      hasRuntime: () => true,
+      hasBackgroundWork: () => false,
+      wouldStopBackgroundWork: async () => ({ stops: false }),
+      onBackgroundWorkEnded: () => () => {},
+      run: async (_provider: string, command: string) => {
+        runs.push(command);
+        if (command === 'queued') {
+          await queuedDone;
+        }
+      },
+      abort: async (_provider: string, sessionId: string) => {
+        aborts.push(sessionId);
+        return true;
+      },
+    } as never;
+
+    initializeScheduledMessageDispatcher(runtime);
+    try {
+      for (let i = 0; i < 50 && runs.length < 3; i += 1) {
+        await settle();
+      }
+      assert.deepEqual(runs, ['due first', 'due second', 'queued']);
+      assert.deepEqual(aborts, []);
+    } finally {
+      releaseQueued();
+      await settle();
+      closeScheduledMessageDispatcher();
+    }
+  });
+});
+
+test('a scoped pass only looks at the given session', async () => {
+  await withIsolatedDatabase(async (userId) => {
+    sessionsDb.createAppSession('other-session', 'claude', '/tmp', 'Other session');
+    sessionDraftsDb.saveDraft(userId, SESSION_ID, { text: '', queuedMessages: [{ content: 'mine' }] });
+    sessionDraftsDb.saveDraft(userId, 'other-session', { text: '', queuedMessages: [{ content: 'theirs' }] });
+
+    const runs: RunCall[] = [];
+    assert.equal(await dispatchQueuedMessages(createRuntime(runs), SESSION_ID), 1);
+    assert.deepEqual(runs.map((run) => run.command), ['mine']);
+    assert.equal(sessionDraftsDb.listQueuedMessages().length, 1);
+    assert.equal(sessionDraftsDb.listQueuedMessages()[0].sessionId, 'other-session');
+  });
+});
+
 /** Ends a turn whose session keeps background work going under its held process. */
 function completeTurnLeavingBackgroundWork(userId: number): void {
   const run = chatRunRegistry.startRun({
@@ -745,6 +965,51 @@ test('a due message interrupts a run in progress instead of failing', async () =
     assert.equal(runs.length, 1);
     assert.equal(runs[0].command, 'the schedule wins');
     assert.equal(scheduledMessagesDb.listForSession(userId, SESSION_ID)[0].status, 'sent');
+  });
+});
+
+test('the end of the run a due message interrupts does not count as the end of that message\'s own turn', async () => {
+  await withIsolatedDatabase(async (userId) => {
+    scheduledMessagesDb.create({ userId, sessionId: SESSION_ID, content: 'first', options: {}, scheduledFor: new Date(Date.now() - 3_000) });
+    scheduledMessagesDb.create({ userId, sessionId: SESSION_ID, content: 'second', options: {}, scheduledFor: new Date(Date.now() - 2_000) });
+    // A reply in progress, which the first due message interrupts. Its
+    // `complete` goes out in the same step the first message's run takes the
+    // session's slot, so run-settled listeners hear of it only afterwards.
+    chatRunRegistry.startRun({
+      appSessionId: SESSION_ID,
+      provider: 'claude',
+      providerSessionId: null,
+      connection: null,
+      userId,
+    });
+
+    const started: string[] = [];
+    const aborts: string[] = [];
+    const firstTurn = holdFirstRun();
+    const runtime = {
+      ...(createRuntime([], 'ok', aborts) as object),
+      run: async (_provider: string, command: string) => {
+        started.push(command);
+        await firstTurn.run();
+      },
+    } as never;
+
+    const pass = dispatchDueScheduledMessages(runtime);
+    try {
+      await settle();
+      await settle();
+      // Still the first message's turn: the second waits instead of
+      // interrupting it.
+      assert.deepEqual(started, ['first']);
+      assert.deepEqual(aborts, [SESSION_ID]);
+      const statuses = scheduledMessagesDb.listForSession(userId, SESSION_ID).map((row) => `${row.content}:${row.status}`);
+      assert.deepEqual(statuses, ['first:sent', 'second:pending']);
+    } finally {
+      firstTurn.release();
+    }
+    assert.equal(await pass, 2);
+    assert.deepEqual(started, ['first', 'second']);
+    assert.deepEqual(aborts, [SESSION_ID]);
   });
 });
 

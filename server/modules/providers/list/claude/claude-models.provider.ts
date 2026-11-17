@@ -32,6 +32,116 @@ const ULTRACODE_EFFORT_OPTION = {
   description: 'Highest effort plus standing workflow orchestration.',
 };
 
+const EFFORT_LEVELS_WITH_XHIGH = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+// Opus 4.6 and Sonnet 4.6 predate the xhigh level; Claude Code rejects it for them.
+const EFFORT_LEVELS_WITHOUT_XHIGH = ['low', 'medium', 'high', 'max'] as const;
+
+/**
+ * Builds the effort control for one pinned model version. The levels and default mirror the
+ * ones Claude Code's own model picker declares for that version, so an unchanged control sends
+ * the effort Claude Code would have used anyway. Ultracode is appended when asked for: Claude
+ * Code honours it only on xhigh-capable models. Arrays are built per call so options never
+ * share them.
+ */
+const buildPinnedModelEffort = (
+  defaultEffort: string,
+  levels: readonly string[],
+  { ultracode }: { ultracode: boolean },
+): NonNullable<ProviderModelOption['effort']> => ({
+  default: defaultEffort,
+  values: [
+    ...levels.map((value) => ({ value })),
+    ...(ultracode ? [ULTRACODE_EFFORT_OPTION] : []),
+  ],
+});
+
+/**
+ * Exact model versions, listed after the aliases above. An alias such as `opus` follows
+ * whichever release is newest; these stay on one release, which is what a user picks them for.
+ * The set matches the versions Claude Code's own model picker offers.
+ */
+const CLAUDE_PINNED_MODEL_OPTIONS: ProviderModelOption[] = [
+  {
+    value: 'claude-fable-5-2',
+    label: 'Fable 5.2',
+    description: 'Pinned to Fable 5.2, the current Fable release.',
+    effort: buildPinnedModelEffort('medium', EFFORT_LEVELS_WITH_XHIGH, { ultracode: true }),
+  },
+  {
+    value: 'claude-fable-5-1',
+    label: 'Fable 5.1',
+    description: 'Pinned to Fable 5.1.',
+    effort: buildPinnedModelEffort('high', EFFORT_LEVELS_WITH_XHIGH, { ultracode: true }),
+  },
+  {
+    value: 'claude-fable-5',
+    label: 'Fable 5',
+    description: 'Pinned to Fable 5.',
+    effort: buildPinnedModelEffort('high', EFFORT_LEVELS_WITH_XHIGH, { ultracode: true }),
+  },
+  {
+    value: 'claude-opus-5-5',
+    label: 'Opus 5.5',
+    description: 'Pinned to Opus 5.5, the current Opus release.',
+    effort: buildPinnedModelEffort('medium', EFFORT_LEVELS_WITH_XHIGH, { ultracode: true }),
+  },
+  {
+    value: 'claude-opus-5',
+    label: 'Opus 5',
+    description: 'Pinned to Opus 5.',
+    effort: buildPinnedModelEffort('high', EFFORT_LEVELS_WITH_XHIGH, { ultracode: true }),
+  },
+  {
+    value: 'claude-opus-4-8',
+    label: 'Opus 4.8',
+    description: 'Pinned to Opus 4.8.',
+    effort: buildPinnedModelEffort('high', EFFORT_LEVELS_WITH_XHIGH, { ultracode: true }),
+  },
+  {
+    value: 'claude-opus-4-7',
+    label: 'Opus 4.7',
+    description: 'Pinned to Opus 4.7.',
+    effort: buildPinnedModelEffort('xhigh', EFFORT_LEVELS_WITH_XHIGH, { ultracode: true }),
+  },
+  {
+    value: 'claude-opus-4-6',
+    label: 'Opus 4.6',
+    description: 'Pinned to Opus 4.6.',
+    effort: buildPinnedModelEffort('high', EFFORT_LEVELS_WITHOUT_XHIGH, { ultracode: false }),
+  },
+  {
+    value: 'claude-sonnet-5-5',
+    label: 'Sonnet 5.5',
+    description: 'Pinned to Sonnet 5.5, the current Sonnet release.',
+    effort: buildPinnedModelEffort('medium', EFFORT_LEVELS_WITH_XHIGH, { ultracode: true }),
+  },
+  {
+    value: 'claude-sonnet-5',
+    label: 'Sonnet 5',
+    description: 'Pinned to Sonnet 5.',
+    effort: buildPinnedModelEffort('high', EFFORT_LEVELS_WITH_XHIGH, { ultracode: true }),
+  },
+  {
+    value: 'claude-sonnet-4-6',
+    label: 'Sonnet 4.6',
+    description: 'Pinned to Sonnet 4.6.',
+    effort: buildPinnedModelEffort('high', EFFORT_LEVELS_WITHOUT_XHIGH, { ultracode: false }),
+  },
+  {
+    value: 'claude-haiku-5-5',
+    label: 'Haiku 5.5',
+    description: 'Pinned to Haiku 5.5, the current Haiku release.',
+    // Ultracode is left out for the same reason as on the `haiku` alias.
+    effort: buildPinnedModelEffort('medium', EFFORT_LEVELS_WITH_XHIGH, { ultracode: false }),
+  },
+  {
+    // Claude Code's picker sends the dated id for this release, so the catalog does too.
+    value: 'claude-haiku-4-5-20251001',
+    label: 'Haiku 4.5',
+    description: 'Pinned to Haiku 4.5. Has no effort control.',
+  },
+];
+
 export const CLAUDE_PREDEFINED_MODELS: ProviderModelsDefinition = {
   OPTIONS: [
     {
@@ -51,7 +161,7 @@ export const CLAUDE_PREDEFINED_MODELS: ProviderModelsDefinition = {
     {
       value: 'best',
       label: 'Best available',
-      description: 'Use Fable 5.2 when available, otherwise the latest Opus model.',
+      description: 'Use Fable when available, otherwise the latest Opus model.',
       effort: {
         default: 'high',
         values: [
@@ -66,7 +176,7 @@ export const CLAUDE_PREDEFINED_MODELS: ProviderModelsDefinition = {
     },
     {
       value: 'fable',
-      label: 'Fable 5.2',
+      label: 'Fable',
       description: 'Most capable Claude model for the hardest, longest-running tasks.',
       effort: {
         default: 'high',
@@ -148,6 +258,19 @@ export const CLAUDE_PREDEFINED_MODELS: ProviderModelsDefinition = {
       value: 'haiku',
       label: 'Haiku',
       description: 'Fast and efficient Claude model for simple tasks.',
+      // `medium` is the level Claude Code already runs Haiku at when none is sent, so
+      // sessions that predate this control keep the effort they have been running with.
+      // Ultracode is left out: standing workflow orchestration is not what Haiku is for.
+      effort: {
+        default: 'medium',
+        values: [
+          { value: 'low' },
+          { value: 'medium' },
+          { value: 'high' },
+          { value: 'xhigh' },
+          { value: 'max' },
+        ],
+      },
     },
     {
       value: 'opusplan',
@@ -165,45 +288,33 @@ export const CLAUDE_PREDEFINED_MODELS: ProviderModelsDefinition = {
         ],
       },
     },
+    // Under "More models" in this app's picker, which keeps the quick list to
+    // the aliases.
+    ...CLAUDE_PINNED_MODEL_OPTIONS.map((option) => ({ ...option, group: 'more' as const })),
   ],
   DEFAULT: 'default',
 };
-
-const FULL_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
-const EFFORT_LEVELS_WITHOUT_XHIGH = ['low', 'medium', 'high', 'max'];
 
 /** Order of Claude Code's model menu; aliases it does not list keep the CLI's order after these. */
 const PRIMARY_MODEL_ORDER = ['default', 'opus', 'fable', 'sonnet', 'haiku'];
 
 /**
- * Earlier models Claude Code still accepts by full id, for the menu's "More
- * models" group, in the order Claude Code lists them. Effort levels follow
- * each model's API support; Haiku 4.5 has none.
+ * A model id without its `[1m]` context suffix or a date stamp, so variants
+ * of one model compare equal ("claude-haiku-4-5-20251001" is Haiku 4.5).
  */
-const PREVIOUS_CLAUDE_MODELS: { value: string; label: string; effortLevels: string[] }[] = [
-  { value: 'claude-fable-5-1', label: 'Fable 5.1', effortLevels: FULL_EFFORT_LEVELS },
-  { value: 'claude-haiku-4-5', label: 'Haiku 4.5', effortLevels: [] },
-  { value: 'claude-sonnet-5', label: 'Sonnet 5', effortLevels: FULL_EFFORT_LEVELS },
-  { value: 'claude-opus-5', label: 'Opus 5', effortLevels: FULL_EFFORT_LEVELS },
-  { value: 'claude-fable-5', label: 'Fable 5', effortLevels: FULL_EFFORT_LEVELS },
-  { value: 'claude-opus-4-8', label: 'Opus 4.8', effortLevels: FULL_EFFORT_LEVELS },
-  { value: 'claude-opus-4-7', label: 'Opus 4.7', effortLevels: FULL_EFFORT_LEVELS },
-  { value: 'claude-opus-4-6', label: 'Opus 4.6', effortLevels: EFFORT_LEVELS_WITHOUT_XHIGH },
-  { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6', effortLevels: EFFORT_LEVELS_WITHOUT_XHIGH },
-];
+const modelKey = (model: string): string => model.replace(/\[1m\]$/i, '').replace(/-\d{8}$/, '');
 
 /**
- * The newest model of each family. The quick list always offers these: when
+ * The newest version of each family: the first of the family in the pinned
+ * list, which runs newest first. The quick list always offers these: when
  * Claude Code's alias for a family runs an older model (an older Claude Code,
- * or a provider it maps to an earlier release), the newest one takes the
- * alias's place and the alias moves to "More models". Update on each release.
+ * or a provider it maps to an earlier release), the newest takes the alias's
+ * place and the alias moves to "More models".
  */
-const LATEST_CLAUDE_MODELS: { value: string; label: string }[] = [
-  { value: 'claude-opus-5-5', label: 'Opus 5.5' },
-  { value: 'claude-fable-5-2', label: 'Fable 5.2' },
-  { value: 'claude-sonnet-5-5', label: 'Sonnet 5.5' },
-  { value: 'claude-haiku-5-5', label: 'Haiku 5.5' },
-];
+const LATEST_CLAUDE_MODELS: ProviderModelOption[] = CLAUDE_PINNED_MODEL_OPTIONS.filter((option, index, all) => {
+  const family = /^claude-([a-z]+)-/.exec(option.value)?.[1];
+  return all.findIndex((candidate) => /^claude-([a-z]+)-/.exec(candidate.value)?.[1] === family) === index;
+});
 
 /** A Claude model id's family and version ("claude-fable-5-2" is fable 5.2), or null for an alias or another id. */
 const parseClaudeModelVersion = (model: string): { family: string; version: number } | null => {
@@ -281,7 +392,7 @@ export function buildClaudeModelsDefinition(models: ModelInfo[]): ProviderModels
     model,
     ...describeClaudeCodeModel(model),
     // The model actually run: an alias's resolved id, or the id itself.
-    runs: baseModelId(model.resolvedModel ?? model.value),
+    runs: modelKey(model.resolvedModel ?? model.value),
   }));
   const toOption = (entry: (typeof entries)[number], group?: 'more'): ProviderModelOption => ({
     value: entry.model.value,
@@ -321,16 +432,10 @@ export function buildClaudeModelsDefinition(models: ModelInfo[]): ProviderModels
       more.push(toOption(entry, 'more'));
     }
   }
-  for (const model of PREVIOUS_CLAUDE_MODELS) {
-    if (!moreRuns.has(model.value)) {
-      moreRuns.add(model.value);
-      more.push({
-        value: model.value,
-        label: model.label,
-        group: 'more',
-        resolvesTo: model.value,
-        effort: buildEffort(model.effortLevels),
-      });
+  for (const model of CLAUDE_PINNED_MODEL_OPTIONS) {
+    if (!moreRuns.has(modelKey(model.value))) {
+      moreRuns.add(modelKey(model.value));
+      more.push({ ...model, group: 'more', resolvesTo: model.value });
     }
   }
 
@@ -352,10 +457,10 @@ export function buildClaudeModelsDefinition(models: ModelInfo[]): ProviderModels
     consider(entry.runs, readableClaudeModelName(entry.runs));
   }
   for (const model of LATEST_CLAUDE_MODELS) {
-    consider(model.value, model.label);
+    consider(modelKey(model.value), model.label);
   }
   for (const [index, option] of primary.entries()) {
-    const runs = baseModelId(option.resolvesTo ?? option.value);
+    const runs = modelKey(option.resolvesTo ?? option.value);
     const parsed = parseClaudeModelVersion(runs);
     // Only a family's plain alias (`fable`, not `default` or `fable[1m]`).
     if (!parsed || option.value !== parsed.family) {
@@ -365,27 +470,30 @@ export function buildClaudeModelsDefinition(models: ModelInfo[]): ProviderModels
     if (!newest || newest.version <= parsed.version) {
       continue;
     }
+    // The newest version's own effort levels when this app knows them.
+    const pinned = CLAUDE_PINNED_MODEL_OPTIONS.find((model) => modelKey(model.value) === newest.value);
     primary[index] = {
       ...option,
       value: newest.value,
       label: newest.label,
       resolvesTo: newest.value,
+      ...(pinned?.effort ? { effort: pinned.effort } : {}),
     };
     primaryRuns.delete(runs);
     primaryRuns.add(newest.value);
-    const listed = more.findIndex((candidate) => baseModelId(candidate.resolvesTo ?? candidate.value) === newest.value);
+    const listed = more.findIndex((candidate) => modelKey(candidate.resolvesTo ?? candidate.value) === newest.value);
     if (listed !== -1) {
       more.splice(listed, 1);
     }
-    if (!more.some((candidate) => baseModelId(candidate.resolvesTo ?? candidate.value) === runs)) {
+    if (!more.some((candidate) => modelKey(candidate.resolvesTo ?? candidate.value) === runs)) {
       more.push({ ...option, label: readableClaudeModelName(runs), group: 'more' });
     }
   }
 
   // Claude Code's order for the models this app knows; a newer one it does
   // not know yet goes first.
-  const knownOrder = PREVIOUS_CLAUDE_MODELS.map((model) => model.value);
-  const orderOf = (option: ProviderModelOption) => knownOrder.indexOf(baseModelId(option.resolvesTo ?? option.value));
+  const knownOrder = CLAUDE_PINNED_MODEL_OPTIONS.map((model) => modelKey(model.value));
+  const orderOf = (option: ProviderModelOption) => knownOrder.indexOf(modelKey(option.resolvesTo ?? option.value));
   more.sort((first, second) => orderOf(first) - orderOf(second));
 
   return {

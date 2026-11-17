@@ -8,6 +8,12 @@ type UseSidebarBulkSelectionArgs = {
   scopeId: string;
   /** Rows that can be ticked, in display order; a Shift-click range follows it. */
   selectableIds: string[];
+  /**
+   * The selectable rows on screen, in display order, when some selectable rows
+   * are hidden (a project's folded forks): a Shift-click range and a finger
+   * drag walk these instead, so they never tick a row the user cannot see.
+   */
+  rangeIds?: string[];
   /** The ticked rows, or null when this list is not in selection mode. */
   selectedIds: ReadonlySet<string> | null;
   /** The open session, where a Shift-click range starts when nothing was ticked yet. */
@@ -29,6 +35,7 @@ type UseSidebarBulkSelectionArgs = {
 export function useSidebarBulkSelection({
   scopeId,
   selectableIds,
+  rangeIds = selectableIds,
   selectedIds,
   openSessionId,
   onSetSelection,
@@ -37,18 +44,18 @@ export function useSidebarBulkSelection({
 }: UseSidebarBulkSelectionArgs) {
   const isSelecting = selectedIds !== null;
   // On touch screens, sliding a finger down the list ticks every row it passes.
-  useSidebarDragSelect({ scopeId, selectableIds, selectedIds, onSetSelection });
+  useSidebarDragSelect({ scopeId, selectableIds: rangeIds, selectedIds, onSetSelection });
 
-  const stateRef = useRef({ scopeId, selectableIds, selectedIds, openSessionId });
+  const stateRef = useRef({ scopeId, rangeIds, selectedIds, openSessionId });
   // Synced after each render, before any click can reach the handlers.
   useLayoutEffect(() => {
-    stateRef.current = { scopeId, selectableIds, selectedIds, openSessionId };
+    stateRef.current = { scopeId, rangeIds, selectedIds, openSessionId };
   });
 
   // The row a Shift-click range starts from: the last row toggled.
   const rangeAnchorRef = useRef<string | null>(null);
   const handleModifierSelect = useCallback((sessionId: string, mode: 'toggle' | 'range') => {
-    const { scopeId: scope, selectableIds: order, selectedIds: current, openSessionId: openId } = stateRef.current;
+    const { scopeId: scope, rangeIds: order, selectedIds: current, openSessionId: openId } = stateRef.current;
     const anchor = rangeAnchorRef.current ?? openId;
     const anchorIndex = anchor ? order.indexOf(anchor) : -1;
     const targetIndex = order.indexOf(sessionId);

@@ -128,6 +128,7 @@ test('the command list carries Claude Code\'s own commands, leaving the app\'s b
       { name: 'compact', description: 'Free up context by summarizing the conversation so far', argumentHint: '<optional custom summarization instructions>' },
       { name: 'cost', description: 'Show the total cost of the session', argumentHint: '' },
       { name: 'clear', description: 'Start a new session with empty context', argumentHint: '[name]', aliases: ['reset', 'new'] },
+      { name: 'resume', description: 'Resume a conversation', argumentHint: '[conversation id]', aliases: ['continue'] },
     ],
     runtime: {
       uptime: () => 0,
@@ -147,10 +148,10 @@ test('the command list carries Claude Code\'s own commands, leaving the app\'s b
     assert.equal(response.status, 200);
     const body = await response.json() as { cli: Array<Record<string, unknown>> };
 
-    assert.deepEqual(body.cli.map((command) => command.name), ['/clear', '/compact'], 'the app keeps /cost; the rest are sorted');
-    assert.equal(body.cli[1].description, 'Free up context by summarizing the conversation so far');
-    assert.equal(body.cli[1].argumentHint, '<optional custom summarization instructions>');
-    assert.deepEqual(body.cli[0].metadata, { type: 'cli', aliases: ['reset', 'new'] });
+    assert.deepEqual(body.cli.map((command) => command.name), ['/compact', '/resume'], 'the app keeps /cost and /clear; the rest are sorted');
+    assert.equal(body.cli[0].description, 'Free up context by summarizing the conversation so far');
+    assert.equal(body.cli[0].argumentHint, '<optional custom summarization instructions>');
+    assert.deepEqual(body.cli[1].metadata, { type: 'cli', aliases: ['continue'] });
   } finally {
     server.close();
   }

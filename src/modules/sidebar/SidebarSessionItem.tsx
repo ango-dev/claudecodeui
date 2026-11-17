@@ -37,6 +37,11 @@ type SidebarSessionItemProps = {
   isSelecting: boolean;
   /** Ticked for the pending bulk delete. Resolved by the list, which never ticks a running row. */
   isChecked: boolean;
+  /**
+   * The row sits in a project's fork tree (SidebarProjectSessions): its title
+   * steps right to leave room for the chevron the list draws over its left edge.
+   */
+  treeRow?: boolean;
   /** Takes the owning projectId so this memoized row binds itself without the list making a closure per row. */
   onToggleSessionSelected: (projectId: string, sessionId: string) => void;
   /**
@@ -72,6 +77,7 @@ function SidebarSessionItem({
   onForkSession,
   isSelecting,
   isChecked,
+  treeRow = false,
   onToggleSessionSelected,
   onModifierSelect,
   onBulkContextMenu,
@@ -163,6 +169,7 @@ function SidebarSessionItem({
             // No colour transition: on iPad it left the old row half-painted.
             'h-8 w-full justify-start rounded-md px-2 py-1 text-left font-normal transition-none',
             isSelecting ? 'pr-2' : 'pr-9',
+            treeRow && 'pl-6',
             isChecked
               ? 'bg-accent hover:bg-accent'
               : isSelected

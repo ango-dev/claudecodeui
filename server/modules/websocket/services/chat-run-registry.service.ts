@@ -77,9 +77,6 @@ const runs = new Map<string, ChatRun>();
  */
 let retainCompletedRun: (appSessionId: string) => boolean = () => false;
 
-/** Told the app session id each time a run ends; see `onRunCompleted`. */
-const completionListeners = new Set<(appSessionId: string) => void>();
-
 /**
  * Which sessions each chat socket is looking at, as its latest
  * `chat.subscribe` named them, and the same relation keyed the other way.
@@ -218,16 +215,7 @@ function decorateAndRecordEvent(run: ChatRun, message: NormalizedMessage): Norma
     run.status = 'completed';
     run.completedAt = Date.now();
     evictRunLater(run);
-    for (const listener of completionListeners) {
-      try {
-        listener(run.appSessionId);
-      } catch (error) {
-        console.error('[ChatRunRegistry] Run completion listener failed', {
-          appSessionId: run.appSessionId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
+    notifyRunSettled(run);
   }
 
   run.events.push(outbound);
@@ -236,6 +224,55 @@ function decorateAndRecordEvent(run: ChatRun, message: NormalizedMessage): Norma
   }
 
   return outbound;
+}
+
+/** Listeners told each time a run ends; see `onRunSettled`. */
+const settledListeners = new Set<(appSessionId: string, runId: string) => void>();
+
+/**
+ * Calls `listener` with the app session id and the run's `runId` each time a
+ * run reaches its terminal `complete` and the session stops processing.
+ *
+ * Consumed by the scheduled-messages dispatcher: it sends a session's queued
+ * turn as soon as the run it waited on ends instead of on the next poll, and
+ * it tells a scheduled send's own turn ending from the end of the run that
+ * send interrupted (hence the `runId`: that run's `complete` goes out just
+ * before the send's run takes the session's slot).
+ *
+ * For a Claude turn that leaves background work running, the run ends at the
+ * turn's `result` while the CLI process is held open; the runtime decides the
+ * hold in the same synchronous step that sent the `complete`, so a listener
+ * already sees it.
+ *
+ * Listeners run on a microtask, after the event that ended the run has been
+ * handled, so a throwing listener cannot break it. One unsubscribed meanwhile
+ * is not called. Returns the unsubscribe function.
+ */
+export function onRunSettled(listener: (appSessionId: string, runId: string) => void): () => void {
+  settledListeners.add(listener);
+  return () => {
+    settledListeners.delete(listener);
+  };
+}
+
+function notifyRunSettled(run: ChatRun): void {
+  const { appSessionId, runId } = run;
+  for (const listener of settledListeners) {
+    queueMicrotask(() => {
+      // Unsubscribed between the settle and this microtask: stay quiet.
+      if (!settledListeners.has(listener)) {
+        return;
+      }
+      try {
+        listener(appSessionId, runId);
+      } catch (error: unknown) {
+        console.error('[ChatRunRegistry] Run-settled listener failed', {
+          appSessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    });
+  }
 }
 
 /**
@@ -283,18 +320,6 @@ function recordProviderSessionId(run: ChatRun, providerSessionId: string): void 
  * regardless of which provider runtime produced them.
  */
 export const chatRunRegistry = {
-  /**
-   * Calls `listener` with the session id whenever a run ends, so work waiting
-   * on an idle session (a queued message) can go at once instead of on the
-   * next poll. Returns the unsubscribe function.
-   */
-  onRunCompleted(listener: (appSessionId: string) => void): () => void {
-    completionListeners.add(listener);
-    return () => {
-      completionListeners.delete(listener);
-    };
-  },
-
   /** Installs the check that keeps a completed run registered while its session still has background work. */
   setRetentionGuard(guard: (appSessionId: string) => boolean): void {
     retainCompletedRun = guard;

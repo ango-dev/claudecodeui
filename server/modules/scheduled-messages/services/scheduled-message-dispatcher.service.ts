@@ -2,7 +2,12 @@ import { scheduledMessagesDb, sessionDraftsDb } from '@/modules/database/index.j
 import type { QueuedSessionMessageRecord, ScheduledMessageRow } from '@/modules/database/index.js';
 import { announceScheduledMessagesChanged } from '@/modules/scheduled-messages/services/scheduled-messages.service.js';
 import { isQueuedMessageCombiningEnabled } from '@/modules/settings/index.js';
-import { chatRunRegistry, checkSendStopsBackgroundWork, runDetachedChatTurn } from '@/modules/websocket/index.js';
+import {
+  chatRunRegistry,
+  checkSendStopsBackgroundWork,
+  onRunSettled,
+  runDetachedChatTurn,
+} from '@/modules/websocket/index.js';
 import type { ProviderRuntimeGateway } from '@/modules/websocket/index.js';
 import type { QueuedChatMessage } from '@/shared/types.js';
 import { readQueuedChatMessage } from '@/shared/utils.js';
@@ -13,17 +18,29 @@ import { readQueuedChatMessage } from '@/shared/utils.js';
  * A minute is the granularity the composer offers, and a claim is indexed on
  * `(status, scheduled_for)`, so the poll is one cheap query. Anything finer
  * would buy precision nobody asked for.
+ *
+ * Queued messages do not wait for this: they are also dispatched the moment
+ * the run that blocked them ends, and once held background work they waited
+ * for is over (see initializeScheduledMessageDispatcher). The poll remains
+ * their safety net for the cases neither covers — a message queued while
+ * nothing was running, or one left behind by a server restart.
  */
 const POLL_INTERVAL_MS = 30_000;
 /**
- * How long after a run ends its session's next queued message is sent. The run's
- * CLI process is still exiting when its `complete` arrives; a moment's grace
- * lets it finish before the next turn resumes the same conversation.
+ * How long after a run ends, or after a process held open for background work
+ * ends, a full pass follows. The ended run's own session is already tried the
+ * moment the run ends; this pass catches what that attempt could not send.
+ * After held work, it gives the exiting CLI process a moment to finish before
+ * the next turn resumes the same conversation in a new one.
  */
 const AFTER_RUN_DELAY_MS = 1_000;
 
 let pollTimer: ReturnType<typeof setInterval> | null = null;
-let unsubscribeRunCompleted: (() => void) | null = null;
+/**
+ * Set while the dispatcher is running (between initialize and close); also
+ * how a pass tells whether it may start follow-up work of its own.
+ */
+let unsubscribeRunSettled: (() => void) | null = null;
 let unsubscribeBackgroundWorkEnded: (() => void) | null = null;
 /**
  * Passes scheduled for a moment after a run or held work ends. Cleared with the
@@ -231,6 +248,9 @@ async function isSessionBusy(
  * session per pass: the turn it starts makes the session busy, and the next
  * goes when that turn ends. Returns the number of turns claimed.
  *
+ * With a `sessionId`, only that session's queue is looked at: a run that
+ * ends can only have unblocked its own session.
+ *
  * Sessions go side by side. A session's attempt waits for any attempt an
  * overlapping pass is still starting for it (see queuedTurnStarts), then
  * plans from the copy of the queue this pass listed: if the earlier attempt
@@ -239,8 +259,11 @@ async function isSessionBusy(
  * settled, which for a turn handed to a process held open for background work
  * can be long after the turn itself ended; nothing waits on that.
  */
-export async function dispatchQueuedMessages(runtime: ProviderRuntimeGateway): Promise<number> {
-  const candidates = sessionDraftsDb.listQueuedMessages();
+export async function dispatchQueuedMessages(
+  runtime: ProviderRuntimeGateway,
+  sessionId?: string,
+): Promise<number> {
+  const candidates = sessionDraftsDb.listQueuedMessages(sessionId);
   let claimed = 0;
 
   const startQueuedTurn = async (
@@ -371,6 +394,13 @@ export async function dispatchDueScheduledMessages(
       logPassFailure(error);
     } finally {
       sessionsSending.delete(sessionId);
+      // A run that ended while this session's sends were going was skipped by
+      // the run-settled listener (isSessionBusy), so the queued turn it
+      // unblocked goes now instead of waiting for the next pass. Only while
+      // the dispatcher runs: a pass driven directly (tests) starts nothing more.
+      if (unsubscribeRunSettled) {
+        void dispatchQueuedMessages(runtime, sessionId).catch(logPassFailure);
+      }
     }
   }));
 
@@ -390,13 +420,15 @@ export async function dispatchDueScheduledMessages(
  * queued turn behind it must not wait for the hold.
  */
 async function sendUntilTurnEnds(sessionId: string, send: () => Promise<void>): Promise<void> {
-  // The run a scheduled send interrupts completes first; only a run registered
-  // after it, which is this send's own, ends this send's turn.
-  const runBefore = chatRunRegistry.getRun(sessionId);
+  // The run a scheduled send interrupts ends first; only another run, which is
+  // this send's own, ends this send's turn. Told apart by id, not by the
+  // session's current run: the send's run takes the slot in the same step that
+  // ends the interrupted one, before run-settled listeners hear of it.
+  const runIdBefore = chatRunRegistry.getRun(sessionId)?.runId;
   let unsubscribe = () => {};
   const turnEnded = new Promise<void>((resolve) => {
-    unsubscribe = chatRunRegistry.onRunCompleted((completedSessionId) => {
-      if (completedSessionId === sessionId && chatRunRegistry.getRun(sessionId) !== runBefore) {
+    unsubscribe = onRunSettled((settledSessionId, settledRunId) => {
+      if (settledSessionId === sessionId && settledRunId !== runIdBefore) {
         // A tick later, so a send that settles with its turn (most do) wins and
         // has recorded a failure before the session's next row is claimed.
         setImmediate(resolve);
@@ -465,10 +497,21 @@ export function initializeScheduledMessageDispatcher(runtime: ProviderRuntimeGat
   // Never keep the process alive just to poll for scheduled messages.
   pollTimer.unref?.();
 
-  // A message queued behind a reply goes when that reply ends, not up to a
-  // poll interval later; the next one in the queue goes when its own turn
-  // ends. The poll still covers a missed or failed pass.
-  unsubscribeRunCompleted = chatRunRegistry.onRunCompleted(() => {
+  // A message queued behind a reply goes as soon as that reply ends, not up
+  // to a poll interval later; the next one in the queue goes when its own
+  // turn ends. Scoped to the session whose run ended, so several runs ending
+  // together do not each rescan every queue. A Claude turn that leaves
+  // background work running ends at its `result` while its CLI process is
+  // held open; the hold is already decided when this runs (see onRunSettled),
+  // so isSessionBusy hands the turn to that process or, when a new process
+  // would stop the work, keeps it waiting. dispatchQueuedMessages re-checks
+  // the session and claims compare-and-set, so racing a poll is harmless.
+  //
+  // A full pass a moment later is the backstop for anything that attempt
+  // could not send (a busy check that failed, a turn put back after losing
+  // a race); the poll still covers a pass that failed outright.
+  unsubscribeRunSettled = onRunSettled((appSessionId) => {
+    void dispatchQueuedMessages(runtime, appSessionId).catch(logPassFailure);
     pollAfterDelay();
   });
   // A turn that waited for background work rather than stop it goes when the
@@ -483,6 +526,8 @@ export function initializeScheduledMessageDispatcher(runtime: ProviderRuntimeGat
 }
 
 export function closeScheduledMessageDispatcher(): void {
+  unsubscribeRunSettled?.();
+  unsubscribeRunSettled = null;
   if (pollTimer) {
     clearInterval(pollTimer);
     pollTimer = null;
@@ -491,8 +536,6 @@ export function closeScheduledMessageDispatcher(): void {
     clearTimeout(timer);
   }
   pendingAfterRunPolls.clear();
-  unsubscribeRunCompleted?.();
-  unsubscribeRunCompleted = null;
   unsubscribeBackgroundWorkEnded?.();
   unsubscribeBackgroundWorkEnded = null;
 }
