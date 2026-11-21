@@ -6,6 +6,8 @@ import { Dialog, DialogContent, DialogTitle } from '@/shared/ui';
 
 type PastedTextAttachmentProps = {
   text: string;
+  /** The `.txt` name the paste is sent as (`Pasted text.txt`, `Pasted text (2).txt`, ...). */
+  fileName: string;
   onChange: (text: string) => void;
   onRemove: () => void;
 };
@@ -13,9 +15,10 @@ type PastedTextAttachmentProps = {
 /**
  * Rendered by chat's ChatComposer for each long paste, as Claude does: a small
  * card with the start of the text instead of the text filling the message box.
- * The card opens the text in an editor; it is sent ahead of the typed message.
+ * The card opens the text in an editor; it is sent as a `.txt` file named
+ * `fileName`, alongside the message's other attachments.
  */
-export default function PastedTextAttachment({ text, onChange, onRemove }: PastedTextAttachmentProps) {
+export default function PastedTextAttachment({ text, fileName, onChange, onRemove }: PastedTextAttachmentProps) {
   const { t } = useTranslation('chat');
   // The editor's working copy while it is open; saved to the card only on Save.
   const [editing, setEditing] = useState<string | null>(null);
@@ -67,7 +70,7 @@ export default function PastedTextAttachment({ text, onChange, onRemove }: Paste
       <button
         type="button"
         onClick={() => setEditing(text)}
-        title={describeSize(text)}
+        title={`${t('input.pasted.sentAs', { fileName, defaultValue: 'Sent as {{fileName}}' })} · ${describeSize(text)}`}
         aria-label={editLabel}
         className="flex h-20 w-40 max-w-full flex-col justify-between overflow-hidden rounded-xl border border-border/50 bg-background/80 px-2.5 py-1.5 text-left shadow-sm transition-colors hover:border-border focus:outline-none focus:ring-2 focus:ring-primary/60"
       >
@@ -96,9 +99,7 @@ export default function PastedTextAttachment({ text, onChange, onRemove }: Paste
         <DialogContent className="flex max-h-[85vh] w-[calc(100%-2rem)] max-w-3xl flex-col gap-3 p-4">
           <DialogTitle>{t('input.pasted.title', { defaultValue: 'Pasted text' })}</DialogTitle>
           <div className="flex items-baseline justify-between gap-3" aria-hidden>
-            <span className="text-sm font-medium text-foreground">
-              {t('input.pasted.title', { defaultValue: 'Pasted text' })}
-            </span>
+            <span className="truncate text-sm font-medium text-foreground">{fileName}</span>
             <span className="text-xs text-muted-foreground">{describeSize(editing ?? text)}</span>
           </div>
           <textarea

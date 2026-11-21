@@ -16,7 +16,7 @@ import { useVoiceInput } from '@/modules/chat/hooks/useVoiceInput';
 import { useVoiceAvailable } from '@/modules/chat/hooks/useVoiceAvailable';
 import { MCP_ELICITATION_TOOL_NAME } from '@/shared/constants';
 import type { BackgroundSendChoice, BackgroundSendPrompt, PastedText, PendingSteer, QueuedDraft, ScheduledMessage, SlashCommand,SessionActivity,PendingPermissionRequest,PermissionMode,ProviderModelOption } from '@/shared/types';
-import { formatShortcut } from '@/shared/utils';
+import { formatShortcut, pastedTextFileName } from '@/shared/utils';
 import {
   PromptInput,
   PromptInputHeader,
@@ -514,10 +514,11 @@ export default function ChatComposer({
             <PromptInputHeader>
               <div className="rounded-xl bg-muted/40 p-2">
                 <div className="flex flex-wrap gap-2">
-                  {pastedTexts.map((pasted) => (
+                  {pastedTexts.map((pasted, index) => (
                     <PastedTextAttachment
                       key={pasted.id}
                       text={pasted.text}
+                      fileName={pastedTextFileName(index)}
                       onChange={(text) => onChangePastedText(pasted.id, text)}
                       onRemove={() => onRemovePastedText(pasted.id)}
                     />

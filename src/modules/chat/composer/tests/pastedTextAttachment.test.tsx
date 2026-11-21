@@ -10,7 +10,7 @@ const PAGE_TEXT = `Skip to main content\nDocs Home\n${'A long web page paragraph
 const renderCard = () => {
   const onChange = vi.fn();
   const onRemove = vi.fn();
-  render(<PastedTextAttachment text={PAGE_TEXT} onChange={onChange} onRemove={onRemove} />);
+  render(<PastedTextAttachment text={PAGE_TEXT} fileName="Pasted text (2).txt" onChange={onChange} onRemove={onRemove} />);
   return { onChange, onRemove };
 };
 
@@ -33,6 +33,15 @@ describe('the pasted text card', () => {
     expect(card.textContent).toContain('Skip to main content');
     expect(card.textContent).toContain('Pasted');
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('names the .txt file the paste is sent as, in its tooltip and its editor', () => {
+    renderCard();
+
+    const card = screen.getByRole('button', { name: 'Edit pasted text' });
+    expect(card.getAttribute('title')).toMatch(/^Sent as Pasted text \(2\)\.txt · \d+ lines · /);
+    const dialog = openEditor();
+    expect(dialog.textContent).toContain('Pasted text (2).txt');
   });
 
   it('opens the editor with the whole text when the card is clicked', () => {

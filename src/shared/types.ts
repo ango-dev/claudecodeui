@@ -900,7 +900,7 @@ export type BackgroundSendPrompt = {
   reason: BackgroundStopReason;
 };
 
-/** A long paste the chat composer shows as a card instead of in the message box; its text is sent ahead of the typed message. */
+/** A long paste the chat composer shows as a card instead of in the message box; it is sent as a `.txt` file attachment (inline only after a typed slash command or in a scheduled message). */
 export type PastedText = {
   /** Identifies the card while it is edited or removed. */
   id: string;

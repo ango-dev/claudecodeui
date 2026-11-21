@@ -219,7 +219,10 @@
       "save": "Save",
       "cancel": "Cancel",
       "size_one": "{{count}} line · {{characters}} characters",
-      "size_other": "{{count}} lines · {{characters}} characters"
+      "size_other": "{{count}} lines · {{characters}} characters",
+      "sentAs": "Sent as {{fileName}}",
+      "tooManyFiles": "A message can carry at most {{max}} files, and each pasted text is sent as one. Remove some files or pasted texts, then send again.",
+      "tooLarge": "{{fileName}} is larger than {{maxMegabytes}} MB, the most a file can be. Shorten the pasted text, then send again."
     }
   },
   "composer": {

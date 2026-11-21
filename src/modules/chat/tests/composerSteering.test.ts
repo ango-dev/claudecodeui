@@ -247,7 +247,7 @@ test('a refused steer joins the queue after the follow-ups already waiting', asy
   assert.deepEqual(view.result.current.queuedDrafts.map((draft) => draft.content), ['queued first', 'steered']);
 });
 
-test('pasted texts go into the turn with the steered message and leave the composer', async () => {
+test('pasted texts go into the turn with the steered message, as .txt files, and leave the composer', async () => {
   const { view, sent } = render();
   await act(async () => {
     view.result.current.setInput('see the log');
@@ -258,8 +258,12 @@ test('pasted texts go into the turn with the steered message and leave the compo
   });
 
   const [frame] = steerFrames(sent);
-  assert.ok(String(frame?.content).includes('ERROR at line 4'), 'the pasted text is sent');
-  assert.ok(String(frame?.content).includes('see the log'), 'with the typed text');
+  assert.equal(frame?.content, 'see the log', 'the text is only what was typed');
+  assert.deepEqual(
+    (frame?.options as { attachments?: unknown[] } | undefined)?.attachments,
+    [{ name: 'Pasted text.txt', path: '/uploads/Pasted text.txt' }],
+    'the paste goes as its uploaded file',
+  );
   assert.deepEqual(view.result.current.pastedTexts, []);
 });
 

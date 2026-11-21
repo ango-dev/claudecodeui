@@ -151,7 +151,7 @@ describe('Escape to stop the running turn', () => {
     expect(onResolve).toHaveBeenCalledWith('cancel');
     dialog.unmount();
 
-    const pasted = render(<PastedTextAttachment text="a long paste" onChange={() => undefined} onRemove={() => undefined} />);
+    const pasted = render(<PastedTextAttachment text="a long paste" fileName="Pasted text.txt" onChange={() => undefined} onRemove={() => undefined} />);
     fireEvent.click(screen.getByRole('button', { name: 'Edit pasted text' }));
     expect(screen.queryByRole('dialog')).not.toBeNull();
     fireEvent.keyDown(document.body, { key: 'Escape' });

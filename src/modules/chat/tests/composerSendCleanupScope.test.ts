@@ -304,10 +304,11 @@ test('pasted texts sent from a chat leave after a chat switch, the open chat\'s 
     view.result.current.setInput('typed in b');
     view.result.current.setPastedTexts((current) => [...current, pastedB]);
   });
-  await release(pendingUploads, { attachments: [{ id: 'asset-a' }] });
+  // The paste is uploaded as a file, ahead of the attached one.
+  await release(pendingUploads, { attachments: [{ id: 'asset-paste-a' }, { id: 'asset-a' }] });
 
   assert.equal(chatSends().length, 1);
-  assert.match(chatSends()[0].content ?? '', /long paste from a[\s\S]*from a/, 'the paste went out ahead of the typed text');
+  assert.equal(chatSends()[0].content, 'from a', 'the paste went out as a file, not inline');
   assert.deepEqual(view.result.current.pastedTexts, [pastedB], 'only the open chat\'s paste stays');
   assert.equal(readDraftText('session-a'), '', 'the sent chat\'s draft (its typed text) is cleared');
   assert.equal(view.result.current.input, 'typed in b');

@@ -101,10 +101,36 @@ test('appendFilesInputTag and parseFilesInputTag round-trip non-image files', ()
       '/tmp/cloudcli-assets/data.csv',
     ],
     attachments: [
-      { path: 'C:/Users/x/.cloudcli/assets/brief.pdf', name: 'Brief final.pdf' },
+      // A file name keeps its own parentheses through the round trip.
+      { path: 'C:/Users/x/.cloudcli/assets/brief.pdf', name: 'Brief (final).pdf' },
       { path: '/tmp/cloudcli-assets/data.csv', name: 'data.csv' },
     ],
   });
+});
+
+test('pasted-text file names keep their number through files_input, flattened or not', () => {
+  const files = [
+    { path: '/home/u/.cloudcli/assets/1-Pasted_text.txt', name: 'Pasted text.txt' },
+    { path: '/home/u/.cloudcli/assets/2-Pasted_text_2_.txt', name: 'Pasted text (2).txt' },
+  ];
+  const tagged = appendFilesInputTag('', files);
+  const expected = [
+    { path: '/home/u/.cloudcli/assets/1-Pasted_text.txt', name: 'Pasted text.txt' },
+    { path: '/home/u/.cloudcli/assets/2-Pasted_text_2_.txt', name: 'Pasted text (2).txt' },
+  ];
+
+  // A message of only attachments: no text is left once the block is stripped.
+  assert.deepEqual(parseFilesInputTag(tagged), {
+    text: '',
+    filePaths: expected.map((file) => file.path),
+    attachments: expected,
+  });
+  assert.deepEqual(parseFilesInputTag(tagged.replace(/\s*\r?\n\s*/g, ' ')).attachments, expected);
+});
+
+test('parseFilesInputTag still reads names written before parentheses were kept', () => {
+  const legacy = 'look\n\n<files_input>\nThe user attached 1 file(s) to this message.\n1. /a/1-b.pdf (original name: Brief final.pdf)\n</files_input>';
+  assert.deepEqual(parseFilesInputTag(legacy).attachments, [{ path: '/a/1-b.pdf', name: 'Brief final.pdf' }]);
 });
 
 test('parseFilesInputTag handles Windows-flattened provider prompts', () => {

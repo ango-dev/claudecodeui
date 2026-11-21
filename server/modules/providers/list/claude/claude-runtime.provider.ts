@@ -23,7 +23,9 @@ import type { ElicitationRequest, ElicitationResult, SDKUserMessage } from '@ant
 import {
   appendFilesInputTag,
   buildClaudeUserContent,
-  normalizeImageDescriptors
+  normalizeAttachmentDescriptors,
+  normalizeImageDescriptors,
+  resolveImageAbsolutePath
 } from '@/shared/image-attachments.js';
 import {
   CLAUDE_PREDEFINED_MODELS,
@@ -1069,6 +1071,32 @@ export function createBackgroundWorkTracker() {
 }
 
 /**
+ * Records the files a turn's prompt lists in its `<files_input>` block as
+ * absolute paths, so that reading them needs no permission prompt. The user
+ * attached them to the message (a long paste goes as `Pasted text.txt`), and
+ * the gateway has already narrowed them to the upload store, but the store is
+ * outside the project, where Claude Code asks before every Read.
+ */
+function rememberAttachedFiles(attachedFilePaths: Set<string>, files: unknown, cwd: string | undefined): void {
+  for (const descriptor of normalizeAttachmentDescriptors(files)) {
+    attachedFilePaths.add(path.resolve(resolveImageAbsolutePath(cwd, descriptor.path)));
+  }
+}
+
+/**
+ * Whether a tool call is the Read tool reading one of the files the user
+ * attached to this run (see rememberAttachedFiles). Nothing else is matched:
+ * any other tool, or a Read of any other path, asks as before.
+ */
+function isReadOfAttachedFile(toolName: string, input: unknown, attachedFilePaths: Set<string>): boolean {
+  if (toolName !== 'Read' || !input || typeof input !== 'object') {
+    return false;
+  }
+  const filePath = (input as AnyRecord).file_path;
+  return typeof filePath === 'string' && path.isAbsolute(filePath) && attachedFilePaths.has(path.resolve(filePath));
+}
+
+/**
  * Builds the SDK user messages for one turn.
  *
  * Always returns SDKUserMessage records rather than a bare string: a string
@@ -1278,6 +1306,10 @@ async function queryClaudeSDK(
   // turn's `result` does not end the run: the CLI reads them in a follow-up
   // turn of its own.
   const pendingSteerIds = new Set<string>();
+  // Absolute paths of the files attached to this run's turns (its prompt,
+  // steered messages, and turns a held process takes): canUseTool lets the
+  // Read tool open these without asking.
+  const attachedFilePaths = new Set<string>();
   let steerFollowUpTimer: ReturnType<typeof setTimeout> | null = null;
   let idleReleaseTimer: ReturnType<typeof setTimeout> | null = null;
   // The client is told the turn is over as soon as `result` lands, even though
@@ -1450,6 +1482,7 @@ async function queryClaudeSDK(
     if (turnCompleteSent) {
       return false;
     }
+    rememberAttachedFiles(attachedFilePaths, files, options.cwd);
     const [steerMessage] = await buildPromptMessages(steerCommand, images, files, options.cwd);
     // Reading attachments takes a moment; the turn may have ended meanwhile.
     if (turnCompleteSent || !steerMessage) {
@@ -1497,6 +1530,7 @@ async function queryClaudeSDK(
     // `result`. The message list is reusable, but each query attempt needs its
     // own stream because an async generator cannot be replayed once consumed.
     const promptMessages = await buildPromptMessages(command, options.images, options.files, options.cwd);
+    rememberAttachedFiles(attachedFilePaths, options.files, options.cwd);
 
     sdkOptions.hooks = {
       Notification: [{
@@ -1607,6 +1641,11 @@ async function queryClaudeSDK(
         );
         if (isDisallowed) {
           return { behavior: 'deny', message: 'Tool disallowed by settings' };
+        }
+
+        // Reading a file the user attached to the message is what they asked for.
+        if (isReadOfAttachedFile(toolName, input, attachedFilePaths)) {
+          return { behavior: 'allow', updatedInput: input };
         }
 
         const isAllowed = (sdkOptions.allowedTools || []).some((entry: string) =>
@@ -1783,6 +1822,7 @@ async function queryClaudeSDK(
           await liveQuery.setPermissionMode!(nextPermissionMode);
         }
         nextPrompt = await buildPromptMessages(nextCommand, nextOptions.images, nextOptions.files, nextOptions.cwd);
+        rememberAttachedFiles(attachedFilePaths, nextOptions.files, nextOptions.cwd);
       } catch (error) {
         console.warn('[Claude SDK] The held process could not take the next turn; starting a new one:', (error as Error)?.message || error);
         return null;

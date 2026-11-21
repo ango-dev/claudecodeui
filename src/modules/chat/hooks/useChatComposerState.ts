@@ -15,7 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { api } from '@/shared/api';
 import { PROVIDER_PERMISSION_PREFERENCE_KEYS } from '@/shared/constants';
 import { readUserPreference } from '@/shared/userSettings';
-import { createLocalMessageId, isPromptCommand, withPastedTexts } from '@/shared/utils';
+import { createLocalMessageId, createPastedTextFiles, isPromptCommand, withPastedTexts } from '@/shared/utils';
 import type { BackgroundSendChoice, BackgroundSendPrompt, BackgroundStopReason, CommandModalPayload, CostCommandData, HelpCommandData, MarkSessionProcessing, ModelCommandData, PastedText, PendingSteer, QueuedDraft, SessionActivityMap, StatusCommandData, SteerOutcome,QueuedSendOptions,ChatAttachment,ChatMessage,PendingPermissionRequest,PermissionMode,SessionEstablishedContext,Project,ProjectSession,LLMProvider,SlashCommand } from '@/shared/types';
 import { grantClaudeToolPermission } from '@/modules/chat/utils/chatPermissions';
 import {
@@ -189,7 +189,7 @@ type ComposerSubmission = Omit<QueuedDraft, 'id'>;
 
 /**
  * What a send took from the composer: the typed text (what a chat's draft
- * holds) and the pasted-text cards sent ahead of it. Pasted texts, like
+ * holds) and the pasted-text cards sent with it. Pasted texts, like
  * attachments, are shared by every chat, so the cleanup after a send that
  * outlasted a chat switch removes exactly these and nothing typed since.
  */
@@ -1068,7 +1068,7 @@ export function useChatComposerState({
       recordSentMessage(message.content, steerSessionKey);
       // Attachments and pasted texts are not kept per chat: the steered ones
       // leave even when another chat is open now. The pasted texts went out
-      // with it, ahead of the typed text.
+      // with it, as files.
       setAttachedFiles((files) => files.filter((file) => !message.attachments.includes(file)));
       setPastedTexts((current) => current.filter((pasted) => !takenFromComposer.pastedTexts.includes(pasted)));
 
@@ -1183,11 +1183,21 @@ export function useChatComposerState({
       // What was typed (or the follow-up being submitted), without the pasted
       // texts: only it can be a slash command, and it names a new chat.
       const typedInput = queuedSubmission?.content ?? inputValueRef.current;
-      const currentInput = queuedSubmission ? typedInput : withPastedTexts(pastedTexts, typedInput);
-      const summaryInput = typedInput.trim() ? typedInput : currentInput;
-      const currentAttachments = queuedSubmission?.attachments ?? attachedFiles;
       // A follow-up submitted in place of the input takes no pasted cards.
-      const sentParts: ComposerSendParts = { typedText: typedInput, pastedTexts: queuedSubmission ? [] : pastedTexts };
+      const sentPastedTexts = queuedSubmission ? [] : pastedTexts;
+      // Each pasted card goes as a `.txt` file, as Claude sends a long paste,
+      // and the message text is only what was typed. A message that opens
+      // with "/" is read as a slash command, whose input is its argument
+      // text, not a file: there the pastes stay inline after the command, as
+      // they always did (a custom command's `$ARGUMENTS` gets them).
+      const inlinesPastedTexts = typedInput.trimStart().startsWith('/');
+      const currentInput = inlinesPastedTexts ? withPastedTexts(sentPastedTexts, typedInput) : typedInput;
+      const pastedFiles = inlinesPastedTexts ? [] : createPastedTextFiles(sentPastedTexts);
+      // A new chat sent with only pastes is still named after their words.
+      const summaryInput = typedInput.trim() ? typedInput : withPastedTexts(sentPastedTexts, typedInput);
+      // Pasted files go first, in paste order, ahead of the user's own files.
+      const currentAttachments = queuedSubmission?.attachments ?? [...pastedFiles, ...attachedFiles];
+      const sentParts: ComposerSendParts = { typedText: typedInput, pastedTexts: sentPastedTexts };
       const previouslyUploadedAttachments = queuedSubmission?.uploadedAttachments ?? [];
       if (
         (
@@ -1218,6 +1228,36 @@ export function useChatComposerState({
         const btwMatch = typedInput.trim().match(/^\/btw(?:\s+([\s\S]*))?$/i);
         if (btwMatch) {
           askSideQuestionAndClear(sessionKey, btwMatch[1] ?? '');
+          return;
+        }
+      }
+
+      // Pasted files count toward the per-message file limit (the upload
+      // takes at most that many). Refused here, with everything left in the
+      // composer, rather than dropping a paste or failing the upload.
+      if (pastedFiles.length > 0) {
+        if (currentAttachments.length > MAX_ATTACHMENT_COUNT) {
+          addMessage({
+            type: 'error',
+            content: t('input.pasted.tooManyFiles', {
+              max: MAX_ATTACHMENT_COUNT,
+              defaultValue: 'A message can carry at most {{max}} files, and each pasted text is sent as one. Remove some files or pasted texts, then send again.',
+            }),
+            timestamp: new Date(),
+          });
+          return;
+        }
+        const oversizedPaste = pastedFiles.find((file) => file.size > MAX_ATTACHMENT_SIZE);
+        if (oversizedPaste) {
+          addMessage({
+            type: 'error',
+            content: t('input.pasted.tooLarge', {
+              fileName: oversizedPaste.name,
+              maxMegabytes: MAX_ATTACHMENT_SIZE / (1024 * 1024),
+              defaultValue: '{{fileName}} is larger than {{maxMegabytes}} MB, the most a file can be. Shorten the pasted text, then send again.',
+            }),
+            timestamp: new Date(),
+          });
           return;
         }
       }
@@ -1278,7 +1318,8 @@ export function useChatComposerState({
       // Intercept slash commands only when "/" is the first input character.
       // Also accept exact "help" as a convenience alias for users who expect CLI-style help.
       const commandInput = currentInput.trimEnd();
-      const isHelpAlias = commandInput.trim().toLowerCase() === 'help';
+      // A pasted card makes "help" the text of a real message about the paste.
+      const isHelpAlias = commandInput.trim().toLowerCase() === 'help' && pastedFiles.length === 0;
       // Pasted text that happens to start with a command name is not a command.
       if (
         !submitOptions?.skipCommandInterception
@@ -1349,7 +1390,8 @@ export function useChatComposerState({
           const response = await api.providers.createSession({
             provider,
             projectPath: resolvedProjectPath,
-            initialMessage: messageContent,
+            // Only names the new session; with nothing typed, the pastes do.
+            initialMessage: summaryInput,
           });
           if (!response.ok) {
             throw new Error(`Failed to create session (${response.status})`);

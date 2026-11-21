@@ -233,7 +233,10 @@ export function appendFilesInputTag(prompt: string, files: unknown): string {
 
   const entryLines = descriptors.map((descriptor, index) => {
     const entryPath = toPosixPath(descriptor.path);
-    const cleanName = descriptor.name?.replace(/[()\r\n]/g, '').trim();
+    // Newlines would split the entry. Parentheses are kept: the parser reads
+    // the name up to the entry's LAST ")", so `Pasted text (2).txt` or
+    // `report (final).pdf` keeps its name when history is reloaded.
+    const cleanName = descriptor.name?.replace(/[\r\n]+/g, ' ').trim();
     return cleanName
       ? `${index + 1}. ${entryPath} (original name: ${cleanName})`
       : `${index + 1}. ${entryPath}`;
@@ -254,7 +257,10 @@ export function appendFilesInputTag(prompt: string, files: unknown): string {
 // next ` N. ` marker (or the end of the body) delimits each entry.
 const IMAGES_INPUT_ENTRY_PATTERN = /\d+\.\s+(.+?)(?=\s+\d+\.\s+|\s*$)/g;
 
-const ORIGINAL_NAME_SUFFIX_PATTERN = /\(original name: ([^)]*)\)\s*$/;
+// Greedy up to the entry's final ")", so a name that has parentheses of its
+// own (kept by appendFilesInputTag) is read whole; the suffix opens at the
+// first "(original name: " because stored paths never contain one.
+const ORIGINAL_NAME_SUFFIX_PATTERN = /\(original name: (.*)\)\s*$/;
 
 function parseNumberedImageEntries(inner: string): ParsedImageAttachment[] {
   const attachments: ParsedImageAttachment[] = [];

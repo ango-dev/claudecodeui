@@ -302,10 +302,12 @@ export const isPromptCommand = (command: SlashCommand): boolean =>
 //----------------- CHAT COMPOSER ------------
 
 /**
- * The text a chat composer sends: each pasted-text card, in paste order, then
- * what was typed, joined by a blank line (blank parts are left out); a typed
- * slash command goes first instead. Used by
- * chat when sending or queueing a message and when scheduling one.
+ * The text of a message that carries its pasted-text cards inline rather than
+ * as `.txt` files: each card, in paste order, then what was typed, joined by a
+ * blank line (blank parts are left out); a typed slash command goes first
+ * instead. Used by chat where a paste cannot travel as a file — a typed slash
+ * command (whose input is its argument text) and a scheduled message — and
+ * for the session name of a new chat sent with nothing typed.
  */
 export const withPastedTexts = (pastedTexts: PastedText[], typed: string): string => {
   const pasted = pastedTexts.map((entry) => entry.text);
@@ -314,6 +316,30 @@ export const withPastedTexts = (pastedTexts: PastedText[], typed: string): strin
   const parts = typed.trimStart().startsWith('/') ? [typed, ...pasted] : [...pasted, typed];
   return parts.filter((part) => part.trim()).join('\n\n');
 };
+
+/**
+ * The file name the pasted-text card at `index` (0-based, in paste order) is
+ * sent as, the way Claude names pasted content: `Pasted text.txt`, then
+ * `Pasted text (2).txt`, `Pasted text (3).txt`, ... Used by chat's composer to
+ * label each card and by `createPastedTextFiles`, so both always agree.
+ */
+export const pastedTextFileName = (index: number): string => (
+  index === 0 ? 'Pasted text.txt' : `Pasted text (${index + 1}).txt`
+);
+
+/**
+ * Turns pasted-text cards into the `.txt` files a message carries in their
+ * place, in paste order and named by `pastedTextFileName`. Each file holds the
+ * card's text exactly, UTF-8 encoded. Used by chat's composer when it sends,
+ * queues or steers a message, to upload the pastes with the other attachments.
+ */
+export const createPastedTextFiles = (pastedTexts: PastedText[]): File[] => (
+  pastedTexts.map((pasted, index) => new File(
+    [pasted.text],
+    pastedTextFileName(index),
+    { type: 'text/plain;charset=utf-8' },
+  ))
+);
 
 /**
  * A fresh id for a client-side optimistic chat row, `local_<time>_<random>`.

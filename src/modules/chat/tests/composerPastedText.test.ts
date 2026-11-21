@@ -5,23 +5,25 @@ import { afterEach, beforeEach, test, vi } from 'vitest';
 
 import '@/modules/i18n';
 import { useChatComposerState } from '@/modules/chat/hooks/useChatComposerState';
-import type { PermissionMode, Project, ProjectSession } from '@/shared/types';
+import type { ChatMessage, PermissionMode, Project, ProjectSession, SessionActivityMap } from '@/shared/types';
 
 /**
  * A long paste (1,000+ characters or 15+ lines) becomes a "Pasted" card next
  * to the attachments instead of filling the message box, as on claude.ai. On
- * send, each card's text goes first, in paste order, then the typed text, all
- * joined by a blank line; the cards clear with the message.
+ * send each card goes, like Claude sends a long paste, as a `.txt` file:
+ * `Pasted text.txt`, `Pasted text (2).txt`, ... uploaded in paste order ahead
+ * of the user's own files, while the message text is only what was typed.
+ * After a typed slash command the pastes stay inline, as its argument text.
  */
 
 // The queue is server-backed; only what the composer hands it matters here.
-const queuedMessages = vi.hoisted(() => [] as Array<{ scope: string; content: string }>);
+const queuedMessages = vi.hoisted(() => [] as Array<{ scope: string; content: string; attachments: unknown[] }>);
 vi.mock('@/shared/chatDrafts', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
-    appendQueuedMessage: async (scope: string, message: { content: string }) => {
-      queuedMessages.push({ scope, content: message.content });
+    appendQueuedMessage: async (scope: string, message: { content: string; attachments?: unknown[] }) => {
+      queuedMessages.push({ scope, content: message.content, attachments: message.attachments ?? [] });
       return { kept: true };
     },
   };
@@ -36,8 +38,56 @@ const MANY_LINES = Array.from({ length: 15 }, (_, index) => `line ${index + 1}`)
 const jsonResponse = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
-const renderComposer = async ({ isLoading = false }: { isLoading?: boolean } = {}) => {
-  const sent: Array<{ type: string; sessionId?: string; content?: string }> = [];
+type SentFrame = {
+  type: string;
+  sessionId?: string;
+  content?: string;
+  clientMessageId?: string;
+  options?: { attachments?: unknown[] };
+};
+
+/** One upload request as the server received it: each file's name, type and exact bytes. */
+type ReceivedUpload = Array<{ name: string; type: string; bytes: Uint8Array }>;
+let uploads: ReceivedUpload[];
+// Set by a test to make the upload endpoint fail.
+let uploadFails: boolean;
+
+/** The stored descriptor the server returns for an uploaded file. */
+const storedRecord = (name: string, index: number, size: number) => ({
+  name,
+  path: `/home/u/.cloudcli/assets/${index}-${name.replace(/[^a-zA-Z0-9.-]/g, '_')}`,
+  size,
+  mimeType: 'text/plain;charset=utf-8',
+});
+
+const readBytes = (file: File) => new Promise<Uint8Array>((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(new Uint8Array(reader.result as ArrayBuffer));
+  reader.onerror = () => reject(reader.error);
+  reader.readAsArrayBuffer(file);
+});
+
+// The upload endpoint, as the server implements it; every other request gets an empty list.
+const fakeFetch = async (url: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  if (String(url) === '/api/assets/files' && init?.method === 'POST') {
+    if (uploadFails) {
+      return jsonResponse({ error: 'Disk full' }, 500);
+    }
+    const files = (init.body as FormData).getAll('files') as File[];
+    uploads.push(await Promise.all(files.map(async (file) => ({ name: file.name, type: file.type, bytes: await readBytes(file) }))));
+    return jsonResponse({ attachments: files.map((file, index) => storedRecord(file.name, index, file.size)) });
+  }
+  return jsonResponse([]);
+};
+
+const uploadedNames = () => uploads.map((upload) => upload.map((file) => file.name));
+const decode = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
+
+const renderComposer = async (
+  { isLoading = false, processingSessions }: { isLoading?: boolean; processingSessions?: SessionActivityMap } = {},
+) => {
+  const sent: SentFrame[] = [];
+  const added: ChatMessage[] = [];
   const view = renderHook(() =>
     useChatComposerState({
       selectedProject: PROJECT,
@@ -50,17 +100,23 @@ const renderComposer = async ({ isLoading = false }: { isLoading?: boolean } = {
       currentProviderModel: 'test-model',
       currentProviderEffort: 'medium',
       isLoading,
+      processingSessions,
       canAbortSession: false,
       tokenBudget: null,
-      sendMessage: (message) => { sent.push(message as { type: string }); },
+      sendMessage: (message) => { sent.push(message as SentFrame); },
       scrollToBottom: () => undefined,
-      addMessage: () => undefined,
+      addMessage: (message) => { added.push(message); },
       setIsUserScrolledUp: () => undefined,
       setPendingPermissionRequests: () => undefined,
     }));
   // Let the mount-time requests (slash commands, drafts) finish while fetch is stubbed.
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
-  return { view, chatSends: () => sent.filter((message) => message.type === 'chat.send') };
+  return {
+    view,
+    chatSends: () => sent.filter((message) => message.type === 'chat.send'),
+    errors: () => added.filter((message) => message.type === 'error').map((message) => String(message.content)),
+    echoes: () => added.filter((message) => message.type === 'user'),
+  };
 };
 
 type ComposerView = Awaited<ReturnType<typeof renderComposer>>['view'];
@@ -93,7 +149,9 @@ const submit = async (view: ComposerView) => {
 
 beforeEach(() => {
   queuedMessages.length = 0;
-  vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse([]))));
+  uploads = [];
+  uploadFails = false;
+  vi.stubGlobal('fetch', vi.fn(fakeFetch));
   localStorage.clear();
 });
 
@@ -159,23 +217,83 @@ test('a card is edited and removed by its id', async () => {
   assert.deepEqual(view.result.current.pastedTexts, [{ id: first.id, text: 'edited' }]);
 });
 
-test('sending puts each pasted text, in paste order, ahead of the typed text and clears the cards', async () => {
+test('each card is sent as a .txt file, in paste order ahead of attached files, and the text is only what was typed', async () => {
   const { view, chatSends } = await renderComposer();
+  const userFile = new File(['%PDF'], 'brief.pdf', { type: 'application/pdf' });
   paste(view, LONG_TEXT);
   paste(view, MANY_LINES);
-  act(() => { view.result.current.setInput('Summarize both'); });
+  act(() => {
+    view.result.current.setAttachedFiles([userFile]);
+    view.result.current.setInput('Summarize both');
+  });
 
   await submit(view);
 
+  assert.deepEqual(uploadedNames(), [['Pasted text.txt', 'Pasted text (2).txt', 'brief.pdf']]);
+  const [upload] = uploads;
+  assert.equal(decode(upload[0].bytes), LONG_TEXT);
+  assert.equal(decode(upload[1].bytes), MANY_LINES);
+  assert.equal(upload[0].type, 'text/plain;charset=utf-8');
+
+  const [frame] = chatSends();
+  assert.equal(frame.content, 'Summarize both', 'no pasted text is inlined');
   assert.deepEqual(
-    chatSends().map((message) => [message.sessionId, message.content]),
-    [['session-existing', `${LONG_TEXT}\n\n${MANY_LINES}\n\nSummarize both`]],
+    ((frame.options?.attachments ?? []) as Array<{ name: string }>).map((attachment) => attachment.name),
+    ['Pasted text.txt', 'Pasted text (2).txt', 'brief.pdf'],
   );
   assert.deepEqual(view.result.current.pastedTexts, []);
+  assert.deepEqual(view.result.current.attachedFiles, []);
   assert.equal(view.result.current.input, '');
 });
 
-test('a typed slash command leads the message, with the pasted text after it as its input', async () => {
+test('the .txt file holds the paste exactly, UTF-8 encoded, emoji and CJK included', async () => {
+  const { view } = await renderComposer();
+  const unicode = `${'日本語のテキスト 🚀 Ünïcødé — 中文 '.repeat(40)}\r\nend 👋🏽`;
+  paste(view, unicode);
+  act(() => { view.result.current.setInput('read it'); });
+
+  await submit(view);
+
+  const [[file]] = uploads;
+  assert.deepEqual(Array.from(file.bytes), Array.from(new TextEncoder().encode(unicode)));
+  assert.equal(decode(file.bytes), unicode);
+});
+
+test('numbering follows the cards left after one is removed', async () => {
+  const { view } = await renderComposer();
+  paste(view, LONG_TEXT);
+  paste(view, MANY_LINES);
+  paste(view, `${LONG_TEXT}!`);
+  act(() => {
+    view.result.current.removePastedText(view.result.current.pastedTexts[0].id);
+    view.result.current.setInput('go');
+  });
+
+  await submit(view);
+
+  assert.deepEqual(uploadedNames(), [['Pasted text.txt', 'Pasted text (2).txt']]);
+  assert.equal(decode(uploads[0][0].bytes), MANY_LINES);
+});
+
+test('a message of only a pasted card, with nothing typed, is sent with the file and shows its card at once', async () => {
+  const { view, chatSends, echoes } = await renderComposer();
+  paste(view, LONG_TEXT);
+
+  await submit(view);
+
+  const [frame] = chatSends();
+  assert.equal(frame.content, '');
+  assert.equal(((frame.options?.attachments ?? []) as unknown[]).length, 1);
+  // The optimistic echo carries the file card and no text, under the id sent with it.
+  const [echo] = echoes();
+  assert.equal(echo.content, '');
+  assert.equal(echo.clientMessageId, frame.clientMessageId);
+  assert.deepEqual((echo.files ?? []).map((file) => file.name), ['Pasted text.txt']);
+  assert.deepEqual(echo.images, []);
+  assert.deepEqual(view.result.current.pastedTexts, []);
+});
+
+test('a typed slash command keeps the pasted text inline after it, as its argument text', async () => {
   const { view, chatSends } = await renderComposer();
   paste(view, LONG_TEXT);
   act(() => { view.result.current.setInput('/review'); });
@@ -183,29 +301,32 @@ test('a typed slash command leads the message, with the pasted text after it as 
   await submit(view);
 
   assert.deepEqual(chatSends().map((message) => message.content), [`/review\n\n${LONG_TEXT}`]);
+  assert.equal(uploads.length, 0, 'nothing is uploaded for the paste');
 });
 
-test('pasted text that starts with a command name is sent as text, not run as a command', async () => {
+test('pasted text that starts with a command name is sent as a file, not run as a command', async () => {
   const { view, chatSends } = await renderComposer();
   const pastedHelp = `/help ${LONG_TEXT}`;
   paste(view, pastedHelp);
 
   await submit(view);
 
-  assert.deepEqual(chatSends().map((message) => message.content), [pastedHelp]);
+  assert.deepEqual(chatSends().map((message) => message.content), ['']);
+  assert.equal(decode(uploads[0][0].bytes), pastedHelp);
 });
 
-test('a message of only a pasted card, with nothing typed, is sent', async () => {
+test('"help" typed with a pasted card is a message about the paste, not the help alias', async () => {
   const { view, chatSends } = await renderComposer();
   paste(view, LONG_TEXT);
+  act(() => { view.result.current.setInput('help'); });
 
   await submit(view);
 
-  assert.deepEqual(chatSends().map((message) => message.content), [LONG_TEXT]);
-  assert.deepEqual(view.result.current.pastedTexts, []);
+  assert.deepEqual(chatSends().map((message) => message.content), ['help']);
+  assert.deepEqual(uploadedNames(), [['Pasted text.txt']]);
 });
 
-test('while a reply runs, the pasted and typed text are queued together and the cards clear', async () => {
+test('while a reply runs, the typed text is queued with the uploaded pasted file and the cards clear', async () => {
   const { view, chatSends } = await renderComposer({ isLoading: true });
   paste(view, LONG_TEXT);
   act(() => { view.result.current.setInput('next'); });
@@ -213,7 +334,73 @@ test('while a reply runs, the pasted and typed text are queued together and the 
   await submit(view);
 
   assert.equal(chatSends().length, 0, 'nothing is sent while the reply runs');
-  assert.deepEqual(queuedMessages, [{ scope: 'session-existing', content: `${LONG_TEXT}\n\nnext` }]);
+  assert.deepEqual(queuedMessages, [{
+    scope: 'session-existing',
+    content: 'next',
+    attachments: [storedRecord('Pasted text.txt', 0, LONG_TEXT.length)],
+  }]);
   assert.deepEqual(view.result.current.pastedTexts, []);
   assert.equal(view.result.current.input, '');
+});
+
+test('the background-work Queue choice queues the typed text with the uploaded pasted file', async () => {
+  const processingSessions: SessionActivityMap = new Map([[SESSION.id as string, {
+    statusText: null,
+    canInterrupt: false,
+    startedAt: 1,
+    background: true,
+    tasks: [{ taskId: 't1', toolUseId: 'toolu_1', taskType: 'local_agent', description: 'Survey', startedAt: 1 }],
+  }]]);
+  const { view, chatSends } = await renderComposer({ processingSessions });
+  paste(view, LONG_TEXT);
+  act(() => { view.result.current.setInput('after the work'); });
+
+  await act(async () => { await view.result.current.handleSendMenuChoice('queue'); });
+
+  assert.equal(chatSends().length, 0);
+  assert.deepEqual(queuedMessages, [{
+    scope: 'session-existing',
+    content: 'after the work',
+    attachments: [storedRecord('Pasted text.txt', 0, LONG_TEXT.length)],
+  }]);
+  assert.deepEqual(view.result.current.pastedTexts, []);
+});
+
+test('a failed upload is reported and leaves the cards and the typed text in the composer', async () => {
+  const { view, chatSends, errors } = await renderComposer();
+  uploadFails = true;
+  paste(view, LONG_TEXT);
+  act(() => { view.result.current.setInput('keep me'); });
+  const cards = view.result.current.pastedTexts;
+
+  await submit(view);
+
+  assert.equal(chatSends().length, 0);
+  assert.deepEqual(errors(), ['Failed to upload files: Disk full']);
+  assert.deepEqual(view.result.current.pastedTexts, cards);
+  assert.equal(view.result.current.input, 'keep me');
+});
+
+test('pasted files count toward the 10-file limit: over it, nothing is sent and nothing is dropped', async () => {
+  const { view, chatSends, errors } = await renderComposer();
+  const files = Array.from({ length: 10 }, (_, index) => new File(['x'], `f${index}.txt`));
+  act(() => { view.result.current.setAttachedFiles(files); });
+  paste(view, LONG_TEXT);
+
+  await submit(view);
+
+  assert.equal(chatSends().length, 0);
+  assert.equal(uploads.length, 0);
+  assert.equal(errors().length, 1);
+  assert.match(errors()[0], /at most 10 files/);
+  assert.equal(view.result.current.pastedTexts.length, 1, 'the paste is kept');
+  assert.equal(view.result.current.attachedFiles.length, 10);
+
+  // Removing one file makes room; the paste then goes out with the rest.
+  act(() => { view.result.current.setAttachedFiles(files.slice(1)); });
+  await submit(view);
+  assert.equal(chatSends().length, 1);
+  const [names] = uploadedNames();
+  assert.equal(names.length, 10);
+  assert.equal(names[0], 'Pasted text.txt');
 });

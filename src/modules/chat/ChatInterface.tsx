@@ -440,7 +440,9 @@ function ChatInterface({
    * the box as a send would — the message has left the composer either way.
    */
   const handleScheduleMessage = useCallback(async (scheduledFor: Date) => {
-    // Pasted-text cards are part of the message, ahead of the typed text, as on send.
+    // A scheduled message is text only (attached files are not scheduled with
+    // it, and the server stores and shows just its content), so its pasted
+    // cards go inline, ahead of the typed text, rather than as `.txt` files.
     const content = withPastedTexts(pastedTexts, input).trim();
     if (!content) return;
 
