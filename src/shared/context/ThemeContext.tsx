@@ -72,10 +72,12 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
 
-      // Update iOS status bar style and theme color for dark mode
+      // Update iOS status bar style and theme color for dark mode. Solid, not
+      // black-translucent: drawn under a translucent bar, iOS 26 blurs the top
+      // of the home-screen app (see index.html).
       const statusBarMeta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
       if (statusBarMeta) {
-        statusBarMeta.setAttribute('content', 'black-translucent');
+        statusBarMeta.setAttribute('content', 'black');
       }
 
       const themeColorMeta = document.querySelector('meta[name="theme-color"]');

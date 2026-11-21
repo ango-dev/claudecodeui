@@ -20,7 +20,25 @@
     
     <!-- iOS Safari PWA Meta Tags -->
     <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- A solid status bar: the home-screen app starts below it. Drawn under a
+         translucent one, iOS 26 blurs the top of the app (its scroll edge
+         effect), and no CSS or meta tag turns that off. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <script>
+      // iOS reads the style as the home-screen app launches, before the app
+      // runs, so the saved theme picks it here: black in dark, white in light.
+      (function () {
+        try {
+          var theme = (JSON.parse(localStorage.getItem('user-preferences') || '{}') || {}).theme;
+          var dark = theme === 'dark'
+            || (theme !== 'light' && !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches));
+          document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')
+            .setAttribute('content', dark ? 'black' : 'default');
+        } catch (error) {
+          // Keep the static value.
+        }
+      })();
+    </script>
     <meta name="apple-mobile-web-app-title" content="Claude UI" />
     
     <!-- iOS Safari Icons -->

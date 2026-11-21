@@ -194,9 +194,10 @@
     overflow: hidden;
   }
 
-  /* Room for the iOS status bar in home-screen apps. The workspace columns run
-     up behind it and start their content this far down, where both headers
-     keep their usual top padding, as on a computer. */
+  /* Room for the iOS status bar in home-screen apps. With the solid status
+     bar (see index.html) the app starts below it and this inset is 0; it only
+     matters if the bar is made translucent again, when the workspace columns
+     run up behind it and start their content this far down. */
   body.pwa-mode {
     --shell-top-inset: var(--header-safe-area-top);
   }
