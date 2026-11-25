@@ -15,7 +15,7 @@ import { EraserIcon, PlusIcon, Loader2, ArrowUpIcon, PencilIcon } from 'lucide-r
 import { useVoiceInput } from '@/modules/chat/hooks/useVoiceInput';
 import { useVoiceAvailable } from '@/modules/chat/hooks/useVoiceAvailable';
 import { MCP_ELICITATION_TOOL_NAME } from '@/shared/constants';
-import type { BackgroundSendChoice, BackgroundSendPrompt, PastedText, PendingSteer, QueuedDraft, ScheduledMessage, SlashCommand,SessionActivity,PendingPermissionRequest,PermissionMode,ProviderModelOption } from '@/shared/types';
+import type { AttachmentRejection, BackgroundSendChoice, BackgroundSendPrompt, PastedText, PendingSteer, QueuedDraft, ScheduledMessage, SlashCommand,SessionActivity,PendingPermissionRequest,PermissionMode,ProviderModelOption } from '@/shared/types';
 import { formatShortcut, pastedTextFileName } from '@/shared/utils';
 import {
   PromptInput,
@@ -30,6 +30,7 @@ import {
 import CommandMenu from '@/modules/chat/composer/CommandMenu';
 import ActivityIndicator from '@/modules/chat/composer/ActivityIndicator';
 import ComposerAttachment from '@/modules/chat/composer/ComposerAttachment';
+import AttachmentRejectionNotice from '@/modules/chat/composer/AttachmentRejectionNotice';
 import VoiceInputButton from '@/modules/chat/composer/VoiceInputButton';
 import PermissionRequestsBanner from '@/modules/chat/composer/PermissionRequestsBanner';
 import TokenUsageSummary from '@/modules/chat/composer/TokenUsageSummary';
@@ -115,7 +116,9 @@ type ChatComposerProps = {
   pastedTexts: PastedText[];
   onChangePastedText: (id: string, text: string) => void;
   onRemovePastedText: (id: string) => void;
-  fileErrors: Map<string, string>;
+  /** Files the latest attach or send attempt refused (too large, or past the count limit, pasted texts included), listed in a notice above the chips. */
+  attachmentRejections: AttachmentRejection[];
+  onDismissAttachmentRejections: () => void;
   showFileDropdown: boolean;
   filteredFiles: MentionableFile[];
   selectedFileIndex: number;
@@ -204,7 +207,8 @@ export default function ChatComposer({
   onChangePastedText,
   onRemovePastedText,
   onRemoveAttachment,
-  fileErrors,
+  attachmentRejections,
+  onDismissAttachmentRejections,
   showFileDropdown,
   filteredFiles,
   selectedFileIndex,
@@ -354,15 +358,19 @@ export default function ChatComposer({
   );
 
   return (
-    <div className="chat-composer-shell relative flex-shrink-0 px-2 pt-0 sm:px-4 md:px-4">
+    // The shell's side padding is its gutter (`--chat-shell-gutter` in index.css),
+    // which the pieces' `chat-composer-width` adds back to match the transcript.
+    <div className="chat-composer-shell relative flex-shrink-0 pt-0">
       {!hasPendingPermissions && (
-        <div className="pointer-events-none absolute bottom-full left-1/2 z-10 w-[calc(100%-1rem)] max-w-[54.25rem] -translate-x-1/2 translate-y-px bg-transparent sm:w-[calc(100%-2rem)]">
+        // Positioned against the shell's padding box, the whole pane width, so
+        // it takes the transcript's width class rather than the composer's.
+        <div className="chat-content-width pointer-events-none absolute bottom-full left-1/2 z-10 w-[calc(100%-2*var(--chat-shell-gutter))] -translate-x-1/2 translate-y-px bg-transparent">
           <ActivityIndicator activity={activity} onAbort={onAbortSession} isInputFocused={isInputFocused} />
         </div>
       )}
 
       {pendingPermissionRequests.length > 0 && (
-        <div className="mx-auto mb-3 max-w-[54.25rem]">
+        <div className="chat-composer-width mx-auto mb-3">
           <PermissionRequestsBanner
             pendingPermissionRequests={pendingPermissionRequests}
             providerLabel={providerLabel}
@@ -378,7 +386,7 @@ export default function ChatComposer({
       />
 
       {isEditingSentMessage && (
-        <div className="mx-auto mb-2 flex max-w-[54.25rem] items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-foreground">
+        <div className="chat-composer-width mx-auto mb-2 flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-foreground">
           <PencilIcon className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
           <span className="min-w-0 flex-1">
             {t('composer.editing.title')}
@@ -417,7 +425,7 @@ export default function ChatComposer({
           // and miss the message box's at the join.
           data-slot="queued-attached"
           data-testid="composer-attached-stack"
-          className={`settings-content-enter mx-auto max-w-[54.25rem] divide-y divide-primary/15 border border-b-0 ${stackTouchesActivityTab ? 'rounded-t-[0.5px]' : 'rounded-t-lg'}`}
+          className={`chat-composer-width settings-content-enter mx-auto divide-y divide-primary/15 border border-b-0 ${stackTouchesActivityTab ? 'rounded-t-[0.5px]' : 'rounded-t-lg'}`}
         >
           {pendingSteers.map((steer) => (
             <SteeredMessageCard key={steer.messageId} steer={steer} providerLabel={providerLabel} />
@@ -429,12 +437,12 @@ export default function ChatComposer({
       {/* The question panel replaces the input, but how to answer often depends on
           how much context is left, so the token usage stays reachable below it. */}
       {hasQuestionPanel && (
-        <div className="mx-auto flex max-w-[54.25rem] justify-end">
+        <div className="chat-composer-width mx-auto flex justify-end">
           <TokenUsageSummary usage={tokenBudget} onClick={onShowTokenUsage} />
         </div>
       )}
 
-      {!hasQuestionPanel && <div className="relative mx-auto max-w-[54.25rem]">
+      {!hasQuestionPanel && <div className="chat-composer-width relative mx-auto">
         {showFileDropdown && filteredFiles.length > 0 && (
           <div
             ref={fileDropdownRef}
@@ -510,29 +518,34 @@ export default function ChatComposer({
             </div>
           )}
 
-          {hasAttachments && (
-            <PromptInputHeader>
-              <div className="rounded-xl bg-muted/40 p-2">
-                <div className="flex flex-wrap gap-2">
-                  {pastedTexts.map((pasted, index) => (
-                    <PastedTextAttachment
-                      key={pasted.id}
-                      text={pasted.text}
-                      fileName={pastedTextFileName(index)}
-                      onChange={(text) => onChangePastedText(pasted.id, text)}
-                      onRemove={() => onRemovePastedText(pasted.id)}
-                    />
-                  ))}
-                  {attachedFiles.map((file, index) => (
-                    <ComposerAttachment
-                      key={`${file.name}-${file.lastModified}-${index}`}
-                      file={file}
-                      onRemove={() => onRemoveAttachment(index)}
-                      error={fileErrors.get(file.name)}
-                    />
-                  ))}
+          {(attachmentRejections.length > 0 || hasAttachments) && (
+            <PromptInputHeader className="flex flex-col gap-2">
+              <AttachmentRejectionNotice
+                rejections={attachmentRejections}
+                onDismiss={onDismissAttachmentRejections}
+              />
+              {hasAttachments && (
+                <div className="rounded-xl bg-muted/40 p-2">
+                  <div className="flex flex-wrap gap-2">
+                    {pastedTexts.map((pasted, index) => (
+                      <PastedTextAttachment
+                        key={pasted.id}
+                        text={pasted.text}
+                        fileName={pastedTextFileName(index)}
+                        onChange={(text) => onChangePastedText(pasted.id, text)}
+                        onRemove={() => onRemovePastedText(pasted.id)}
+                      />
+                    ))}
+                    {attachedFiles.map((file, index) => (
+                      <ComposerAttachment
+                        key={`${file.name}-${file.lastModified}-${index}`}
+                        file={file}
+                        onRemove={() => onRemoveAttachment(index)}
+                      />
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </PromptInputHeader>
           )}
 

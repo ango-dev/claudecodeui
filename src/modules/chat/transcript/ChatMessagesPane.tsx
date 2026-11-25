@@ -227,7 +227,7 @@ function ChatMessagesPane({
       )}
       {/* Where older messages land mid-fling on Safari (useChatSessionState's olderSpacerRef). */}
       {usesScrollAnchorFallback() && <div ref={olderSpacerRef} aria-hidden="true" />}
-            <div ref={transcriptContentRef} className="mx-auto w-full max-w-[54.25rem] space-y-3 px-4 sm:space-y-4">
+      <div ref={transcriptContentRef} className="chat-content-width mx-auto w-full space-y-3 px-4 sm:space-y-4">
       {(isLoadingSessionMessages || isProcessing) && chatMessages.length === 0 ? (
         <div className="mt-8 text-center text-gray-500 dark:text-gray-400">
           <div className="flex items-center justify-center space-x-2">

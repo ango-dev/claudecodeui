@@ -1,6 +1,6 @@
 import { Archive, Loader2, MessageSquare, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { KeyboardEvent, MouseEvent } from 'react';
+import type { KeyboardEvent, MouseEvent, ReactNode } from 'react';
 import type { TFunction } from 'i18next';
 
 import { Button, LLMProviderLogo, Tooltip } from '@/shared/ui';
@@ -14,8 +14,16 @@ import { useTouchScreen } from '@/modules/sidebar/hooks/useTouchScreen';
 import { RECENT_SESSIONS_SELECTION_SCOPE } from '@/modules/sidebar/utils/sidebarSelectionScopes';
 import { useShowOtherAgents } from '@/shared/agentVisibility';
 import { dragSelectRowProps } from '@/modules/sidebar/hooks/useSidebarDragSelect';
+import { useSessionPins } from '@/modules/sidebar/hooks/useSessionPins';
+import SidebarGroupLabel from '@/modules/sidebar/SidebarGroupLabel';
 
 type SidebarRecentConversationsProps = {
+  /**
+   * Collects the user's pins into a "Pinned" group above the recent ones (and
+   * leaves them out of it). SidebarContent turns it off while a search filter
+   * narrows the list, where unrelated pins would only get in the way.
+   */
+  groupPinned?: boolean;
   conversations: RecentConversationListItem[];
   total: number;
   hasMore: boolean;
@@ -60,8 +68,9 @@ function RecentConversationSkeleton() {
   );
 }
 
-/** Rendered by SidebarContent in the recents search mode to list recently active sessions across all projects. */
+/** Rendered by SidebarContent in the Conversations mode to list recently active sessions across all projects, with the user's pins in a group above them. */
 export default function SidebarRecentConversations({
+  groupPinned = false,
   conversations,
   total,
   hasMore,
@@ -83,11 +92,21 @@ export default function SidebarRecentConversations({
   const [contextMenu, setContextMenu] = useState<{ sessionId: string; point: { x: number; y: number } } | null>(null);
   const isTouchScreen = useTouchScreen();
 
+  // Pins come from the server list (SessionPinsProvider), so a pin older than
+  // the loaded recent pages still shows; it is never listed twice.
+  const pins = useSessionPins();
+  const pinnedConversations = groupPinned && pins ? pins.sessions : [];
+  const recentConversations = pinnedConversations.length > 0
+    ? conversations.filter((conversation) => !pins?.pinnedIds.has(conversation.sessionId))
+    : conversations;
+  // In screen order, so a Shift-click range or a drag runs across both groups.
+  const listedConversations = [...pinnedConversations, ...recentConversations];
+
   // A session with a response in flight can be neither archived nor deleted,
   // so it is not selectable either (the Projects list's rule).
   const isConversationRunning = (sessionId: string) =>
     sessionActions.activeSessions.has(sessionId) && !sessionActions.backgroundSessionIds.has(sessionId);
-  const selectableIds = conversations
+  const selectableIds = listedConversations
     .filter((conversation) => !isConversationRunning(conversation.sessionId))
     .map((conversation) => conversation.sessionId);
   const { sessionSelection, onCancelSessionSelection, onDeleteSelectedSessions } = bulkSelection;
@@ -153,12 +172,14 @@ export default function SidebarRecentConversations({
     return () => observer.disconnect();
   }, [canAutoLoadMore, conversationCount]);
 
+  // With pins on screen, the recent group's own loading and empty states sit
+  // under them instead of replacing the whole list.
+  const hasPinnedGroup = pinnedConversations.length > 0;
+  let recentPlaceholder: ReactNode = null;
   if (isLoading && conversations.length === 0) {
-    return <RecentConversationSkeleton />;
-  }
-
-  if (hasError && conversations.length === 0) {
-    return (
+    recentPlaceholder = <RecentConversationSkeleton />;
+  } else if (hasError && conversations.length === 0) {
+    recentPlaceholder = (
       <div className="px-4 py-10 text-center">
         <MessageSquare className="mx-auto mb-3 h-6 w-6 text-muted-foreground" />
         <p className="text-sm font-medium text-foreground">
@@ -169,10 +190,8 @@ export default function SidebarRecentConversations({
         </Button>
       </div>
     );
-  }
-
-  if (conversations.length === 0) {
-    return (
+  } else if (conversations.length === 0 && !hasPinnedGroup) {
+    recentPlaceholder = (
       <div className="px-4 py-10 text-center">
         <MessageSquare className="mx-auto mb-3 h-6 w-6 text-muted-foreground" />
         <p className="text-sm font-medium text-foreground">
@@ -184,240 +203,260 @@ export default function SidebarRecentConversations({
       </div>
     );
   }
+  if (recentPlaceholder && !hasPinnedGroup) {
+    return recentPlaceholder;
+  }
+  // When every loaded recent session is pinned, the Pinned group stands alone.
+  const showRecentGroup = recentPlaceholder !== null || recentConversations.length > 0 || hasMore;
 
-  return (
-    <div className="px-1" data-testid="recent-conversations-list">
-      <div className="flex items-center justify-between px-2 pb-1.5 pt-0.5">
-        <span className="text-[11px] font-medium text-muted-foreground">
-          {t('recent.title', 'Recent sessions')}
-        </span>
-        <span className="text-[10px] tabular-nums text-muted-foreground/70">{total}</span>
-      </div>
+  const renderRow = (conversation: RecentConversationListItem) => {
+    const isSelected = String(selectedSession?.id ?? '') === conversation.sessionId;
+    const age = formatCompactAge(conversation.lastActivity, currentTime);
+    const hasBackgroundWork = sessionActions.backgroundSessionIds.has(conversation.sessionId);
+    const isProcessing = sessionActions.activeSessions.has(conversation.sessionId) && !hasBackgroundWork;
+    const showAttentionIndicator =
+      sessionActions.attentionSessionIds.has(conversation.sessionId) && !isSelected;
+    // Resolved per row so a keystroke in one rename does not redraw the rest.
+    const rename = sessionActions.activeRename;
+    const sessionRename =
+      rename?.target === 'session' && rename.id === conversation.sessionId ? rename : null;
 
-      {isSelecting && (
-        <div className="pb-1">
-          <SidebarBulkActions
-            isTouchScreen={isTouchScreen}
-            selectedCount={effectiveSelectedIds.length}
-            actions={[
-              ...(sessionActions.onArchiveSessions ? [{
-                key: 'archive',
-                label: t('sessions.archiveSelected', { count: effectiveSelectedIds.length, defaultValue: 'Archive {{count}}' }),
-                menuLabel: `Archive ${effectiveSelectedIds.length}`,
-                icon: Archive,
-                onSelect: () => {
-                  sessionActions.onArchiveSessions?.(effectiveSelectedIds);
-                  onCancelSessionSelection();
-                },
-              }] : []),
-              {
-                key: 'delete',
-                label: t('sessions.deleteSelected', { count: effectiveSelectedIds.length }),
-                menuLabel: `Delete ${effectiveSelectedIds.length}`,
-                icon: Trash2,
-                isDanger: true,
-                onSelect: () => onDeleteSelectedSessions(effectiveSelectedIds),
-              },
-            ]}
-            selectAllLabel={selection.allSelected
-              ? t('sessions.clearSelection')
-              : hasMore ? t('sessions.selectAllLoaded') : t('sessions.selectAll')}
-            selectAllDisabled={selectableIds.length === 0}
-            onToggleSelectAll={selection.toggleSelectAll}
-            onCancel={onCancelSessionSelection}
-            bulkMenuAt={selection.bulkMenuAt}
-            t={t}
-          />
-        </div>
-      )}
+    const isChecked = checkedIds.has(conversation.sessionId);
+    const isSelectable = !isProcessing;
 
-      <div className="space-y-0.5">
-        {conversations.map((conversation) => {
-          const isSelected = String(selectedSession?.id ?? '') === conversation.sessionId;
-          const age = formatCompactAge(conversation.lastActivity, currentTime);
-          const hasBackgroundWork = sessionActions.backgroundSessionIds.has(conversation.sessionId);
-          const isProcessing = sessionActions.activeSessions.has(conversation.sessionId) && !hasBackgroundWork;
-          const showAttentionIndicator =
-            sessionActions.attentionSessionIds.has(conversation.sessionId) && !isSelected;
-          // Resolved per row so a keystroke in one rename does not redraw the rest.
-          const rename = sessionActions.activeRename;
-          const sessionRename =
-            rename?.target === 'session' && rename.id === conversation.sessionId ? rename : null;
+    const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
+      if (event.button !== 0) {
+        return;
+      }
+      // Ctrl/Cmd-click toggles a row into the bulk selection and
+      // Shift-click selects a range, as in the Projects list; while
+      // selecting, a plain click ticks the row too.
+      if (event.shiftKey || event.metaKey || event.ctrlKey) {
+        event.preventDefault();
+        if (isSelectable) {
+          handleModifierSelect(conversation.sessionId, event.shiftKey ? 'range' : 'toggle');
+        }
+        return;
+      }
+      if (isSelecting) {
+        event.preventDefault();
+        if (isSelectable) {
+          toggleRow(conversation.sessionId);
+        }
+        return;
+      }
+      if (event.altKey) {
+        return;
+      }
+      event.preventDefault();
+      onConversationSelect(
+        conversation.projectId,
+        conversation.sessionId,
+        conversation.provider,
+      );
+    };
 
-          const isChecked = checkedIds.has(conversation.sessionId);
-          const isSelectable = !isProcessing;
+    return (
+      <div key={conversation.sessionId} className="group relative">
+        {/*
+          * Only the amber "needs attention" dot, and the spinner below. The
+          * Projects row also has a green dot for a session touched recently,
+          * which carries no information in a list ordered by recency.
+          */}
+        {showAttentionIndicator && (
+          <div className="absolute left-0 top-1/2 -translate-x-1 -translate-y-1/2 transform">
+            <Tooltip
+              content={t('tooltips.attentionRequiredIndicator', { defaultValue: 'Session needs attention' })}
+              position="right"
+            >
+              <div
+                role="status"
+                aria-label={t('tooltips.attentionRequiredIndicator', { defaultValue: 'Session needs attention' })}
+                className="h-2 w-2 animate-pulse rounded-full bg-amber-500"
+              />
+            </Tooltip>
+          </div>
+        )}
 
-          const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
-            if (event.button !== 0) {
-              return;
-            }
-            // Ctrl/Cmd-click toggles a row into the bulk selection and
-            // Shift-click selects a range, as in the Projects list; while
-            // selecting, a plain click ticks the row too.
-            if (event.shiftKey || event.metaKey || event.ctrlKey) {
-              event.preventDefault();
-              if (isSelectable) {
-                handleModifierSelect(conversation.sessionId, event.shiftKey ? 'range' : 'toggle');
-              }
-              return;
-            }
+        <a
+          href={`/session/${conversation.sessionId}`}
+          onClick={handleClick}
+          onContextMenu={(event) => {
+            if (sessionRename !== null) return;
             if (isSelecting) {
-              event.preventDefault();
+              // A running row cannot join a bulk action; the browser menu stays.
               if (isSelectable) {
-                toggleRow(conversation.sessionId);
+                event.preventDefault();
+                handleBulkContextMenu(conversation.sessionId, { x: event.clientX, y: event.clientY });
               }
-              return;
-            }
-            if (event.altKey) {
               return;
             }
             event.preventDefault();
-            onConversationSelect(
-              conversation.projectId,
-              conversation.sessionId,
-              conversation.provider,
-            );
-          };
+            setContextMenu({ sessionId: conversation.sessionId, point: { x: event.clientX, y: event.clientY } });
+          }}
+          onKeyDown={isSelecting ? (event: KeyboardEvent<HTMLAnchorElement>) => {
+            if (isSelectable && (event.key === ' ' || event.key === 'Enter')) {
+              event.preventDefault();
+              toggleRow(conversation.sessionId);
+            }
+          } : undefined}
+          {...(isSelecting ? dragSelectRowProps(RECENT_SESSIONS_SELECTION_SCOPE, conversation.sessionId) : {})}
+          role={isSelecting ? 'checkbox' : undefined}
+          aria-checked={isSelecting ? isChecked : undefined}
+          aria-disabled={isSelecting && !isSelectable ? true : undefined}
+          data-testid="recent-conversation-row"
+          className={cn(
+                'flex min-w-0 items-center gap-2 rounded-lg px-2 py-2 text-left',
+            isSelecting ? 'pr-2' : 'pr-11',
+            isChecked || isSelected
+              ? 'bg-accent text-foreground'
+                  : 'text-foreground hover:bg-accent/60',
+          )}
+        >
+          {showOtherAgents && (
+            <LLMProviderLogo
+              provider={conversation.provider}
+              className={cn('h-3.5 w-3.5 flex-shrink-0', sessionRename !== null && 'invisible')}
+            />
+          )}
 
-          return (
-            <div key={conversation.sessionId} className="group relative">
-              {/*
-                * Only the amber "needs attention" dot, and the spinner below. The
-                * Projects row also has a green dot for a session touched recently,
-                * which carries no information in a list ordered by recency.
-                */}
-              {showAttentionIndicator && (
-                <div className="absolute left-0 top-1/2 -translate-x-1 -translate-y-1/2 transform">
-                  <Tooltip
-                    content={t('tooltips.attentionRequiredIndicator', { defaultValue: 'Session needs attention' })}
-                    position="right"
-                  >
-                    <div
+          {/* Hidden, not removed, while the rename editor covers the row: the row keeps its height. */}
+          <span className={cn('min-w-0 flex-1', sessionRename !== null && 'invisible')}>
+            <span className="block truncate text-[13px] font-normal leading-4">
+              {conversation.sessionTitle}
+            </span>
+            <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] leading-3 text-muted-foreground">
+              <span className="truncate">{conversation.projectDisplayName}</span>
+              {isProcessing ? (
+                <>
+                  <span className="flex-shrink-0 text-muted-foreground/40">·</span>
+                  <Tooltip content={t('tooltips.processingSessionIndicator', 'Processing session')} position="top">
+                    <Loader2 className="h-3 w-3 flex-shrink-0 animate-spin" />
+                  </Tooltip>
+                </>
+              ) : hasBackgroundWork ? (
+                // No spinner: nothing is responding. The purple of the
+                // workflow and agent cards says what is still running.
+                <>
+                  <span className="flex-shrink-0 text-muted-foreground/40">·</span>
+                  <Tooltip content={t('tooltips.backgroundWorkIndicator', 'Background work running')} position="top">
+                    <span
                       role="status"
-                      aria-label={t('tooltips.attentionRequiredIndicator', { defaultValue: 'Session needs attention' })}
-                      className="h-2 w-2 animate-pulse rounded-full bg-amber-500"
+                      aria-label={t('tooltips.backgroundWorkIndicator', 'Background work running')}
+                      className="h-2 w-2 flex-shrink-0 animate-pulse rounded-full bg-purple-500 dark:bg-purple-400"
                     />
                   </Tooltip>
-                </div>
+                </>
+              ) : age && (
+                <>
+                  <span className="flex-shrink-0 text-muted-foreground/40">·</span>
+                  <time className="flex-shrink-0 tabular-nums" dateTime={conversation.lastActivity ?? undefined}>
+                    {age}
+                  </time>
+                </>
               )}
+            </span>
+          </span>
+        </a>
 
-              <a
-                href={`/session/${conversation.sessionId}`}
-                onClick={handleClick}
-                onContextMenu={(event) => {
-                  if (sessionRename !== null) return;
-                  if (isSelecting) {
-                    // A running row cannot join a bulk action; the browser menu stays.
-                    if (isSelectable) {
-                      event.preventDefault();
-                      handleBulkContextMenu(conversation.sessionId, { x: event.clientX, y: event.clientY });
-                    }
-                    return;
-                  }
-                  event.preventDefault();
-                  setContextMenu({ sessionId: conversation.sessionId, point: { x: event.clientX, y: event.clientY } });
-                }}
-                onKeyDown={isSelecting ? (event: KeyboardEvent<HTMLAnchorElement>) => {
-                  if (isSelectable && (event.key === ' ' || event.key === 'Enter')) {
-                    event.preventDefault();
-                    toggleRow(conversation.sessionId);
-                  }
-                } : undefined}
-                {...(isSelecting ? dragSelectRowProps(RECENT_SESSIONS_SELECTION_SCOPE, conversation.sessionId) : {})}
-                role={isSelecting ? 'checkbox' : undefined}
-                aria-checked={isSelecting ? isChecked : undefined}
-                aria-disabled={isSelecting && !isSelectable ? true : undefined}
-                data-testid="recent-conversation-row"
-                className={cn(
-                  'flex min-w-0 items-center gap-2 rounded-lg px-2 py-2 text-left',
-                  isSelecting ? 'pr-2' : 'pr-11',
-                  isChecked || isSelected
-                    ? 'bg-accent text-foreground'
-                    : 'text-foreground hover:bg-accent/60',
-                )}
-              >
-                {showOtherAgents && (
-                  <LLMProviderLogo
-                    provider={conversation.provider}
-                    className={cn('h-3.5 w-3.5 flex-shrink-0', sessionRename !== null && 'invisible')}
-                  />
-                )}
-
-                {/* Hidden, not removed, while the rename editor covers the row: the row keeps its height. */}
-                <span className={cn('min-w-0 flex-1', sessionRename !== null && 'invisible')}>
-                  <span className="block truncate text-[13px] font-normal leading-4">
-                    {conversation.sessionTitle}
-                  </span>
-                  <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] leading-3 text-muted-foreground">
-                    <span className="truncate">{conversation.projectDisplayName}</span>
-                    {isProcessing ? (
-                      <>
-                        <span className="flex-shrink-0 text-muted-foreground/40">·</span>
-                        <Tooltip content={t('tooltips.processingSessionIndicator', 'Processing session')} position="top">
-                          <Loader2 className="h-3 w-3 flex-shrink-0 animate-spin" />
-                        </Tooltip>
-                      </>
-                    ) : hasBackgroundWork ? (
-                      // No spinner: nothing is responding. The purple of the
-                      // workflow and agent cards says what is still running.
-                      <>
-                        <span className="flex-shrink-0 text-muted-foreground/40">·</span>
-                        <Tooltip content={t('tooltips.backgroundWorkIndicator', 'Background work running')} position="top">
-                          <span
-                            role="status"
-                            aria-label={t('tooltips.backgroundWorkIndicator', 'Background work running')}
-                            className="h-2 w-2 flex-shrink-0 animate-pulse rounded-full bg-purple-500 dark:bg-purple-400"
-                          />
-                        </Tooltip>
-                      </>
-                    ) : age && (
-                      <>
-                        <span className="flex-shrink-0 text-muted-foreground/40">·</span>
-                        <time className="flex-shrink-0 tabular-nums" dateTime={conversation.lastActivity ?? undefined}>
-                          {age}
-                        </time>
-                      </>
-                    )}
-                  </span>
-                </span>
-              </a>
-
-              {!isSelecting && (
-              <SessionOptions
-                className="absolute inset-y-0 right-2"
-                sessionId={conversation.sessionId}
-                sessionName={conversation.sessionTitle}
-                provider={conversation.provider}
-                projectId={conversation.projectId}
-                isProcessing={isProcessing}
-                isEditing={sessionRename !== null}
-                renameDraft={sessionRename?.draft ?? ''}
-                onRenameDraftChange={sessionActions.onRenameDraftChange}
-                onStartEditingSession={sessionActions.onStartEditingSession}
-                onCancelEditingSession={sessionActions.onCancelEditingSession}
-                onSaveEditingSession={sessionActions.onSaveEditingSession}
-                onArchiveSession={sessionActions.onArchiveSession}
-                onDeleteSession={sessionActions.onDeleteSession}
-                onSelectForBulk={() => toggleRow(conversation.sessionId)}
-                openAt={contextMenu?.sessionId === conversation.sessionId ? contextMenu.point : null}
-                showOnTouch={isSelected}
-                // The fork path reads only the id, provider and owning project,
-                // which is all a recents row knows about the session.
-                onFork={sessionActions.onForkSession
-                  ? () => sessionActions.onForkSession?.({
-                    id: conversation.sessionId,
-                    summary: conversation.sessionTitle,
-                    __provider: conversation.provider,
-                    __projectId: conversation.projectId ?? undefined,
-                  })
-                  : undefined}
-                t={t}
-              />
-              )}
-            </div>
-          );
-        })}
+        {!isSelecting && (
+          <SessionOptions
+            className="absolute inset-y-0 right-2"
+            sessionId={conversation.sessionId}
+            sessionName={conversation.sessionTitle}
+            provider={conversation.provider}
+            projectId={conversation.projectId}
+            isProcessing={isProcessing}
+            isEditing={sessionRename !== null}
+            renameDraft={sessionRename?.draft ?? ''}
+            onRenameDraftChange={sessionActions.onRenameDraftChange}
+            onStartEditingSession={sessionActions.onStartEditingSession}
+            onCancelEditingSession={sessionActions.onCancelEditingSession}
+            onSaveEditingSession={sessionActions.onSaveEditingSession}
+            onArchiveSession={sessionActions.onArchiveSession}
+            onDeleteSession={sessionActions.onDeleteSession}
+            onSelectForBulk={() => toggleRow(conversation.sessionId)}
+            openAt={contextMenu?.sessionId === conversation.sessionId ? contextMenu.point : null}
+            showOnTouch={isSelected}
+            // The fork path reads only the id, provider and owning project,
+            // which is all a recents row knows about the session.
+            onFork={sessionActions.onForkSession
+              ? () => sessionActions.onForkSession?.({
+                id: conversation.sessionId,
+                summary: conversation.sessionTitle,
+                __provider: conversation.provider,
+                __projectId: conversation.projectId ?? undefined,
+              })
+              : undefined}
+            t={t}
+          />
+        )}
       </div>
+    );
+  };
+
+  // The bar for a bulk selection, which spans the Pinned and Recent groups.
+  const bulkActions = isSelecting ? (
+    <div className="pb-1">
+      <SidebarBulkActions
+        isTouchScreen={isTouchScreen}
+        selectedCount={effectiveSelectedIds.length}
+        actions={[
+          ...(sessionActions.onArchiveSessions ? [{
+            key: 'archive',
+            label: t('sessions.archiveSelected', { count: effectiveSelectedIds.length, defaultValue: 'Archive {{count}}' }),
+            menuLabel: `Archive ${effectiveSelectedIds.length}`,
+            icon: Archive,
+            onSelect: () => {
+              sessionActions.onArchiveSessions?.(effectiveSelectedIds);
+              onCancelSessionSelection();
+            },
+          }] : []),
+          {
+            key: 'delete',
+            label: t('sessions.deleteSelected', { count: effectiveSelectedIds.length }),
+            menuLabel: `Delete ${effectiveSelectedIds.length}`,
+            icon: Trash2,
+            isDanger: true,
+            onSelect: () => onDeleteSelectedSessions(effectiveSelectedIds),
+          },
+        ]}
+        selectAllLabel={selection.allSelected
+          ? t('sessions.clearSelection')
+          : hasMore ? t('sessions.selectAllLoaded') : t('sessions.selectAll')}
+        selectAllDisabled={selectableIds.length === 0}
+        onToggleSelectAll={selection.toggleSelectAll}
+        onCancel={onCancelSessionSelection}
+        bulkMenuAt={selection.bulkMenuAt}
+        t={t}
+      />
+    </div>
+  ) : null;
+
+  return (
+    <div className="px-1" data-testid="recent-conversations-list">
+      {/* With pins, the bar heads the list; otherwise it sits under the heading as before. */}
+      {hasPinnedGroup && bulkActions}
+      {hasPinnedGroup && (
+        <div data-testid="pinned-sessions-section">
+          <SidebarGroupLabel label={t('pinned.title', 'Pinned')} count={pinnedConversations.length} />
+          <div className="space-y-0.5">{pinnedConversations.map(renderRow)}</div>
+        </div>
+      )}
+
+      {showRecentGroup && (
+        <SidebarGroupLabel
+          className={cn(hasPinnedGroup && 'mt-3')}
+          label={t('recent.title', 'Recent sessions')}
+          // The server's total counts the pinned sessions too.
+          count={Math.max(0, total - (hasPinnedGroup ? pins?.sessions.length ?? 0 : 0))}
+        />
+      )}
+      {!hasPinnedGroup && bulkActions}
+
+      {recentPlaceholder ?? (
+        <div className="space-y-0.5">{recentConversations.map(renderRow)}</div>
+      )}
 
       {hasMore && (
         // Kept as a button: a fallback where scrolling cannot trigger the load

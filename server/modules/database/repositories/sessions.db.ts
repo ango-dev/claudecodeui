@@ -1,7 +1,7 @@
 import { getConnection } from '@/modules/database/connection.js';
 import { projectsDb } from '@/modules/database/repositories/projects.db.js';
-import { normalizeProjectPath } from '@/shared/utils.js';
-import type { ClearedContextSegment, SessionForkAncestor } from '@/shared/types.js';
+import { normalizeProjectPath } from '@/shared/index.js';
+import type { ClearedContextSegment, SessionForkAncestor } from '@/shared/index.js';
 
 type SessionRow = {
   session_id: string;
@@ -31,6 +31,18 @@ type RecentSessionsPage = {
   sessions: SessionRow[];
   total: number;
 };
+
+// The caller's transaction replaces a duplicate row; preserve pin ordering and
+// collapse per-user duplicates after the canonical target exists.
+function preservePinsOnReplacement(sourceId: string, targetId: string, replace: () => void): void {
+  const db = getConnection();
+  const pins = sourceId === targetId ? [] : db.prepare(
+    'SELECT pin_id, user_id FROM session_pins WHERE session_id = ?'
+  ).all(sourceId) as Array<{ pin_id: number; user_id: number }>;
+  replace();
+  const restore = db.prepare('INSERT OR IGNORE INTO session_pins (pin_id, user_id, session_id) VALUES (?, ?, ?)');
+  for (const pin of pins) restore.run(pin.pin_id, pin.user_id, targetId);
+}
 
 const SESSION_ROW_COLUMNS =
   'session_id, provider, provider_session_id, project_path, jsonl_path, custom_name, custom_name_auto, model, effort, forked_from_session_id, isArchived, created_at, updated_at';
@@ -229,7 +241,7 @@ export const sessionsDb = {
     // The watcher may already have created a row for the new transcript. Its
     // id is the provider-native one, which is what this row claims, so replace
     // it rather than leaving two sidebar entries for one conversation.
-    db.transaction(() => {
+    db.transaction(() => preservePinsOnReplacement(input.providerSessionId, input.sessionId, () => {
       db.prepare('DELETE FROM sessions WHERE session_id = ? AND session_id <> ?')
         .run(input.providerSessionId, input.sessionId);
       // Automatic: the fork's transcript carries this name as its own title.
@@ -247,7 +259,7 @@ export const sessionsDb = {
         input.effort,
         input.forkedFromSessionId,
       );
-    })();
+    }))();
 
     return input.sessionId;
   },
@@ -275,15 +287,17 @@ export const sessionsDb = {
         .get(providerSessionId, providerSessionId, sessionId) as SessionRow | undefined;
 
       if (duplicate) {
-        db.prepare('DELETE FROM sessions WHERE session_id = ?').run(duplicate.session_id);
-        db.prepare(
-          `UPDATE sessions SET
-             provider_session_id = ?,
-             jsonl_path = COALESCE(jsonl_path, ?),
-             custom_name = COALESCE(custom_name, ?),
-             updated_at = CURRENT_TIMESTAMP
-           WHERE session_id = ?`
-        ).run(providerSessionId, duplicate.jsonl_path, duplicate.custom_name, sessionId);
+        preservePinsOnReplacement(duplicate.session_id, sessionId, () => {
+          db.prepare('DELETE FROM sessions WHERE session_id = ?').run(duplicate.session_id);
+          db.prepare(
+            `UPDATE sessions SET
+               provider_session_id = ?,
+               jsonl_path = COALESCE(jsonl_path, ?),
+               custom_name = COALESCE(custom_name, ?),
+               updated_at = CURRENT_TIMESTAMP
+             WHERE session_id = ?`
+          ).run(providerSessionId, duplicate.jsonl_path, duplicate.custom_name, sessionId);
+        });
         return;
       }
 
@@ -317,7 +331,7 @@ export const sessionsDb = {
   ): void {
     const db = getConnection();
 
-    db.transaction(() => {
+    db.transaction(() => preservePinsOnReplacement(input.providerSessionId, sessionId, () => {
       db.prepare('DELETE FROM sessions WHERE session_id = ? AND session_id <> ?')
         .run(input.providerSessionId, sessionId);
       db.prepare(
@@ -327,7 +341,7 @@ export const sessionsDb = {
            updated_at = CURRENT_TIMESTAMP
          WHERE session_id = ?`
       ).run(input.providerSessionId, input.jsonlPath, sessionId);
-    })();
+    }))();
   },
 
   /**

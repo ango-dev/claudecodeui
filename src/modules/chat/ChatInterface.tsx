@@ -272,7 +272,8 @@ function ChatInterface({
     updatePastedText,
     removePastedText,
     setAttachedFiles,
-    fileErrors,
+    attachmentRejections,
+    dismissAttachmentRejections,
     getRootProps,
     getInputProps,
     isDragActive,
@@ -712,7 +713,8 @@ function ChatInterface({
               previous.filter((_, currentIndex) => currentIndex !== index),
             )
           }
-          fileErrors={fileErrors}
+          attachmentRejections={attachmentRejections}
+          onDismissAttachmentRejections={dismissAttachmentRejections}
           showFileDropdown={showFileDropdown}
           filteredFiles={filteredFiles}
           selectedFileIndex={selectedFileIndex}

@@ -1,6 +1,6 @@
 import { memo, useState } from 'react';
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Pin } from 'lucide-react';
 import type { TFunction } from 'i18next';
 
 import { LLMProviderLogo, Tooltip, buttonVariants } from '@/shared/ui';
@@ -53,6 +53,8 @@ type SidebarSessionItemProps = {
   onBulkContextMenu?: (projectId: string, sessionId: string, point: { x: number; y: number }) => void;
   /** View only (the Running tab): no selecting, and the menu only copies the id. */
   readOnly?: boolean;
+  /** The user pinned this very session (not just a relative in its fork tree): shows the pin glyph. */
+  isPinned?: boolean;
   t: TFunction;
 };
 
@@ -82,6 +84,7 @@ function SidebarSessionItem({
   onModifierSelect,
   onBulkContextMenu,
   readOnly = false,
+  isPinned = false,
   t,
 }: SidebarSessionItemProps) {
   // Agent logos only tell agents apart when there is more than one (agentVisibility).
@@ -222,6 +225,13 @@ function SidebarSessionItem({
                 >
                   {sessionView.sessionName}
                 </div>
+                {isPinned && (
+                  <Pin
+                    role="img"
+                    aria-label={t('pinned.label', 'Pinned')}
+                    className={cn('-mr-1 h-3 w-3 flex-shrink-0 rotate-45 text-muted-foreground/70', isEditing && 'opacity-0')}
+                  />
+                )}
                 {isProcessing ? (
                   <span
                     className={cn(

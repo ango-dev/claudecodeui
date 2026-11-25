@@ -823,6 +823,40 @@
     }
   }
 
+  /* The chat column's width (#1830): it scales with the pane, up to 80% of it,
+     so a wide pane is used and some breathing room stays at the sides; it is
+     never narrower than the old fixed 54.25rem column (or the whole pane, when
+     that is narrower), so phones and split views keep their full width. The
+     transcript's containing block is the pane, so 80% here is 80% of it. */
+  .chat-content-width {
+    min-width: 0;
+    max-width: max(54.25rem, 80%);
+  }
+
+  /* The composer's side gutter: the shell's padding, and what its pieces add
+     back to line up with the transcript. */
+  .chat-composer-shell {
+    --chat-shell-gutter: 0.5rem;
+    padding-inline: var(--chat-shell-gutter);
+  }
+
+  @media (min-width: 640px) {
+    .chat-composer-shell {
+      --chat-shell-gutter: 1rem;
+    }
+  }
+
+  /* The same width for the composer's pieces (the message box, the block of
+     steered and queued messages on it, the queued strip, the scheduled list,
+     the permission and editing banners). They sit inside the shell, whose
+     content box is the pane less a gutter on each side, so 80% of the pane is
+     80% of that box plus 1.6 gutters. Anything that names its width with this
+     class therefore matches the message box and the transcript column. */
+  .chat-composer-width {
+    min-width: 0;
+    max-width: max(54.25rem, calc(80% + 1.6 * var(--chat-shell-gutter, 0px)));
+  }
+
   /* Text wrapping improvements. No automatic hyphenation: on iPad, Safari's
      layout hung for good on some messages with it (found with the scroll
      diagnostics), freezing the app while older messages loaded. */

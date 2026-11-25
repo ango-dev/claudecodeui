@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { Fragment, useCallback, useMemo, useState } from 'react';
 import { Archive, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import type { TFunction } from 'i18next';
 
@@ -9,6 +9,8 @@ import SidebarSessionItem from '@/modules/sidebar/SidebarSessionItem';
 import { useTouchScreen } from '@/modules/sidebar/hooks/useTouchScreen';
 import { useSidebarBulkSelection } from '@/modules/sidebar/hooks/useSidebarBulkSelection';
 import SidebarBulkActions from '@/modules/sidebar/SidebarBulkActions';
+import { useSessionPins } from '@/modules/sidebar/hooks/useSessionPins';
+import SidebarGroupLabel from '@/modules/sidebar/SidebarGroupLabel';
 import { buildProjectSessionTree } from '@/modules/sidebar/utils/projectSessionTree';
 
 /** How far each fork level steps in: one chevron's width, so a child's chevron sits right of its parent's guide. */
@@ -25,6 +27,7 @@ const FORK_CHEVRON_CENTER_PX = 11;
 type SidebarProjectSessionsProps = {
   project: Project;
   isExpanded: boolean;
+  includeOffPagePins?: boolean;
   sessions: SessionWithProvider[];
   selectedSession: ProjectSession | null;
   initialSessionsLoaded: boolean;
@@ -82,6 +85,7 @@ function SessionListSkeleton() {
 export default function SidebarProjectSessions({
   project,
   isExpanded,
+  includeOffPagePins = true,
   sessions,
   selectedSession,
   initialSessionsLoaded,
@@ -113,11 +117,45 @@ export default function SidebarProjectSessions({
   t,
 }: SidebarProjectSessionsProps) {
   const isTouchScreen = useTouchScreen();
+  const pins = useSessionPins();
 
+  // This project's pins, newest pin first (the server's order).
+  const projectPins = useMemo(
+    () => pins?.sessions.filter((pin) => pin.projectId === project.projectId) ?? [],
+    [pins?.sessions, project.projectId],
+  );
+  const pinnedSessionIds = useMemo(() => new Set(projectPins.map((pin) => pin.sessionId)), [projectPins]);
   // Forks sit under the session they branched from; off-page sources the
-  // server sent as context are shown too (see projectSessionTree).
-  const treeRows = useMemo(() => buildProjectSessionTree(sessions, project.projectId), [sessions, project.projectId]);
+  // server sent as context are shown too (see projectSessionTree). A pin
+  // lifts its whole family to the top, so a pinned fork keeps its tree.
+  const treeRows = useMemo(() => {
+    const loadedIds = new Set(sessions.map((session) => session.id));
+    const ancestors = new Map(sessions.flatMap((session) => session.forkAncestors ?? []).map((ancestor) => [ancestor.id, ancestor]));
+    // Include pins beyond the loaded page without changing page offsets or
+    // replacing loaded rows' fork metadata with the smaller pin summaries.
+    const offPagePins: SessionWithProvider[] = projectPins.filter((pin) => includeOffPagePins && !loadedIds.has(pin.sessionId)).map((pin) => ({
+      forkedFromSessionId: pin.forkedFromSessionId,
+      forkAncestors: pin.forkAncestors,
+      ...ancestors.get(pin.sessionId),
+      id: pin.sessionId, summary: pin.sessionTitle, __provider: pin.provider,
+      __projectId: project.projectId, lastActivity: pin.lastActivity ?? undefined,
+    }));
+    return buildProjectSessionTree([...sessions, ...offPagePins], project.projectId, projectPins.map((pin) => pin.sessionId));
+  }, [sessions, project.projectId, projectPins, includeOffPagePins]);
   const hasForks = treeRows.some((row) => row.hasChildren);
+  // The families holding a pin come first (buildProjectSessionTree), so they
+  // are the rows before the first family without one: the Pinned group.
+  const pinnedRowCount = useMemo(() => {
+    if (pinnedSessionIds.size === 0) return 0;
+    const pinnedFamilies = new Set<string>();
+    let rootId = '';
+    for (const row of treeRows) {
+      if (row.depth === 0) rootId = row.session.id;
+      if (pinnedSessionIds.has(row.session.id)) pinnedFamilies.add(rootId);
+    }
+    const firstUnpinned = treeRows.findIndex((row) => row.depth === 0 && !pinnedFamilies.has(row.session.id));
+    return firstUnpinned === -1 ? treeRows.length : firstUnpinned;
+  }, [treeRows, pinnedSessionIds]);
   const selectedSessionId = selectedSession?.id ?? null;
   // The forks above the open or renamed session: collapsed, they would hide it.
   const targetAncestors = useMemo(() => {
@@ -160,17 +198,21 @@ export default function SidebarProjectSessions({
   // Each visible row with the ancestor depths whose guides run through it.
   const visibleRows = useMemo(() => {
     let hiddenBelowDepth = Infinity;
-    const visible: (typeof treeRows[number] & { guideDepths: number[] })[] = [];
-    for (const row of treeRows) {
+    const visible: (typeof treeRows[number] & { guideDepths: number[]; isInPinnedGroup: boolean })[] = [];
+    for (const [index, row] of treeRows.entries()) {
       if (row.depth > hiddenBelowDepth) continue;
       hiddenBelowDepth = row.hasChildren && collapsedForks.has(row.session.id) ? row.depth : Infinity;
       // One guide per ancestor level, capped with the indent, so a deep chain
       // stays linear in size and its guides stay under their chevrons.
       const guideCount = Math.min(row.depth, MAX_FORK_INDENT_DEPTH);
-      visible.push({ ...row, guideDepths: Array.from({ length: guideCount }, (_, depth) => depth) });
+      visible.push({
+        ...row,
+        guideDepths: Array.from({ length: guideCount }, (_, depth) => depth),
+        isInPinnedGroup: index < pinnedRowCount,
+      });
     }
     return visible;
-  }, [treeRows, collapsedForks]);
+  }, [treeRows, collapsedForks, pinnedRowCount]);
 
   // A session with a response in flight cannot be deleted — the same rule the
   // row's options menu applies — so it is not selectable either.
@@ -281,81 +323,98 @@ export default function SidebarProjectSessions({
           {/* Without forks the rows are spaced as before; with them, each row
               carries its own gap so the guides run unbroken from row to row. */}
           <div className={cn(!hasForks && 'space-y-0.5')} data-testid="project-session-tree">
-            {visibleRows.map(({ session, parentId, depth, hasChildren, guideDepths }) => {
+            {visibleRows.map(({ session, parentId, depth, hasChildren, guideDepths, isInPinnedGroup }, index) => {
               const isCollapsed = collapsedForks.has(session.id);
+              // Headings only where a pinned group exists: "Pinned" above it,
+              // and "Recent sessions" where the project's other sessions begin.
+              const groupLabel = pinnedRowCount === 0
+                ? null
+                : index === 0 && isInPinnedGroup
+                  ? t('pinned.title', 'Pinned')
+                  : !isInPinnedGroup && (index === 0 || visibleRows[index - 1].isInPinnedGroup)
+                    ? t('recent.title', 'Recent sessions')
+                    : null;
               const indentPx = Math.min(depth, MAX_FORK_INDENT_DEPTH) * FORK_INDENT_PX;
               const isEditing = session.id === sessionRenameId;
               const sessionName = session.summary || session.name || t('projects.newSession');
               return (
-                <div
-                  key={session.id}
-                  data-session-id={session.id}
-                  data-parent-session-id={parentId ?? undefined}
-                  data-fork-depth={depth}
-                  data-fork-branch={hasChildren || undefined}
-                  className={cn('relative min-w-0', hasForks && 'pb-0.5')}
-                  style={indentPx > 0 ? { paddingLeft: `${indentPx}px` } : undefined}
-                >
-                  {/* Indent guides, as in an editor's file tree: one line per
-                      ancestor, hanging from that ancestor's chevron. */}
-                  {guideDepths.map((guideDepth) => (
-                    <span
-                      key={guideDepth}
-                      aria-hidden="true"
-                      data-fork-guide={guideDepth}
-                      className="pointer-events-none absolute inset-y-0 w-px bg-border"
-                      style={{ left: `${guideDepth * FORK_INDENT_PX + FORK_CHEVRON_CENTER_PX}px` }}
+                <Fragment key={session.id}>
+                  {groupLabel && (
+                    <SidebarGroupLabel
+                      label={groupLabel}
+                      className={cn('pl-2 pb-1', index === 0 ? 'pt-1.5' : 'pt-3')}
                     />
-                  ))}
-                  <SidebarSessionItem
-                    project={project}
-                    session={session}
-                    selectedSession={selectedSession}
-                    isProcessing={isSessionRunning(session)}
-                    hasBackgroundWork={backgroundSessionIds.has(session.id)}
-                    needsAttention={attentionSessionIds.has(session.id)}
-                    currentTime={currentTime}
-                    onRenameDraftChange={onRenameDraftChange}
-                    isEditing={isEditing}
-                    renameDraft={isEditing ? sessionRenameDraft : ''}
-                    onStartEditingSession={onStartEditingSession}
-                    onCancelEditingSession={onCancelEditingSession}
-                    onSaveEditingSession={onSaveEditingSession}
-                    onSessionSelect={onSessionSelect}
-                    onArchiveSession={onArchiveSession}
-                    onDeleteSession={onDeleteSession}
-                    onForkSession={onForkSession}
-                    isSelecting={isSelecting}
-                    isChecked={checkedSessionIds.has(session.id)}
-                    onToggleSessionSelected={onToggleSessionSelected}
-                    onModifierSelect={handleRowModifierSelect}
-                    onBulkContextMenu={handleRowBulkContextMenu}
-                    treeRow={hasForks}
-                    readOnly={readOnly}
-                    t={t}
-                  />
-                  {/* Over the row's reserved left inset rather than inside it:
-                      the row is a link, which cannot hold a button. Hidden
-                      while the rename editor covers the row. */}
-                  {hasChildren && !isEditing && (
-                    <button
-                      type="button"
-                      // Centred on the 32px row, with its own hover like the row's "⋯".
-                      className="absolute top-1.5 flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      style={{ left: `${indentPx + FORK_CHEVRON_CENTER_PX - 10}px` }}
-                      aria-expanded={!isCollapsed}
-                      aria-label={isCollapsed
-                        ? t('sessions.expandForks', { session: sessionName })
-                        : t('sessions.collapseForks', { session: sessionName })}
-                      onClick={() => toggleForks(session.id)}
-                    >
-                      <ChevronRight
-                        className={cn('h-3.5 w-3.5 transition-transform duration-150', !isCollapsed && 'rotate-90')}
-                        aria-hidden="true"
-                      />
-                    </button>
                   )}
-                </div>
+                  <div
+                    data-session-id={session.id}
+                    data-parent-session-id={parentId ?? undefined}
+                    data-fork-depth={depth}
+                    data-fork-branch={hasChildren || undefined}
+                    className={cn('relative min-w-0', hasForks && 'pb-0.5')}
+                    style={indentPx > 0 ? { paddingLeft: `${indentPx}px` } : undefined}
+                  >
+                    {/* Indent guides, as in an editor's file tree: one line per
+                        ancestor, hanging from that ancestor's chevron. */}
+                    {guideDepths.map((guideDepth) => (
+                      <span
+                        key={guideDepth}
+                        aria-hidden="true"
+                        data-fork-guide={guideDepth}
+                        className="pointer-events-none absolute inset-y-0 w-px bg-border"
+                        style={{ left: `${guideDepth * FORK_INDENT_PX + FORK_CHEVRON_CENTER_PX}px` }}
+                      />
+                    ))}
+                    <SidebarSessionItem
+                      project={project}
+                      session={session}
+                      selectedSession={selectedSession}
+                      isProcessing={isSessionRunning(session)}
+                      hasBackgroundWork={backgroundSessionIds.has(session.id)}
+                      needsAttention={attentionSessionIds.has(session.id)}
+                      currentTime={currentTime}
+                      onRenameDraftChange={onRenameDraftChange}
+                      isEditing={isEditing}
+                      renameDraft={isEditing ? sessionRenameDraft : ''}
+                      onStartEditingSession={onStartEditingSession}
+                      onCancelEditingSession={onCancelEditingSession}
+                      onSaveEditingSession={onSaveEditingSession}
+                      onSessionSelect={onSessionSelect}
+                      onArchiveSession={onArchiveSession}
+                      onDeleteSession={onDeleteSession}
+                      onForkSession={onForkSession}
+                      isSelecting={isSelecting}
+                      isChecked={checkedSessionIds.has(session.id)}
+                      onToggleSessionSelected={onToggleSessionSelected}
+                      onModifierSelect={handleRowModifierSelect}
+                      onBulkContextMenu={handleRowBulkContextMenu}
+                      treeRow={hasForks}
+                      readOnly={readOnly}
+                      isPinned={pinnedSessionIds.has(session.id)}
+                      t={t}
+                    />
+                    {/* Over the row's reserved left inset rather than inside it:
+                        the row is a link, which cannot hold a button. Hidden
+                        while the rename editor covers the row. */}
+                    {hasChildren && !isEditing && (
+                      <button
+                        type="button"
+                        // Centred on the 32px row, with its own hover like the row's "⋯".
+                        className="absolute top-1.5 flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        style={{ left: `${indentPx + FORK_CHEVRON_CENTER_PX - 10}px` }}
+                        aria-expanded={!isCollapsed}
+                        aria-label={isCollapsed
+                          ? t('sessions.expandForks', { session: sessionName })
+                          : t('sessions.collapseForks', { session: sessionName })}
+                        onClick={() => toggleForks(session.id)}
+                      >
+                        <ChevronRight
+                          className={cn('h-3.5 w-3.5 transition-transform duration-150', !isCollapsed && 'rotate-90')}
+                          aria-hidden="true"
+                        />
+                      </button>
+                    )}
+                  </div>
+                </Fragment>
               );
             })}
           </div>

@@ -13,11 +13,16 @@ import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 
 import { api } from '@/shared/api';
-import { PROVIDER_PERMISSION_PREFERENCE_KEYS } from '@/shared/constants';
+import {
+  MAX_CHAT_ATTACHMENT_COUNT,
+  MAX_CHAT_ATTACHMENT_SIZE_BYTES,
+  PROVIDER_PERMISSION_PREFERENCE_KEYS,
+} from '@/shared/constants';
 import { readUserPreference } from '@/shared/userSettings';
 import { createLocalMessageId, createPastedTextFiles, isPromptCommand, withPastedTexts } from '@/shared/utils';
-import type { BackgroundSendChoice, BackgroundSendPrompt, BackgroundStopReason, CommandModalPayload, CostCommandData, HelpCommandData, MarkSessionProcessing, ModelCommandData, PastedText, PendingSteer, QueuedDraft, SessionActivityMap, StatusCommandData, SteerOutcome,QueuedSendOptions,ChatAttachment,ChatMessage,PendingPermissionRequest,PermissionMode,SessionEstablishedContext,Project,ProjectSession,LLMProvider,SlashCommand } from '@/shared/types';
+import type { AttachmentRejection, BackgroundSendChoice, BackgroundSendPrompt, BackgroundStopReason, CommandModalPayload, CostCommandData, HelpCommandData, MarkSessionProcessing, ModelCommandData, PastedText, PendingSteer, QueuedDraft, SessionActivityMap, StatusCommandData, SteerOutcome,QueuedSendOptions,ChatAttachment,ChatMessage,PendingPermissionRequest,PermissionMode,SessionEstablishedContext,Project,ProjectSession,LLMProvider,SlashCommand } from '@/shared/types';
 import { grantClaudeToolPermission } from '@/modules/chat/utils/chatPermissions';
+import { uploadAttachmentFiles } from '@/modules/chat/utils/uploadAttachmentFiles';
 import {
   appendQueuedMessage,
   hydrateChatDrafts,
@@ -125,7 +130,7 @@ const createFakeSubmitEvent = () => {
 };
 
 /**
- * A v4 UUID for a steered message. The id becomes the message's transcript
+ * A v4 UUID for a steered message or attachment upload request. The id becomes the message's transcript
  * uuid, so it must be a real one. `crypto.randomUUID` only exists in secure
  * contexts, and the app is often opened over plain http on a LAN address
  * (a phone on the same network), so this falls back to `getRandomValues`.
@@ -148,38 +153,10 @@ const isEchoOfSteer = (echoId: string, messageId: string): boolean => (
   echoId === messageId || echoId.startsWith(`${messageId}_`)
 );
 
-const MAX_ATTACHMENT_COUNT = 10;
-const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
-
 const isImageAttachment = (attachment: ChatAttachment) => {
   if (attachment.mimeType?.startsWith('image/')) return true;
   return /\.(gif|jpe?g|png|svg|webp)$/i.test(attachment.path || attachment.name || '');
 };
-
-const uploadAttachmentFiles = async (files: File[]): Promise<unknown[]> => {
-  if (files.length === 0) {
-    return [];
-  }
-
-  const formData = new FormData();
-  files.forEach((file) => {
-    formData.append('files', file);
-  });
-
-  const response = await api.assets.uploadFiles(formData);
-
-  if (!response.ok) {
-    const body = await response.json().catch(() => null);
-    throw new Error(body?.error || 'Failed to upload files');
-  }
-
-  const result = await response.json();
-  if (!Array.isArray(result.attachments) || result.attachments.length !== files.length) {
-    throw new Error('File upload returned an incomplete result');
-  }
-  return result.attachments;
-};
-
 
 /**
  * A message to submit in place of the composer's own input: a plan follow-up.
@@ -225,6 +202,25 @@ const PASTE_CARD_MIN_LINES = 15;
 const isLongPaste = (text: string): boolean => (
   text.length >= PASTE_CARD_MIN_CHARACTERS || text.split('\n').length >= PASTE_CARD_MIN_LINES
 );
+
+/**
+ * The pasted-text files a send has to refuse, named as the attachment notice
+ * shows them: any over the size limit, and, when the message would carry more
+ * files than the limit, the newest pastes past it. `pastedFiles` go first in
+ * the message, so with `totalFileCount` files in all the newest pastes are the
+ * ones over the limit. The picker already keeps the user's own files within it
+ * (each paste takes a slot), so only pastes can overflow it.
+ */
+const findPastedFileRejections = (pastedFiles: File[], totalFileCount: number): AttachmentRejection[] => {
+  const overflow = Math.min(pastedFiles.length, Math.max(0, totalFileCount - MAX_CHAT_ATTACHMENT_COUNT));
+  const firstOverflowing = pastedFiles.length - overflow;
+  return pastedFiles.flatMap((file, index): AttachmentRejection[] => {
+    if (file.size > MAX_CHAT_ATTACHMENT_SIZE_BYTES) {
+      return [{ fileName: file.name, reason: 'too-large', pastedText: true }];
+    }
+    return index >= firstOverflowing ? [{ fileName: file.name, reason: 'too-many', pastedText: true }] : [];
+  });
+};
 
 /**
  * Asks the server whether sending with these options would stop the
@@ -368,7 +364,11 @@ export function useChatComposerState({
   // Long pastes shown as cards rather than in the message box; sent ahead of
   // the typed text and cleared with it, like attached files.
   const [pastedTexts, setPastedTexts] = useState<PastedText[]>([]);
-  const [fileErrors, setFileErrors] = useState<Map<string, string>>(new Map());
+  // Files the latest attach or send attempt refused. A refused file never
+  // becomes an attachment (and a refused pasted text keeps its card but cannot
+  // go out as a file), so the composer names them in their own notice; without
+  // it a refused file just vanishes from a multi-file pick.
+  const [attachmentRejections, setAttachmentRejections] = useState<AttachmentRejection[]>([]);
   const [isTextareaExpanded, setIsTextareaExpanded] = useState(false);
   const [commandModalPayload, setCommandModalPayload] = useState<CommandModalPayload | null>(null);
 
@@ -733,34 +733,41 @@ export function useChatComposerState({
     lastAutosizedInputRef.current = target.value;
   }, []);
 
+  // Picker, drag-and-drop and paste all come through here, so the size and count
+  // limits are checked in one place and every refused file is reported. Each
+  // attempt replaces the notice, so it always describes the latest one. Each
+  // pasted-text card goes out as a file too, so the cards take slots as well.
   const handleAttachmentFiles = useCallback((files: File[]) => {
-    const validFiles = files.filter((file) => {
-      try {
-        if (!file || typeof file !== 'object') {
-          console.warn('Invalid file object:', file);
-          return false;
-        }
+    const accepted: File[] = [];
+    const rejections: AttachmentRejection[] = [];
+    let freeSlots = Math.max(0, MAX_CHAT_ATTACHMENT_COUNT - attachedFiles.length - pastedTexts.length);
 
-        if (file.size > MAX_ATTACHMENT_SIZE) {
-          const fileName = file.name || 'Unknown file';
-          setFileErrors((previous) => {
-            const next = new Map(previous);
-            next.set(fileName, 'File too large (max 10MB)');
-            return next;
-          });
-          return false;
-        }
-
-        return true;
-      } catch (error) {
-        console.error('Error validating file:', error, file);
-        return false;
+    files.forEach((file) => {
+      if (!file || typeof file !== 'object') {
+        console.warn('Invalid file object:', file);
+        return;
       }
+      const fileName = file.name || 'Unknown file';
+      if (file.size > MAX_CHAT_ATTACHMENT_SIZE_BYTES) {
+        rejections.push({ fileName, reason: 'too-large' });
+        return;
+      }
+      if (freeSlots === 0) {
+        rejections.push({ fileName, reason: 'too-many' });
+        return;
+      }
+      freeSlots -= 1;
+      accepted.push(file);
     });
 
-    if (validFiles.length > 0) {
-      setAttachedFiles((previous) => [...previous, ...validFiles].slice(0, MAX_ATTACHMENT_COUNT));
+    setAttachmentRejections(rejections);
+    if (accepted.length > 0) {
+      setAttachedFiles((previous) => [...previous, ...accepted]);
     }
+  }, [attachedFiles, pastedTexts]);
+
+  const dismissAttachmentRejections = useCallback(() => {
+    setAttachmentRejections([]);
   }, []);
 
   const handlePaste = useCallback(
@@ -773,15 +780,16 @@ export function useChatComposerState({
         setPastedTexts((previous) => [...previous, { id: createLocalId(), text: pastedText }]);
       }
 
-      items.forEach((item) => {
-        if (!item.type.startsWith('image/')) {
-          return;
-        }
-        const file = item.getAsFile();
-        if (file) {
-          handleAttachmentFiles([file]);
-        }
-      });
+      // One call for the whole paste: the free-slot count is read once per call,
+      // so attaching the images one by one would let a paste overfill the composer.
+      const pastedImages = items
+        .filter((item) => item.type.startsWith('image/'))
+        .map((item) => item.getAsFile())
+        .filter((file): file is File => file !== null);
+      if (pastedImages.length > 0) {
+        handleAttachmentFiles(pastedImages);
+        return;
+      }
 
       if (items.length === 0 && event.clipboardData.files.length > 0) {
         const files = Array.from(event.clipboardData.files);
@@ -794,18 +802,29 @@ export function useChatComposerState({
     [handleAttachmentFiles],
   );
 
+  // A send refused for a pasted text names it in the notice; once the cards
+  // change, that notice no longer describes them, so it goes.
+  const clearPastedTextRejections = useCallback(() => {
+    setAttachmentRejections((current) => (
+      current.some((rejection) => rejection.pastedText) ? [] : current
+    ));
+  }, []);
+
   const updatePastedText = useCallback((id: string, text: string) => {
     setPastedTexts((previous) => previous.map((pasted) => (pasted.id === id ? { ...pasted, text } : pasted)));
-  }, []);
+    clearPastedTextRejections();
+  }, [clearPastedTextRejections]);
 
   const removePastedText = useCallback((id: string) => {
     setPastedTexts((previous) => previous.filter((pasted) => pasted.id !== id));
-  }, []);
+    clearPastedTextRejections();
+  }, [clearPastedTextRejections]);
 
+  // No `maxSize` / `maxFiles` here: react-dropzone would set those files aside
+  // before `onDrop` (and `maxFiles` refuses the whole drop, not just the extra
+  // files), so `handleAttachmentFiles` applies both limits itself and reports them.
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
-    maxSize: MAX_ATTACHMENT_SIZE,
-    maxFiles: MAX_ATTACHMENT_COUNT,
-    onDrop: handleAttachmentFiles,
+    onDrop: (acceptedFiles) => handleAttachmentFiles(acceptedFiles),
     noClick: true,
     noKeyboard: true,
   });
@@ -1018,7 +1037,7 @@ export function useChatComposerState({
 
       setInput('');
       inputValueRef.current = '';
-      setFileErrors(new Map());
+      setAttachmentRejections([]);
       resetCommandMenuState();
       setIsTextareaExpanded(false);
       if (textareaRef.current) {
@@ -1075,7 +1094,7 @@ export function useChatComposerState({
       if (sessionKeyRef.current === steerSessionKey) {
         setInput('');
         inputValueRef.current = '';
-        setFileErrors(new Map());
+        setAttachmentRejections([]);
         resetCommandMenuState();
         setIsTextareaExpanded(false);
         if (textareaRef.current) {
@@ -1232,34 +1251,15 @@ export function useChatComposerState({
         }
       }
 
-      // Pasted files count toward the per-message file limit (the upload
-      // takes at most that many). Refused here, with everything left in the
-      // composer, rather than dropping a paste or failing the upload.
-      if (pastedFiles.length > 0) {
-        if (currentAttachments.length > MAX_ATTACHMENT_COUNT) {
-          addMessage({
-            type: 'error',
-            content: t('input.pasted.tooManyFiles', {
-              max: MAX_ATTACHMENT_COUNT,
-              defaultValue: 'A message can carry at most {{max}} files, and each pasted text is sent as one. Remove some files or pasted texts, then send again.',
-            }),
-            timestamp: new Date(),
-          });
-          return;
-        }
-        const oversizedPaste = pastedFiles.find((file) => file.size > MAX_ATTACHMENT_SIZE);
-        if (oversizedPaste) {
-          addMessage({
-            type: 'error',
-            content: t('input.pasted.tooLarge', {
-              fileName: oversizedPaste.name,
-              maxMegabytes: MAX_ATTACHMENT_SIZE / (1024 * 1024),
-              defaultValue: '{{fileName}} is larger than {{maxMegabytes}} MB, the most a file can be. Shorten the pasted text, then send again.',
-            }),
-            timestamp: new Date(),
-          });
-          return;
-        }
+      // Pasted files count toward the per-message file limit and its size
+      // limit, as attached files do. A send that breaks either is refused
+      // here, with everything left in the composer, rather than dropping a
+      // paste or failing the upload: the attachment notice names each pasted
+      // text that cannot go out, and its card stays to be edited or removed.
+      const pastedFileRejections = findPastedFileRejections(pastedFiles, currentAttachments.length);
+      if (pastedFileRejections.length > 0) {
+        setAttachmentRejections(pastedFileRejections);
+        return;
       }
 
       // A turn is already in flight: stash this message instead of sending it.
@@ -1284,7 +1284,7 @@ export function useChatComposerState({
         try {
           uploadedAttachments = [
             ...previouslyUploadedAttachments,
-            ...await uploadAttachmentFiles(currentAttachments),
+            ...await uploadAttachmentFiles(currentAttachments, createSteerMessageId()),
           ];
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Unknown error';
@@ -1348,7 +1348,7 @@ export function useChatComposerState({
           inputValueRef.current = '';
           setAttachedFiles([]);
           setPastedTexts([]);
-          setFileErrors(new Map());
+          setAttachmentRejections([]);
           resetCommandMenuState();
           setIsTextareaExpanded(false);
           if (textareaRef.current) {
@@ -1363,7 +1363,7 @@ export function useChatComposerState({
       let uploadedAttachments = previouslyUploadedAttachments;
       if (uploadedAttachments.length === 0 && currentAttachments.length > 0) {
         try {
-          uploadedAttachments = await uploadAttachmentFiles(currentAttachments);
+          uploadedAttachments = await uploadAttachmentFiles(currentAttachments, createSteerMessageId());
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Unknown error';
           console.error('File upload failed:', error);
@@ -1548,7 +1548,7 @@ export function useChatComposerState({
       setInput('');
       inputValueRef.current = '';
       resetCommandMenuState();
-      setFileErrors(new Map());
+      setAttachmentRejections([]);
       setIsTextareaExpanded(false);
 
       if (textareaRef.current) {
@@ -2048,7 +2048,8 @@ export function useChatComposerState({
     setPastedTexts,
     updatePastedText,
     removePastedText,
-    fileErrors,
+    attachmentRejections,
+    dismissAttachmentRejections,
     getRootProps,
     getInputProps,
     isDragActive,

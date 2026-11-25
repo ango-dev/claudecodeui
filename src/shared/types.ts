@@ -778,6 +778,19 @@ type MessageKind =
 
 //----------------- CHAT COMPOSER ------------
 
+/**
+ * A file the chat composer refused to attach, with why: `too-large` is over the size limit,
+ * `too-many` arrived after the composer was full. The composer hook produces these and the
+ * composer lists them in a dismissible notice, since a refused file never becomes an attachment chip.
+ * `pastedText` marks a pasted-text card that a send refused to carry as its `.txt` file (the card
+ * itself stays in the composer), so the notice can say how pastes count.
+ */
+export type AttachmentRejection = {
+  fileName: string;
+  reason: 'too-large' | 'too-many';
+  pastedText?: boolean;
+};
+
 /** Result payload of the chat `/model` slash command, describing the session's current provider and model plus the model catalog it may switch to, used to populate the command modal's model picker. */
 export type ModelCommandData = {
   current?: {
@@ -1723,6 +1736,8 @@ export type SessionRowActions = {
 };
 
 export type SidebarProjectListProps = SessionRowActions & {
+  /** Running supplies its complete eligible slice; only Projects augments it with off-page pins. */
+  includeOffPagePins?: boolean;
   projects: Project[];
   filteredProjects: Project[];
   selectedProject: Project | null;
@@ -1807,6 +1822,9 @@ export type RecentConversationListItem = Pick<
   ArchivedSessionListItem,
   'sessionId' | 'provider' | 'projectId' | 'projectDisplayName' | 'sessionTitle' | 'lastActivity'
 >;
+
+/** Pin summaries include canonical ancestry so Projects can attach forks outside the loaded page. */
+export type PinnedConversationListItem = RecentConversationListItem & Pick<ProjectSession, 'forkedFromSessionId' | 'forkAncestors'>;
 
 /**
  * The rename the sidebar currently has open, if any.

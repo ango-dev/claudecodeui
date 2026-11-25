@@ -15,6 +15,7 @@ import { useSidebarBulkSelection } from '@/modules/sidebar/hooks/useSidebarBulkS
 import { ARCHIVED_SESSIONS_SELECTION_SCOPE } from '@/modules/sidebar/utils/sidebarSelectionScopes';
 import { useShowOtherAgents } from '@/shared/agentVisibility';
 import { dragSelectRowProps } from '@/modules/sidebar/hooks/useSidebarDragSelect';
+import SidebarPinnedSessions from '@/modules/sidebar/SidebarPinnedSessions';
 
 function HighlightedSnippet({ snippet, highlights }: { snippet: string; highlights: { start: number; end: number }[] }) {
   const parts: ReactNode[] = [];
@@ -233,6 +234,7 @@ export default function SidebarContent({
       />
 
       <ScrollArea className="flex-1 overflow-y-auto overscroll-contain px-1.5 py-2">
+        {(searchMode === 'projects' || searchMode === 'conversations') && <SidebarPinnedSessions t={t} />}
         {showConversationSearch ? (
           isSearching && !conversationResults ? (
             <div className="px-4 text-center py-8">
@@ -402,6 +404,7 @@ export default function SidebarContent({
           ) : null
         ) : searchMode === 'conversations' ? (
           <SidebarRecentConversations
+            groupPinned={!searchFilter.trim()}
             conversations={recentConversations}
             total={recentConversationsTotal}
             hasMore={recentConversationsHasMore}
@@ -448,8 +451,9 @@ export default function SidebarContent({
                 </span>
               </div>
               {/* View only: running sessions open and their ids copy, but
-                  nothing here renames, deletes or starts a session. */}
-              <SidebarProjectList {...projectListProps} readOnly />
+                  nothing here renames, deletes, pins or starts a session. It
+                  lists only what runs, so pins on older pages stay out. */}
+              <SidebarProjectList {...projectListProps} readOnly includeOffPagePins={false} />
             </div>
           )
         ) : searchMode === 'archived' ? (
@@ -779,7 +783,7 @@ export default function SidebarContent({
             </div>
           )
         ) : (
-          <SidebarProjectList {...projectListProps} />
+          <SidebarProjectList {...projectListProps} includeOffPagePins />
         )}
       </ScrollArea>
 

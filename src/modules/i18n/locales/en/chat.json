@@ -168,6 +168,16 @@
     "placeholderDefault": "Type your message...",
     "disabled": "Input disabled",
     "attachFiles": "Attach files",
+    "attachmentRejected": {
+      "title_one": "Couldn't attach {{count}} file",
+      "title_other": "Couldn't attach {{count}} files",
+      "tooLarge": "is larger than {{maxSize}} MB",
+      "tooMany": "is over the {{maxCount}}-file limit",
+      "pastedTitle_one": "Couldn't send {{count}} pasted text",
+      "pastedTitle_other": "Couldn't send {{count}} pasted texts",
+      "pastedHint": "Each pasted text is sent as a .txt file and counts as one. Remove some files or pasted texts, or shorten them, then send again.",
+      "dismiss": "Dismiss"
+    },
     "attachImages": "Attach images",
     "send": "Send",
     "stop": "Stop",
@@ -220,9 +230,7 @@
       "cancel": "Cancel",
       "size_one": "{{count}} line · {{characters}} characters",
       "size_other": "{{count}} lines · {{characters}} characters",
-      "sentAs": "Sent as {{fileName}}",
-      "tooManyFiles": "A message can carry at most {{max}} files, and each pasted text is sent as one. Remove some files or pasted texts, then send again.",
-      "tooLarge": "{{fileName}} is larger than {{maxMegabytes}} MB, the most a file can be. Shorten the pasted text, then send again."
+      "sentAs": "Sent as {{fileName}}"
     }
   },
   "composer": {

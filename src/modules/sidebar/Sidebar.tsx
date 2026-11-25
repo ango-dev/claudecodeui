@@ -12,6 +12,7 @@ import type { LLMProvider, LoadingProgress, Project, ProjectSession, SidebarProj
 import SidebarCollapsed from '@/modules/sidebar/SidebarCollapsed';
 import SidebarContent from '@/modules/sidebar/SidebarContent';
 import SidebarModals from '@/modules/sidebar/SidebarModals';
+import { SessionPinsProvider } from '@/modules/sidebar/SessionPinsProvider';
 
 type SidebarProps = {
   projects: Project[];
@@ -245,7 +246,7 @@ function Sidebar({
   };
 
   return (
-    <>
+    <SessionPinsProvider projects={projects}>
         <SidebarModals
           projects={projects}
         showSettings={showSettings}
@@ -359,7 +360,7 @@ function Sidebar({
         </>
       )}
 
-    </>
+    </SessionPinsProvider>
   );
 }
 

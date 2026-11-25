@@ -8,6 +8,7 @@ import type { LLMProvider } from '@/shared/types';
 import { useSessionForkingProviders } from '@/shared/hooks/useProviderCapabilities';
 import { useProviderSessionIdCopy } from '@/modules/sidebar/hooks/useProviderSessionIdCopy';
 import { PROVIDER_LABELS } from '@/modules/sidebar/utils/sidebarProjectFormatting';
+import { useSessionPins } from '@/modules/sidebar/hooks/useSessionPins';
 
 type SessionOptionsProps = {
   sessionId: string;
@@ -79,6 +80,9 @@ export default function SessionOptions({
   t,
 }: SessionOptionsProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // Absent outside the Sidebar's pin provider (isolated rows), which then offer no Pin item.
+  const pins = useSessionPins();
+  const isPinned = pins?.pinnedIds.has(sessionId) ?? false;
   const providerLabel = PROVIDER_LABELS[provider];
   const { copyState, copyLabel, setOptionsOpen, handleCopyAction, isCopyPending } =
     useProviderSessionIdCopy(sessionId, providerLabel);
@@ -177,6 +181,15 @@ export default function SessionOptions({
           // Plain, compact items as in Claude Code's menus.
           menuClassName="w-[220px] rounded-xl p-1.5 shadow-xl"
           items={[
+            // Pinning is a per-user bookmark, so a view-only list leaves it out
+            // like every other change; it waits for the confirmed server list.
+            ...(pins && !readOnly ? [{
+              key: 'pin',
+              label: isPinned ? 'Unpin' : 'Pin',
+              loading: pins.pendingSessionId === sessionId,
+              disabled: !pins.ready || pins.pendingSessionId !== null,
+              onSelect: () => void pins.setPinned(sessionId, !isPinned),
+            }] : []),
             ...(projectId !== null && !readOnly ? [{
               key: 'rename',
               label: 'Rename',

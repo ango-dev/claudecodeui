@@ -130,7 +130,7 @@ function QueuedMessageStrip({ queuedDrafts, onEdit, onDelete }: QueuedMessageStr
   const listLabel = t('input.queue.listLabel', { defaultValue: 'Queued messages' });
 
   return (
-    <div className="mx-auto mb-2 max-w-[54.25rem]">
+    <div className="chat-composer-width mx-auto mb-2">
       <div className="mb-1 flex items-center gap-1.5 truncate px-1 text-[11px] font-medium leading-4 text-primary/70">
         <span className="uppercase tracking-wide">{t('input.queue.label', { defaultValue: 'Queued' })}</span>
         {queuedDrafts.length > 1 && <span className="tabular-nums">· {queuedDrafts.length}</span>}

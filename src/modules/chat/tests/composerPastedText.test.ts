@@ -5,6 +5,7 @@ import { afterEach, beforeEach, test, vi } from 'vitest';
 
 import '@/modules/i18n';
 import { useChatComposerState } from '@/modules/chat/hooks/useChatComposerState';
+import { MAX_CHAT_ATTACHMENT_SIZE_BYTES } from '@/shared/constants';
 import type { ChatMessage, PermissionMode, Project, ProjectSession, SessionActivityMap } from '@/shared/types';
 
 /**
@@ -376,12 +377,14 @@ test('a failed upload is reported and leaves the cards and the typed text in the
   await submit(view);
 
   assert.equal(chatSends().length, 0);
-  assert.deepEqual(errors(), ['Failed to upload files: Disk full']);
+  // The server's reason, with the request's reference for the server log.
+  assert.equal(errors().length, 1);
+  assert.match(errors()[0], /^Failed to upload files: Disk full Reference: [0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   assert.deepEqual(view.result.current.pastedTexts, cards);
   assert.equal(view.result.current.input, 'keep me');
 });
 
-test('pasted files count toward the 10-file limit: over it, nothing is sent and nothing is dropped', async () => {
+test('pasted files count toward the 10-file limit: over it, nothing is sent, nothing is dropped, and the paste is named', async () => {
   const { view, chatSends, errors } = await renderComposer();
   const files = Array.from({ length: 10 }, (_, index) => new File(['x'], `f${index}.txt`));
   act(() => { view.result.current.setAttachedFiles(files); });
@@ -391,8 +394,10 @@ test('pasted files count toward the 10-file limit: over it, nothing is sent and 
 
   assert.equal(chatSends().length, 0);
   assert.equal(uploads.length, 0);
-  assert.equal(errors().length, 1);
-  assert.match(errors()[0], /at most 10 files/);
+  assert.deepEqual(errors(), [], 'the composer says it, not the transcript');
+  assert.deepEqual(view.result.current.attachmentRejections, [
+    { fileName: 'Pasted text.txt', reason: 'too-many', pastedText: true },
+  ]);
   assert.equal(view.result.current.pastedTexts.length, 1, 'the paste is kept');
   assert.equal(view.result.current.attachedFiles.length, 10);
 
@@ -403,4 +408,53 @@ test('pasted files count toward the 10-file limit: over it, nothing is sent and 
   const [names] = uploadedNames();
   assert.equal(names.length, 10);
   assert.equal(names[0], 'Pasted text.txt');
+  assert.deepEqual(view.result.current.attachmentRejections, [], 'a send clears the notice');
+});
+
+test('over the limit, the newest pastes are the ones named, and changing the cards clears the notice', async () => {
+  const { view } = await renderComposer();
+  const files = Array.from({ length: 8 }, (_, index) => new File(['x'], `f${index}.txt`));
+  act(() => { view.result.current.setAttachedFiles(files); });
+  paste(view, LONG_TEXT);
+  paste(view, MANY_LINES);
+  paste(view, `${LONG_TEXT}!`);
+  paste(view, `${MANY_LINES}!`);
+
+  await submit(view);
+
+  assert.deepEqual(view.result.current.attachmentRejections.map((rejection) => rejection.fileName), [
+    'Pasted text (3).txt',
+    'Pasted text (4).txt',
+  ]);
+  act(() => { view.result.current.removePastedText(view.result.current.pastedTexts[3].id); });
+  assert.deepEqual(view.result.current.attachmentRejections, []);
+  assert.equal(view.result.current.pastedTexts.length, 3, 'only the removed card goes');
+});
+
+test('a pasted text over the size limit is named and keeps its card', async () => {
+  const { view, chatSends } = await renderComposer();
+  paste(view, 'x'.repeat(MAX_CHAT_ATTACHMENT_SIZE_BYTES + 1));
+  act(() => { view.result.current.setInput('summarize'); });
+
+  await submit(view);
+
+  assert.equal(chatSends().length, 0);
+  assert.equal(uploads.length, 0);
+  assert.deepEqual(view.result.current.attachmentRejections, [
+    { fileName: 'Pasted text.txt', reason: 'too-large', pastedText: true },
+  ]);
+  assert.equal(view.result.current.pastedTexts.length, 1);
+  assert.equal(view.result.current.input, 'summarize');
+});
+
+test('each pasted card takes an attachment slot, so an attach that would overfill the message names the files left out', async () => {
+  const { view } = await renderComposer();
+  paste(view, LONG_TEXT);
+  paste(view, MANY_LINES);
+  const images = Array.from({ length: 9 }, (_, index) => new File(['png'], `shot${index}.png`, { type: 'image/png' }));
+
+  paste(view, '', images.map((image) => ({ type: 'image/png', getAsFile: () => image })));
+
+  assert.equal(view.result.current.attachedFiles.length, 8);
+  assert.deepEqual(view.result.current.attachmentRejections, [{ fileName: 'shot8.png', reason: 'too-many' }]);
 });
