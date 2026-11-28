@@ -457,6 +457,9 @@
       },
       "opencode": {
         "description": "OpenCode komut satırı asistanı"
+      },
+      "antigravity": {
+        "description": "Google Antigravity komut satırı asistanı"
       }
     },
     "connectionStatus": "Bağlantı Durumu",
@@ -615,7 +618,8 @@
       "claude": "Model Context Protocol sunucuları Claude'a ek araçlar ve veri kaynakları sağlar",
       "cursor": "Model Context Protocol sunucuları Cursor'a ek araçlar ve veri kaynakları sağlar",
       "codex": "Model Context Protocol sunucuları Codex'e ek araçlar ve veri kaynakları sağlar",
-      "opencode": "Model Context Protocol sunucuları OpenCode'a ek araçlar ve veri kaynakları sağlar"
+      "opencode": "Model Context Protocol sunucuları OpenCode'a ek araçlar ve veri kaynakları sağlar",
+      "antigravity": "Model Context Protocol sunucuları Antigravity'ye ek araçlar ve veri kaynakları sağlar"
     },
     "addButton": "MCP Sunucusu Ekle",
     "empty": "Yapılandırılmış MCP sunucusu yok",
@@ -908,9 +912,9 @@
     "menuLabel": "MCP Sunucusu Ekle",
     "globalButtonLabel": "Genel MCP Sunucusu Ekle",
     "providerButtonLabel": "{{provider}} MCP Sunucusu Ekle",
-    "globalAddDescription": "Genel MCP Sunucusu Ekle; Claude, Cursor, Codex ve OpenCode'a ortak bir stdio veya HTTP sunucusu yazar.",
+    "globalAddDescription": "Genel MCP Sunucusu Ekle; Claude, Cursor, Codex, OpenCode ve Antigravity'ye ortak bir stdio veya HTTP sunucusu yazar.",
     "providerAddDescription": "{{button}} yalnızca {{provider}} ayarını değiştirir.",
-    "globalModalDescription": "Bu MCP sunucusunu tüm sağlayıcılara ekler: Claude, Cursor, Codex ve OpenCode. Aynı ayarın tüm sağlayıcılarda çalışması gerektiğinden yalnızca stdio ve HTTP desteklenir.",
+    "globalModalDescription": "Bu MCP sunucusunu tüm sağlayıcılara ekler: Claude, Cursor, Codex, OpenCode ve Antigravity. Aynı ayarın tüm sağlayıcılarda çalışması gerektiğinden yalnızca stdio ve HTTP desteklenir.",
     "refreshingScopes": "Proje kapsamları yenileniyor...",
     "loadingServers": "MCP sunucuları yükleniyor...",
     "configCwd": "Çalışma dizini",

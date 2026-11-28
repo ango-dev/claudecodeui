@@ -424,6 +424,9 @@
       },
       "opencode": {
         "description": "CLI asistent OpenCode"
+      },
+      "antigravity": {
+        "description": "CLI asistent Google Antigravity"
       }
     },
     "connectionStatus": "Stav připojení",
@@ -569,7 +572,8 @@
       "claude": "Servery Model Context Protocol rozšiřují Claude o další nástroje a zdroje dat",
       "cursor": "Servery Model Context Protocol rozšiřují Cursor o další nástroje a zdroje dat",
       "codex": "Servery Model Context Protocol rozšiřují Codex o další nástroje a zdroje dat",
-      "opencode": "Servery Model Context Protocol rozšiřují OpenCode o další nástroje a zdroje dat"
+      "opencode": "Servery Model Context Protocol rozšiřují OpenCode o další nástroje a zdroje dat",
+      "antigravity": "Servery Model Context Protocol rozšiřují Antigravity o další nástroje a zdroje dat"
     },
     "addButton": "Přidat MCP server",
     "empty": "Nejsou nastaveny žádné MCP servery",
@@ -861,9 +865,9 @@
     "menuLabel": "Přidat MCP server",
     "globalButtonLabel": "Přidat globální MCP server",
     "providerButtonLabel": "Přidat MCP server pro {{provider}}",
-    "globalAddDescription": "„Přidat globální MCP server“ zapíše jeden společný stdio nebo HTTP server do konfigurace nástrojů Claude, Cursor, Codex a OpenCode.",
+    "globalAddDescription": "„Přidat globální MCP server“ zapíše jeden společný stdio nebo HTTP server do konfigurace nástrojů Claude, Cursor, Codex, OpenCode a Antigravity.",
     "providerAddDescription": "„{{button}}“ mění pouze konfiguraci pro {{provider}}.",
-    "globalModalDescription": "Přidá tento MCP server ke všem providerům: Claude, Cursor, Codex a OpenCode. Podporovány jsou pouze transporty stdio a HTTP, protože stejná konfigurace musí fungovat u všech providerů.",
+    "globalModalDescription": "Přidá tento MCP server ke všem providerům: Claude, Cursor, Codex, OpenCode a Antigravity. Podporovány jsou pouze transporty stdio a HTTP, protože stejná konfigurace musí fungovat u všech providerů.",
     "refreshingScopes": "Obnovování rozsahů projektů...",
     "loadingServers": "Načítání MCP serverů...",
     "configCwd": "Cwd",

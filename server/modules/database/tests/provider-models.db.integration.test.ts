@@ -236,3 +236,53 @@ test('migrations add effort columns to an existing provider model table and keep
     await rm(tempDirectory, { recursive: true, force: true });
   }
 });
+
+test('an upgraded provider_models table accepts providers added after it was created', async () => {
+  const previousDatabasePath = process.env.DATABASE_PATH;
+  const tempDirectory = await mkdtemp(path.join(os.tmpdir(), 'provider-model-check-'));
+  const databasePath = path.join(tempDirectory, 'auth.db');
+
+  closeConnection();
+  process.env.DATABASE_PATH = databasePath;
+  await writeFile(databasePath, '');
+  await initializeDatabase();
+
+  try {
+    const db = getConnection();
+    // The table as it was created before Antigravity existed, with one row.
+    db.exec('DROP TABLE provider_models');
+    db.exec(`
+      CREATE TABLE provider_models (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        provider TEXT NOT NULL CHECK (provider IN ('claude', 'cursor', 'codex', 'opencode')),
+        model_id TEXT NOT NULL,
+        model_name TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        effort_values TEXT DEFAULT NULL,
+        effort_default TEXT DEFAULT NULL,
+        UNIQUE(provider, model_id)
+      )
+    `);
+    db.prepare("INSERT INTO provider_models (provider, model_id, model_name, effort_values) VALUES ('codex', 'gpt-x', 'GPT X', '[\"high\"]')").run();
+
+    runMigrations(db);
+
+    const kept = db.prepare('SELECT provider, model_id, model_name, effort_values FROM provider_models').all();
+    assert.deepEqual(kept, [{ provider: 'codex', model_id: 'gpt-x', model_name: 'GPT X', effort_values: '["high"]' }]);
+    const created = providerModelsDb.createCustomProviderModel('antigravity', { id: 'gemini-x', model: 'Gemini X' });
+    assert.equal(created.provider, 'antigravity');
+    // Running again leaves the rebuilt table alone.
+    runMigrations(db);
+    assert.equal((db.prepare('SELECT COUNT(*) AS count FROM provider_models').get() as { count: number }).count, 2);
+  } finally {
+    closeConnection();
+    if (previousDatabasePath === undefined) {
+      delete process.env.DATABASE_PATH;
+    } else {
+      process.env.DATABASE_PATH = previousDatabasePath;
+    }
+    await rm(tempDirectory, { recursive: true, force: true });
+  }
+});

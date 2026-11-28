@@ -38,6 +38,13 @@ const providerCards = [
     iconContainerClassName: 'bg-zinc-100 dark:bg-zinc-800',
     loginButtonClassName: 'bg-zinc-800 hover:bg-zinc-900 dark:bg-zinc-700 dark:hover:bg-zinc-600',
   },
+  {
+    provider: 'antigravity' as const,
+    title: 'Google Antigravity',
+    connectedClassName: 'bg-stone-100 dark:bg-stone-800/50 border-stone-300 dark:border-stone-600',
+    iconContainerClassName: 'bg-stone-100 dark:bg-stone-800',
+    loginButtonClassName: 'bg-stone-800 hover:bg-stone-900 dark:bg-stone-700 dark:hover:bg-stone-600',
+  },
 ];
 
 /** Rendered by Onboarding as its second step, listing every CLI provider the user can log into. */

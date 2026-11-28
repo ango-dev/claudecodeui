@@ -125,6 +125,19 @@ export const FILE_STATUS_GROUPS: GitStatusGroupEntry[] = [
 
 // ---------------------------
 
+//----------------- LLM PROVIDERS ------------
+
+/**
+ * Every coding-agent provider the app can run, in the order provider lists show
+ * them. Iterate this instead of hand-writing a provider array, so a newly added
+ * provider (Antigravity was the last) reaches every model, auth and selection
+ * list at once. Visibility is separate: agentVisibility still hides all but
+ * Claude Code unless "Show other agents" is on.
+ */
+export const LLM_PROVIDERS: readonly LLMProvider[] = ['claude', 'cursor', 'codex', 'opencode', 'antigravity'];
+
+// ---------------------------
+
 //----------------- MCP SERVER CAPABILITIES ------------
 
 /** Display name for each provider that can host MCP servers, used in headings and buttons. */
@@ -133,6 +146,7 @@ export const MCP_PROVIDER_NAMES: Record<McpProvider, string> = {
   cursor: 'Cursor',
   codex: 'Codex',
   opencode: 'OpenCode',
+  antigravity: 'Antigravity',
 };
 
 /** Scopes each provider can install an MCP server into; drives the scope selector and validation. */
@@ -141,6 +155,7 @@ export const MCP_SUPPORTED_SCOPES: Record<McpProvider, McpScope[]> = {
   cursor: ['user', 'project'],
   codex: ['user', 'project'],
   opencode: ['user', 'project'],
+  antigravity: ['user', 'project'],
 };
 
 /** Transports each provider can talk to an MCP server over; drives the transport selector and validation. */
@@ -149,6 +164,7 @@ export const MCP_SUPPORTED_TRANSPORTS: Record<McpProvider, McpTransport[]> = {
   cursor: ['stdio', 'http'],
   codex: ['stdio', 'http'],
   opencode: ['stdio', 'http'],
+  antigravity: ['stdio', 'http'],
 };
 
 /** Transports offered when configuring a global (provider-agnostic) MCP server. */
@@ -167,6 +183,7 @@ export const MCP_SUPPORTS_WORKING_DIRECTORY: Record<McpProvider, boolean> = {
   cursor: false,
   codex: true,
   opencode: false,
+  antigravity: true,
 };
 
 // ---------------------------
@@ -220,12 +237,14 @@ export const CODE_EDITOR_DEFAULTS = {
  * `opencode` intentionally maps to its own key even though no settings UI
  * writes it yet: without the entry the lookup would fall through to Claude's
  * key and OpenCode sessions would silently inherit Claude's `skipPermissions`.
+ * `antigravity` has its own key for the same reason.
  */
 export const PROVIDER_PERMISSION_PREFERENCE_KEYS: Record<LLMProvider, UserPreferenceKey> = {
   claude: 'claudePermissions',
   cursor: 'cursorPermissions',
   codex: 'codexPermissions',
   opencode: 'opencodePermissions',
+  antigravity: 'antigravityPermissions',
 };
 
 // ---------------------------

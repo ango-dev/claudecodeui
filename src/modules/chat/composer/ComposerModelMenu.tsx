@@ -3,8 +3,9 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { Check, ChevronRight } from 'lucide-react';
 
-import type { ProviderModelOption } from '@/shared/types';
+import type { LLMProvider, ProviderModelOption } from '@/shared/types';
 import { DEFAULT_EFFORT_VALUE } from '@/shared/constants';
+import { LLMProviderLogo } from '@/shared/ui';
 import { cn } from '@/shared/utils';
 import { useComposerMenuAnchor } from '@/modules/chat/hooks/useComposerMenuAnchor';
 import { findModelOption } from '@/modules/chat/utils/modelOptions';
@@ -17,6 +18,10 @@ import {
 type EffortOption = NonNullable<ProviderModelOption['effort']>['values'][number];
 
 type ComposerModelMenuProps = {
+  /** The agent the next message goes to; its logo leads the model button so Claude and the other agents are told apart at a glance. */
+  provider?: LLMProvider;
+  /** The agent's name, for the model button's accessible name. */
+  providerLabel?: string;
   effort: string;
   /** Effort values the active provider/model actually accepts; empty hides the effort control. */
   effortOptions: EffortOption[];
@@ -58,11 +63,13 @@ const FLYOUT_WIDTH = 200;
 
 /** The model picker: current models with number shortcuts, earlier ones under "More models". */
 function ModelPicker({
+  provider,
+  providerLabel,
   model,
   modelOptions,
   onSelectModel,
   modelsLoading,
-}: Pick<ComposerModelMenuProps, 'model' | 'modelOptions' | 'onSelectModel' | 'modelsLoading'>) {
+}: Pick<ComposerModelMenuProps, 'provider' | 'providerLabel' | 'model' | 'modelOptions' | 'onSelectModel' | 'modelsLoading'>) {
   const { t } = useTranslation('chat');
   const [isOpen, setIsOpen] = useState(false);
   const [flyout, setFlyout] = useState<{ left: number; bottom: number } | null>(null);
@@ -76,7 +83,9 @@ function ModelPicker({
   // The button names only the model in use; "Default (…)" is for the menu.
   const optionLabel = selectedOption?.label || readableModelName(model);
   const triggerLabel = /^Default \((.+)\)$/.exec(optionLabel)?.[1] ?? optionLabel;
-  const ariaLabel = t('composer.modelMenu', { defaultValue: 'Select model' });
+  const menuLabel = t('composer.modelMenu', { defaultValue: 'Select model' });
+  // Names the agent too, since the logo is the only place the button shows it.
+  const ariaLabel = providerLabel ? `${menuLabel} (${providerLabel})` : menuLabel;
 
   const select = useCallback((value: string) => {
     onSelectModel(value);
@@ -130,12 +139,13 @@ function ModelPicker({
           updateAnchor();
           setIsOpen((current) => !current);
         }}
-        className={cn(TRIGGER_CLASS, 'max-w-28 sm:max-w-56')}
+        className={cn(TRIGGER_CLASS, 'max-w-32 gap-1.5 sm:max-w-60')}
         aria-haspopup="menu"
         aria-expanded={isOpen}
         aria-label={ariaLabel}
         title={selectedOption?.description || ariaLabel}
       >
+        {provider && <LLMProviderLogo provider={provider} className="h-3.5 w-3.5 shrink-0" />}
         <span className="truncate">{triggerLabel}</span>
       </button>
 
@@ -348,6 +358,8 @@ function EffortPicker({
  * for ("Default (Sonnet 5.5)", "Default (High)").
  */
 function ComposerModelMenu({
+  provider,
+  providerLabel,
   effort,
   effortOptions,
   onSelectEffort,
@@ -363,6 +375,8 @@ function ComposerModelMenu({
   return (
     <div className="flex items-center">
       <ModelPicker
+        provider={provider}
+        providerLabel={providerLabel}
         model={model}
         modelOptions={modelOptions}
         onSelectModel={onSelectModel}

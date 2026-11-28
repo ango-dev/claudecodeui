@@ -35,6 +35,8 @@ const PROVIDER_META: { id: LLMProvider; name: string }[] = [
   { id: "codex", name: "OpenAI" },
   { id: "cursor", name: "Cursor" },
   { id: "opencode", name: "OpenCode" },
+  // Antigravity serves models from more than one vendor, so it is named for the agent.
+  { id: "antigravity", name: "Antigravity" },
 ];
 
 // cmdk's default filter is fuzzy (loose character-subsequence scoring), which
@@ -79,6 +81,7 @@ function getProviderDisplayName(p: LLMProvider) {
   if (p === "cursor") return "Cursor";
   if (p === "codex") return "Codex";
   if (p === "opencode") return "OpenCode";
+  if (p === "antigravity") return "Antigravity";
   return "Claude";
 }
 
@@ -164,8 +167,9 @@ export default function ProviderSelectionEmptyState({
     const found = config.OPTIONS.find(
       (o: { value: string; label: string }) => o.value === currentModel,
     );
-    return found?.label || currentModel;
-  }, [provider, currentModel, providerModelCatalog]);
+    // Blank while the provider lists no models (Antigravity before `agy` is signed in).
+    return found?.label || currentModel || t("providerSelection.noModel", { defaultValue: "No model yet" });
+  }, [provider, currentModel, providerModelCatalog, t]);
 
   const handleModelSelect = useCallback(
     (providerId: LLMProvider, modelValue: string) => {
@@ -309,6 +313,9 @@ export default function ProviderSelectionEmptyState({
                     loadingLabel={t("providerSelection.loadingModels", {
                       defaultValue: "Loading models…",
                     })}
+                    emptyLabel={t("providerSelection.noProviderModels", {
+                      defaultValue: "No models yet. Sign in under Settings → Agents.",
+                    })}
                   />
                 </CommandList>
               </Command>
@@ -342,7 +349,10 @@ export default function ProviderSelectionEmptyState({
 
           {showOtherAgents && (
             <p className="mt-4 text-center text-sm text-muted-foreground/70">
-              {
+              {/* "Ready to use X with ." reads broken: with no model, say how to get one. */}
+              {!currentModel ? t("providerSelection.noProviderModels", {
+                defaultValue: "No models yet. Sign in under Settings → Agents.",
+              }) : (
                 {
                   claude: t("providerSelection.readyPrompt.claude", {
                     model: providerModels.claude,
@@ -357,8 +367,12 @@ export default function ProviderSelectionEmptyState({
                     model: providerModels.opencode,
                     defaultValue: "Ready with OpenCode {{model}}",
                   }),
+                  antigravity: t("providerSelection.readyPrompt.antigravity", {
+                    model: providerModels.antigravity,
+                    defaultValue: "Ready to use Antigravity with {{model}}. Start typing your message below.",
+                  }),
                 }[provider]
-              }
+              )}
             </p>
           )}
 

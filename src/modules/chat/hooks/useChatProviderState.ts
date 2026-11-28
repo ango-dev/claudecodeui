@@ -10,7 +10,7 @@ import type { PendingPermissionRequest, PermissionMode,
   ProviderModelOption,
   ProviderModelsDefinition,
   SessionEstablishedContext } from '@/shared/types';
-import { DEFAULT_EFFORT_VALUE } from '@/shared/constants';
+import { DEFAULT_EFFORT_VALUE, LLM_PROVIDERS } from '@/shared/constants';
 import { readSelectedProvider, writeSelectedProvider } from '@/shared/selectedProvider';
 import { findModelOption } from '@/modules/chat/utils/modelOptions';
 
@@ -24,6 +24,8 @@ const FALLBACK_PROVIDER_EFFORT_VALUES: Partial<Record<LLMProvider, readonly stri
   // valid Max/Ultra selection from being reset during catalog hydration.
   codex: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
   opencode: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+  // The levels the server's capability matrix accepts for Antigravity.
+  antigravity: ['low', 'medium', 'high', 'xhigh', 'max'],
 };
 
 const toProviderEffortOptions = (
@@ -38,9 +40,10 @@ const FALLBACK_DEFAULT_MODEL: Record<LLMProvider, string> = {
   // any other model runs on the CLI's fallback metadata.
   codex: 'gpt-5.6-sol',
   opencode: 'anthropic/claude-sonnet-4-5',
+  // The server catalog's fallback DEFAULT (a model family; the effort picks
+  // its level). Used only until that catalog loads, which then decides.
+  antigravity: 'gemini-4-neon',
 };
-
-const PROVIDERS: LLMProvider[] = ['claude', 'cursor', 'codex', 'opencode'];
 
 type ComposerSession = { provider: LLMProvider; sessionId: string };
 type SeededSession = ComposerSession & { newSessionTrigger: number | undefined; projectPath: string | null };
@@ -71,6 +74,7 @@ const FALLBACK_PERMISSION_MODES: Record<LLMProvider, PermissionMode[]> = {
   cursor: ['default', 'acceptEdits', 'bypassPermissions', 'plan'],
   codex: ['default', 'acceptEdits', 'bypassPermissions'],
   opencode: ['default', 'acceptEdits', 'bypassPermissions', 'plan'],
+  antigravity: ['default', 'auto', 'acceptEdits', 'bypassPermissions', 'plan'],
 };
 
 type ProviderCapabilities = {
@@ -194,14 +198,14 @@ export function useChatProviderState({
   // must restore the model that provider was last used with, and the catalogue
   // that validates them arrives asynchronously per provider.
   const [providerModels, setProviderModels] = useState<Record<LLMProvider, string>>(() => {
-    return PROVIDERS.reduce<Record<LLMProvider, string>>((acc, targetProvider) => {
+    return LLM_PROVIDERS.reduce<Record<LLMProvider, string>>((acc, targetProvider) => {
       acc[targetProvider] = localStorage.getItem(providerModelStorageKey(targetProvider))
         || FALLBACK_DEFAULT_MODEL[targetProvider];
       return acc;
     }, {} as Record<LLMProvider, string>);
   });
   const [providerEfforts, setProviderEfforts] = useState<Partial<Record<LLMProvider, string>>>(() => {
-    return PROVIDERS.reduce<Partial<Record<LLMProvider, string>>>((acc, targetProvider) => {
+    return LLM_PROVIDERS.reduce<Partial<Record<LLMProvider, string>>>((acc, targetProvider) => {
       acc[targetProvider] = localStorage.getItem(`${targetProvider}-effort`) || DEFAULT_EFFORT_VALUE;
       return acc;
     }, {});
@@ -268,7 +272,7 @@ export function useChatProviderState({
       // Each provider lands in the catalog as soon as it answers, so a slow
       // one (OpenCode shells out to its CLI) cannot hold back the others.
       await Promise.all(
-        PROVIDERS.map(async (p) => {
+        LLM_PROVIDERS.map(async (p) => {
           try {
             const response = await api.providers.models(p);
             const body = (await response.json()) as ProviderModelsApiResponse;
@@ -422,7 +426,7 @@ export function useChatProviderState({
   useEffect(() => {
     const reconciledModels: Partial<Record<LLMProvider, string>> = {};
 
-    for (const targetProvider of PROVIDERS) {
+    for (const targetProvider of LLM_PROVIDERS) {
       const catalog = providerModelCatalog[targetProvider];
       if (!catalog) {
         continue;
@@ -449,7 +453,7 @@ export function useChatProviderState({
     const nextEfforts: Partial<Record<LLMProvider, string>> = {};
     let hasUpdates = false;
 
-    for (const targetProvider of PROVIDERS) {
+    for (const targetProvider of LLM_PROVIDERS) {
       const currentEffort = providerEfforts[targetProvider] ?? DEFAULT_EFFORT_VALUE;
       const nextEffort = reconcileStoredEffort(targetProvider, providerModels[targetProvider], currentEffort);
       if (nextEffort === currentEffort) {

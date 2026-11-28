@@ -42,8 +42,8 @@ it.
    row count stays flat while the text grows. `finalizeStreaming` rewrites that same array
    slot — new id, `kind: 'text'`, `role: 'assistant'` — so React reconciles instead of
    remounting.
-4. **Whether you see deltas at all depends on the provider.** Cursor streams; Claude,
-   Codex and OpenCode do not. Claude's live prose arrives as complete `text` rows, one per
+4. **Whether you see deltas at all depends on the provider.** Cursor and Antigravity
+   stream; Claude, Codex and OpenCode do not. Claude's live prose arrives as complete `text` rows, one per
    assistant message, and OpenCode's as one `text` row per finished text part. Code that
    assumes "assistant reply implies `stream_delta`" is wrong for most providers, the
    default one included.
@@ -146,18 +146,18 @@ table is about **what arrives over the socket during a run** — a provider mark
 only" produces that kind when its transcript is read back over REST, which is why a
 reload can make the transcript look completely different from what streamed.
 
-| Kind | Claude | Codex | Cursor | OpenCode |
-| --- | --- | --- | --- | --- |
-| `text` | yes, whole assistant messages | yes | history only | yes, one per finished `text` part |
-| `stream_delta` | **no** | **no** | yes, one per assistant chunk | **no** |
-| `stream_end` | **no** | **no** | **never** | yes, from `step-finish` parts |
-| `thinking` | yes | yes | history only | yes, from finished `reasoning` parts |
-| `tool_use` | yes | yes | history only | yes, once the call has finished |
-| `tool_result` | yes, a separate frame | yes, a separate frame | history only | **never** — attached to the `tool_use` frame instead |
-| `error` | yes | yes | yes, from stderr and spawn failures | yes |
-| `status` with `text: 'token_budget'` | yes | yes | no | yes, once at the end of the turn |
-| `permission_request` / `permission_resolved` / `permission_cancelled` | yes | no | no | yes, from OpenCode's permission and question requests |
-| `complete` | yes, exactly one | yes | yes | yes |
+| Kind | Claude | Codex | Cursor | OpenCode | Antigravity |
+| --- | --- | --- | --- | --- | --- |
+| `text` | yes, whole assistant messages | yes | history only | yes, one per finished `text` part | history only (and the echo of a steered message) |
+| `stream_delta` | **no** | **no** | yes, one per assistant chunk | **no** | yes, one per `agent_message_chunk` |
+| `stream_end` | **no** | **no** | **never** | yes, from `step-finish` parts | yes, when anything but text follows, and at the turn's end |
+| `thinking` | yes | yes | history only | yes, from finished `reasoning` parts | yes, one per finished run of `agent_thought_chunk`s |
+| `tool_use` | yes | yes | history only | yes, once the call has finished | yes, when the call first appears (ACP `plan` arrives as a `TodoWrite` call with its result attached) |
+| `tool_result` | yes, a separate frame | yes, a separate frame | history only | **never** — attached to the `tool_use` frame instead | yes, a separate frame when the call finishes |
+| `error` | yes | yes | yes, from stderr and spawn failures | yes | yes |
+| `status` with `text: 'token_budget'` | yes | yes | no | yes, once at the end of the turn | yes, on every `usage_update` and at the end |
+| `permission_request` / `permission_resolved` / `permission_cancelled` | yes | no | no | yes, from OpenCode's permission and question requests | yes, from ACP `session/request_permission` |
+| `complete` | yes, exactly one | yes | yes | yes | yes |
 
 Two entries deserve the emphasis:
 
@@ -371,7 +371,7 @@ change, and do not assume the status text you see in the UI came from it.
 
 ## Permission requests
 
-Claude and OpenCode have interactive tool approvals. Claude's runtime's `canUseTool`
+Claude, OpenCode and Antigravity have interactive tool approvals. Claude's runtime's `canUseTool`
 callback emits `permission_request` with a `requestId` and blocks until the client answers
 with `chat.permission-response`. When an answer arrives it emits `permission_resolved`
 with the same id; if the run ends or the request times out it emits `permission_cancelled`
@@ -391,7 +391,14 @@ runs) every request is approved once and questions are answered as unanswered, s
 turn never waits for anyone. The distinction matters because the answer itself travels only on the inbound
 socket: without the outbound `permission_resolved`, the `permission_request` sitting in
 the replay buffer had nothing to retract it, so a mid-run page refresh resurrected an
-already-answered prompt — and a second tab kept it forever. `permissionPromptReplay.test.tsx`
+already-answered prompt — and a second tab kept it forever.
+
+Antigravity's runtime answers agy's ACP `session/request_permission` the same way: the
+request's tool call is shown as the chat's tool row (`run_command` as `Bash`, ...), with
+OpenCode's `context: { patterns, always }` so the banner offers Always allow. Allow once
+picks agy's `allow_once` option, Always allow its `allow_always` when agy offers one
+(agy 1.5.19 offers only `allow`/`deny` for commands, so the runtime also remembers the
+approval per chat), Deny `reject_once`; a stop or a turn end answers `cancelled`. `permissionPromptReplay.test.tsx`
 pins the replayed request-then-resolution netting out to nothing.
 
 The client keeps the pending list in `ChatInterface` state, not in the store — permission

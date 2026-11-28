@@ -45,6 +45,7 @@ Current provider ids in this repo are:
 - `codex`
 - `cursor`
 - `opencode`
+- `antigravity`
 
 Those ids are mirrored in backend unions and frontend provider constants. If
 adding a new provider, update every place that hardcodes this list.
@@ -65,7 +66,7 @@ server/modules/providers/list/<provider>/
   <provider>-session-synchronizer.provider.ts
 ```
 
-The existing provider folders are `claude`, `codex`, `cursor`, and `opencode`.
+The existing provider folders are `claude`, `codex`, `cursor`, `opencode`, and `antigravity`.
 
 Each provider wrapper owns its SDK/CLI runtime alongside its auth, model, and
 session facets. Runtime adapters receive registry-backed model and session
@@ -147,6 +148,7 @@ Current MCP formats in this repo are:
 | Codex | `.codex/config.toml` | `user`, `project` | `stdio`, `http` |
 | Cursor | `.cursor/mcp.json` | `user`, `project` | `stdio`, `http` |
 | OpenCode | `~/.config/opencode/opencode.json` or `<workspace>/opencode.json` (`.jsonc` is read when present) | `user`, `project` | `stdio`, `http` |
+| Antigravity | `~/.gemini/config/mcp_config.json` or `<workspace>/.agents/mcp_config.json` (`mcpServers`; remote servers as `serverUrl`, `url` also read) | `user`, `project` | `stdio`, `http` |
 
 5. Implement skills.
 
@@ -167,6 +169,7 @@ Current skill discovery roots are:
 | Codex | `~/.agents/skills`, `~/.codex/skills/.system`, `/etc/codex/skills` | `<workspace>/.agents/skills`, `path.dirname(workspacePath)/.agents/skills`, topmost git root `.agents/skills` | `$` | Overlapping roots are deduplicated before scanning. |
 | Cursor | `~/.cursor/skills` | `<workspace>/.cursor/skills`, `<workspace>/.agents/skills` | `/` | Uses slash-style commands. |
 | OpenCode | `~/.config/opencode/skills`, `~/.claude/skills`, `~/.agents/skills` | Cwd-to-topmost-git-root `.opencode/skills`, `.claude/skills`, and `.agents/skills` | `/` | Reuses OpenCode, Claude, and Agents skill locations. Overlapping roots are deduplicated before scanning. |
+| Antigravity | `~/.gemini/config/skills` (also where skills are installed) | Cwd-to-topmost-git-root `.agents/skills` (and agy's `.agent`, `_agents`, `_agent` spellings) | `/` | agy offers skills as slash commands. |
 
 Command forms currently used by the providers are:
 
@@ -175,6 +178,7 @@ Command forms currently used by the providers are:
 - Codex skills: `$skill-name`
 - Cursor skills: `/skill-name`
 - OpenCode skills: `/skill-name`
+- Antigravity skills: `/skill-name`
 
 6. Implement sessions.
 
@@ -212,6 +216,7 @@ Current session sync roots are:
 | Codex | `~/.codex/sessions/**/*.jsonl` | Uses `~/.codex/session_index.jsonl` for title lookup and the last `task_complete` message for a fallback title. |
 | Cursor | `~/.cursor/projects/**/*.jsonl` | Uses sibling `worker.log` to recover `workspacePath`, then derives the session title from the first user prompt. |
 | OpenCode | `~/.local/share/opencode/opencode.db` | Reads active sessions/messages/parts from OpenCode's shared SQLite database and stores `jsonl_path` as `null` so deleting one app session cannot remove the shared DB. |
+| Antigravity | agy's own ACP `session/list` (watcher: change events on `~/.gemini/antigravity-cli/conversations/<id>.db`) | Never opens agy's files: sessions come from `session/list`, history from a `session/load` replay, both in a short-lived `agy acp`. `jsonl_path` stays `null`. Full listings are throttled to one per 15 s; every listing returns every session, so nothing is missed. |
 
 8. Register the provider.
 
@@ -235,6 +240,52 @@ If the provider is visible in the UI, update:
 - `src/components/chat/view/subcomponents/ProviderSelectionEmptyState.tsx`
 - `src/components/provider-auth/view/ProviderLoginModal.tsx`
 - `src/components/mcp/constants.ts`
+
+## Antigravity (`agy acp`)
+
+Antigravity is the one provider driven over the Agent Client Protocol
+(JSON-RPC 2.0, one message per line, on `agy acp`'s stdio). Its files:
+
+| File | Role |
+| --- | --- |
+| `antigravity-cli.ts` | Finds agy: `ANTIGRAVITY_CLI_PATH`, then PATH, then `~/.local/bin/agy` (Windows: `%LOCALAPPDATA%` guesses). |
+| `antigravity-acp.client.ts` | The ACP client: spawn, NDJSON framing, request/response correlation, notifications, agy's own requests (string ids), timeouts, process-group stop, exit hook, `-32000` auth detection. |
+| `antigravity-auth.provider.ts` | `--version`, and sign-in through a `session/list` (cached 30 s). Never reads agy's token store. |
+| `antigravity-models.provider.ts` | Catalog from an unprompted, closed `session/new` (not listed by agy), else `agy models`, else a built-in list; model families with agy's levels as effort. |
+| `antigravity-sessions.provider.ts` | `AntigravityUpdateNormalizer` (session updates → chat messages, live and history), the tool-name mapping, history via `session/load`. |
+| `antigravity-session-synchronizer.provider.ts` | Indexes `session/list`. |
+| `antigravity-runtime.provider.ts` | One agy process per turn: new/resume, mode, model and effort, prompt, permission requests, cancel, steering. |
+| `antigravity-usage.store.ts` | Last `usage_update` per session, for the token-usage endpoint. |
+
+Rules: CloudCLI only ever starts the user's own `agy` with the user's own
+sign-in. It never reads, copies or extracts agy's credentials, never reads
+its conversation files, and never calls Google itself. The CLI's login is a
+bare `agy` (its first interactive run signs in with Google).
+
+Mappings:
+
+- Permission modes: `default` → agy `default`, `acceptEdits` → `accept-edits`,
+  `auto` → `auto`, `plan` → `plan` (all via `session/set_mode`, every turn,
+  because agy does not keep a mode across processes), `bypassPermissions` →
+  agy started with `--dangerously-skip-permissions`.
+- Models: the picker value is a family (`gemini-3.8-flash`) and the effort its
+  `thought_level` (`low` … `max`); applied with `session/set_config_option`, or
+  `session/set_model` with an effort-suffixed id when agy sends no config
+  options.
+- Tools: `run_command` → Bash, `view_file*` → Read, `write_to_file` /
+  `create_file` / a diff without old text → Write, `replace_file_content` /
+  `edit_file` → Edit, `grep_search` → Grep, `find_by_name` / `list_dir` →
+  Glob, `read_url_content` → WebFetch, `search_web` → WebSearch,
+  `invoke_subagent` → Task, ACP `plan` → TodoWrite; anything else keeps agy's
+  name.
+- Permission requests reach the chat banner with OpenCode's
+  `context: { patterns, always }` shape, so the banner offers "Always allow";
+  that answer picks agy's `allow_always` option when offered, else
+  `allow_once` plus a per-chat memory in CloudCLI.
+
+Tests: `tests/antigravity-*.test.ts`, against the fake agy in
+`tests/fixtures/fake-agy.ts` (its message shapes are the ones recorded from
+agy 1.5.19).
 
 ## Minimal Wrapper Template
 

@@ -431,5 +431,8 @@
     "taskRowNotLoaded": "此任务在本次对话中较早时已启动，点击加载",
     "taskOfAgent": "由本次会话中的某个智能体启动"
   },
-  "cancel": "取消"
+  "cancel": "取消",
+  "providerLogin": {
+    "installHint": "尚未安装？请先在服务器上安装："
+  }
 }

@@ -577,7 +577,9 @@ function ChatInterface({
         ? t('messageTypes.codex')
         : provider === 'opencode'
             ? t('messageTypes.opencode', { defaultValue: 'OpenCode' })
-          : t('messageTypes.claude');
+            : provider === 'antigravity'
+              ? t('messageTypes.antigravity', { defaultValue: 'Antigravity' })
+              : t('messageTypes.claude');
 
   if (!selectedProject) {
     return (
@@ -688,6 +690,7 @@ function ChatInterface({
           permissionMode={permissionMode}
           availablePermissionModes={availablePermissionModes}
           onSelectPermissionMode={selectPermissionMode}
+          provider={provider}
           providerLabel={selectedProviderLabel}
           effort={currentProviderEffort}
           availableEffortOptions={currentProviderEffortOptions}

@@ -8,7 +8,7 @@ import { Switch } from '@/shared/ui';
 /**
  * Rendered by AgentCategoryContentSection under an agent's Account panel,
  * folded away under a quiet "Advanced" line: this fork is for Claude Code, and the other agents it can still
- * run (Cursor, Codex, OpenCode) were not tested with its interface, which the
+ * run (Cursor, Codex, OpenCode, Antigravity) were not tested with its interface, which the
  * switch says before anyone turns them on.
  */
 export default function OtherAgentsSwitch() {

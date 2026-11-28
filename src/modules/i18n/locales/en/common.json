@@ -432,5 +432,8 @@
     "taskRowNotLoaded": "Launched earlier in this session; click to load it",
     "taskOfAgent": "Launched by one of this session's agents"
   },
-  "cancel": "Cancel"
+  "cancel": "Cancel",
+  "providerLogin": {
+    "installHint": "Not installed yet? Install it on the server first:"
+  }
 }

@@ -509,6 +509,40 @@ const addProviderModelEffortColumns = (db: Database): void => {
   addColumnToTableIfNotExists(db, 'provider_models', columnNames, 'effort_default', 'TEXT DEFAULT NULL');
 };
 
+/**
+ * Rebuilds `provider_models` when its provider CHECK predates a provider id.
+ *
+ * SQLite cannot alter a CHECK constraint, and the table was created with the
+ * provider list of its day, so custom models of a provider added later
+ * (Antigravity) would fail the insert. The rows are copied into a table with
+ * the current schema, column by column, inside one transaction.
+ */
+const rebuildProviderModelsForProviderCheck = (db: Database): void => {
+  const row = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'provider_models'")
+    .get() as { sql?: string } | undefined;
+  if (!row?.sql || !/CHECK\s*\(\s*provider\s+IN/i.test(row.sql) || row.sql.includes("'antigravity'")) {
+    return;
+  }
+
+  console.log('Running migration: Rebuilding provider_models for the current provider list');
+  const columns = [
+    'id', 'provider', 'model_id', 'model_name', 'sort_order',
+    'created_at', 'updated_at', 'effort_values', 'effort_default',
+  ].join(', ');
+  db.transaction(() => {
+    db.exec('ALTER TABLE provider_models RENAME TO provider_models_previous');
+    db.exec('DROP INDEX IF EXISTS idx_provider_models_provider_order');
+    db.exec(PROVIDER_MODELS_TABLE_SCHEMA_SQL);
+    db.exec(`INSERT INTO provider_models (${columns}) SELECT ${columns} FROM provider_models_previous`);
+    db.exec('DROP TABLE provider_models_previous');
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_provider_models_provider_order
+      ON provider_models(provider, sort_order, id)
+    `);
+  })();
+};
+
 const ensureProjectsForSessionPaths = (db: Database): void => {
   if (!tableExists(db, 'sessions')) {
     return;
@@ -557,6 +591,7 @@ export const runMigrations = (db: Database) => {
       ON provider_models(provider, sort_order, id)
     `);
     addProviderModelEffortColumns(db);
+    rebuildProviderModelsForProviderCheck(db);
     db.exec(USER_PREFERENCES_TABLE_SCHEMA_SQL);
     db.exec(SESSION_DRAFTS_TABLE_SCHEMA_SQL);
     db.exec(SUPERSEDED_PROVIDER_SESSIONS_TABLE_SCHEMA_SQL);

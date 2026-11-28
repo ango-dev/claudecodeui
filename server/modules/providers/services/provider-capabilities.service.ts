@@ -67,7 +67,8 @@ type ProviderCapabilities = {
  * The capability matrix mirrors what each runtime actually implements today:
  * - permission modes match the option sets accepted by each CLI/SDK.
  * - the Claude and OpenCode SDK integrations surface interactive permission
- *   requests (and the agent's questions); Cursor and Codex run without them.
+ *   requests (and the agent's questions), Antigravity its ACP
+ *   `session/request_permission`; Cursor and Codex run without them.
  * - Cursor has no token usage endpoint support (its store.db has no usage rows).
  */
 const PROVIDER_CAPABILITIES: Record<LLMProvider, ProviderCapabilities> = {
@@ -152,6 +153,34 @@ const PROVIDER_CAPABILITIES: Record<LLMProvider, ProviderCapabilities> = {
     supportsSessionForking: false,
     supportsSideQuestions: true,
     supportsSteering: false,
+    supportsContextClearing: false,
+  },
+  antigravity: {
+    provider: 'antigravity',
+    // Mapped by the runtime onto agy's session modes (`default`, `auto`,
+    // `accept-edits`, `plan`); bypassPermissions starts agy with
+    // --dangerously-skip-permissions. See resolveAntigravityMode.
+    permissionModes: ['default', 'auto', 'acceptEdits', 'bypassPermissions', 'plan'],
+    defaultPermissionMode: 'default',
+    supportsImages: true,
+    supportsFiles: true,
+    supportsAbort: true,
+    // agy's session/request_permission reaches the chat's permission banner.
+    supportsPermissionRequests: true,
+    // From agy's usage_update stream, kept in memory per session.
+    supportsTokenUsage: true,
+    // agy's thought level (`low`..`xhigh` in 1.5.19, `max` reserved), passed
+    // as its `thought_level` config option or the model id's suffix.
+    supportsEffort: true,
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+    // ACP has no truncate-and-resume or fork of a session.
+    supportsMessageEditing: false,
+    supportsSessionForking: false,
+    // agy's /btw is not exposed over ACP, and ACP cannot fork a session.
+    supportsSideQuestions: false,
+    // A second session/prompt during a turn is steered into it (verified
+    // against agy 1.5.19).
+    supportsSteering: true,
     supportsContextClearing: false,
   },
 };

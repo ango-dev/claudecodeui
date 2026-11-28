@@ -15,7 +15,7 @@ import { EraserIcon, PlusIcon, Loader2, ArrowUpIcon, PencilIcon } from 'lucide-r
 import { useVoiceInput } from '@/modules/chat/hooks/useVoiceInput';
 import { useVoiceAvailable } from '@/modules/chat/hooks/useVoiceAvailable';
 import { MCP_ELICITATION_TOOL_NAME } from '@/shared/constants';
-import type { AttachmentRejection, BackgroundSendChoice, BackgroundSendPrompt, PastedText, PendingSteer, QueuedDraft, ScheduledMessage, SlashCommand,SessionActivity,PendingPermissionRequest,PermissionMode,ProviderModelOption } from '@/shared/types';
+import type { AttachmentRejection, BackgroundSendChoice, BackgroundSendPrompt, PastedText, PendingSteer, QueuedDraft, ScheduledMessage, SlashCommand,SessionActivity,PendingPermissionRequest,PermissionMode,ProviderModelOption, LLMProvider } from '@/shared/types';
 import { formatShortcut, pastedTextFileName } from '@/shared/utils';
 import {
   PromptInput,
@@ -69,6 +69,8 @@ type ChatComposerProps = {
   permissionMode: PermissionMode;
   availablePermissionModes: PermissionMode[];
   onSelectPermissionMode: (mode: PermissionMode) => void;
+  /** The agent the next message goes to; its logo marks the model button. Optional so tests that render the composer alone need not pass it. */
+  provider?: LLMProvider;
   providerLabel: string;
   effort: string;
   availableEffortOptions: NonNullable<ProviderModelOption['effort']>['values'];
@@ -172,6 +174,7 @@ export default function ChatComposer({
   permissionMode,
   availablePermissionModes,
   onSelectPermissionMode,
+  provider,
   providerLabel,
   effort,
   availableEffortOptions,
@@ -685,6 +688,8 @@ export default function ChatComposer({
             />
 
             <ComposerModelMenu
+              provider={provider}
+              providerLabel={providerLabel}
               effort={effort}
               effortOptions={availableEffortOptions}
               onSelectEffort={onSelectEffort}

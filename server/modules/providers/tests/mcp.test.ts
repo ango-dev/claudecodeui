@@ -316,7 +316,7 @@ test('providerMcpService global adder writes to all providers and rejects unsupp
       workspacePath,
     });
 
-    assert.equal(globalResult.length, 4);
+    assert.equal(globalResult.length, 5);
     assert.ok(globalResult.every((entry) => entry.created === true));
 
     const claudeProject = await readJson(path.join(workspacePath, '.mcp.json'));
@@ -330,6 +330,12 @@ test('providerMcpService global adder writes to all providers and rejects unsupp
 
     const cursorProject = await readJson(path.join(workspacePath, '.cursor', 'mcp.json'));
     assert.ok((cursorProject.mcpServers as Record<string, unknown>)['global-http']);
+
+    const antigravityProject = await readJson(path.join(workspacePath, '.agents', 'mcp_config.json'));
+    assert.deepEqual((antigravityProject.mcpServers as Record<string, unknown>)['global-http'], {
+      serverUrl: 'https://global.example.com/mcp',
+      disabled: false,
+    });
 
     await assert.rejects(
       providerMcpService.addMcpServerToAllProviders({

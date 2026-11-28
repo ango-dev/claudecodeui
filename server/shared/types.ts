@@ -66,7 +66,7 @@ export type AuthenticatedWebSocketRequest = IncomingMessage & {
  * Use this as the source of truth whenever a function or payload needs to identify
  * a specific LLM integration.
  */
-export type LLMProvider = 'claude' | 'codex' | 'cursor' | 'opencode';
+export type LLMProvider = 'claude' | 'codex' | 'cursor' | 'opencode' | 'antigravity';
 
 /**
  * One selectable model row in a provider model catalog.
@@ -1046,6 +1046,61 @@ export type ProviderSkillSource = {
   commandForSkill?: (skillName: string) => string;
   pluginName?: string;
   pluginId?: string;
+};
+
+// ---------------------------
+//----------------- ANTIGRAVITY ACP SESSION STATE ------------
+/**
+ * One selectable value of an Agent Client Protocol session config option.
+ *
+ * `value` is what `session/set_config_option` takes; `name` is the label the
+ * agent shows for it. Grouped option lists are flattened into this shape by the
+ * Antigravity ACP client before any consumer sees them.
+ */
+export type AntigravityConfigOptionValue = {
+  value: string;
+  name: string;
+  description?: string;
+};
+
+/**
+ * One ACP session config option as `agy acp` reports it in `session/new`,
+ * `session/load`, `session/resume` and `config_option_update`.
+ *
+ * Verified against agy 1.5.19: it reports `model` (category `model`, the model
+ * family such as `gemini-3.8-flash`), `thought_level` (category
+ * `thought_level`, the reasoning effort, whose values change with the model)
+ * and `mode` (category `mode`). Only `select` options are kept; a boolean
+ * option keeps its stringified value and no values.
+ */
+export type AntigravityConfigOption = {
+  id: string;
+  name: string;
+  category?: string;
+  type: string;
+  currentValue: string;
+  options: AntigravityConfigOptionValue[];
+};
+
+/**
+ * The session state `agy acp` returns from `session/new`, `session/load` and
+ * `session/resume`, normalized by the Antigravity ACP client.
+ *
+ * `models` is ACP's unstable model list: in agy 1.5.19 every model id has its
+ * reasoning effort baked in (`gemini-4-neon-high`), while `configOptions`
+ * carries the same choice split into family and thought level. `tierName` is
+ * the account's plan as agy names it (`_meta.antigravity.tier.name`, for
+ * example "Google AI Pro"). Used by the Antigravity models provider (catalog)
+ * and runtime (model, effort and mode switching).
+ */
+export type AntigravitySessionState = {
+  sessionId: string | null;
+  currentModelId: string | null;
+  availableModels: Array<{ modelId: string; name: string; description?: string }>;
+  currentModeId: string | null;
+  availableModes: Array<{ id: string; name: string; description?: string }>;
+  configOptions: AntigravityConfigOption[];
+  tierName: string | null;
 };
 
 // ---------------------------

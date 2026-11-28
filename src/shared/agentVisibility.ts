@@ -4,9 +4,9 @@ import { api } from '@/shared/api';
 import type { LLMProvider } from '@/shared/types';
 
 /**
- * Whether the agents other than Claude Code (Cursor, Codex, OpenCode) are
- * shown. This fork is for Claude Code: they stay in the code, so CloudCLI
- * updates merge cleanly, but are hidden unless turned on at the bottom of
+ * Whether the agents other than Claude Code (Cursor, Codex, OpenCode,
+ * Antigravity) are shown. This fork is for Claude Code: they stay in the
+ * code, so CloudCLI updates merge cleanly, but are hidden unless turned on at the bottom of
  * Settings -> Agents. The server keeps the setting (it skips hidden agents
  * in its own work too); a copy in localStorage avoids a flash of them while
  * it loads.

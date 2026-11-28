@@ -1,4 +1,5 @@
 import { LLMProviderLogo, PillBar, Pill } from '@/shared/ui';
+import { cn } from '@/shared/utils';
 import type { AgentContextByProvider, AgentProvider } from '@/shared/types';
 
 type AgentSelectorSectionProps = {
@@ -13,6 +14,7 @@ const AGENT_NAMES: Record<AgentProvider, string> = {
   cursor: 'Cursor',
   codex: 'Codex',
   opencode: 'OpenCode',
+  antigravity: 'Antigravity',
 };
 
 /** Rendered by AgentsSettingsTab to pick which agent provider the tab is configuring. */
@@ -29,17 +31,25 @@ export default function AgentSelectorSection({
           const dotColor =
             agent === 'claude' ? 'bg-blue-500' :
             agent === 'cursor' ? 'bg-purple-500' :
-            agent === 'opencode' ? 'bg-zinc-500' : 'bg-foreground/60';
+            agent === 'opencode' ? 'bg-zinc-500' :
+            agent === 'antigravity' ? 'bg-stone-500' : 'bg-foreground/60';
 
           return (
             <Pill
               key={agent}
               isActive={selectedAgent === agent}
               onClick={() => onSelectAgent(agent)}
-              className="min-w-0 flex-1 justify-center md:flex-initial"
+              // Five named pills do not fit a phone: there the others shrink to
+              // their logos (the name stays for screen readers and as a tooltip)
+              // and only the selected agent keeps its name.
+              className={cn(
+                'min-w-0 justify-center md:flex-initial',
+                selectedAgent === agent ? 'flex-none' : 'flex-1 max-md:px-2',
+              )}
+              title={AGENT_NAMES[agent]}
             >
               <LLMProviderLogo provider={agent} className="h-4 w-4 flex-shrink-0" />
-              <span className="truncate">{AGENT_NAMES[agent]}</span>
+              <span className={cn('truncate', selectedAgent !== agent && 'max-md:sr-only')}>{AGENT_NAMES[agent]}</span>
               {agentContextById[agent].authStatus.authenticated && (
                 <span className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${dotColor}`} />
               )}

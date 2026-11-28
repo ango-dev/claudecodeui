@@ -28,6 +28,12 @@ type ModelGroupListProps = {
   onSelect: (provider: LLMProvider, model: string) => void;
   loadingLabel: string;
   /**
+   * Shown in a branch whose catalog loaded empty, which is how a provider that
+   * lists models only once signed in (Antigravity, OpenCode without upstream
+   * providers) answers. Without the row cmdk drops the whole branch.
+   */
+  emptyLabel: string;
+  /**
    * False lists the models flat, with no branch heading or indent: with one
    * agent shown (agentVisibility) its heading only repeats what the picker is for.
    */
@@ -56,6 +62,7 @@ export default function ModelGroupList({
   searching,
   onSelect,
   loadingLabel,
+  emptyLabel,
   showHeadings = true,
 }: ModelGroupListProps) {
   const [collapsedKeys, setCollapsedKeys] = useState<string[]>(readCollapsed);
@@ -122,12 +129,13 @@ export default function ModelGroupList({
               ) : undefined
             }
           >
-            {group.models.length === 0 && loading ? (
+            {group.models.length === 0 ? (
               <CommandItem
                 disabled
+                value={`${group.name} ${loading ? "loading" : "no models"}`}
                 className={cn(itemIndent, "text-muted-foreground")}
               >
-                {loadingLabel}
+                {loading ? loadingLabel : emptyLabel}
               </CommandItem>
             ) : null}
 

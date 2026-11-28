@@ -55,6 +55,16 @@ const agentConfig: Record<AgentProvider, AgentVisualConfig> = {
     subtextClass: 'text-zinc-700 dark:text-zinc-300',
     buttonClass: 'bg-zinc-900 hover:bg-zinc-800 active:bg-zinc-950 dark:bg-zinc-700 dark:hover:bg-zinc-600',
   },
+  // Warm stone neutrals: they sit on the app's warm background where zinc and gray read cold.
+  antigravity: {
+    name: 'Antigravity',
+    description: 'Google Antigravity CLI assistant',
+    bgClass: 'bg-stone-50 dark:bg-stone-900/20',
+    borderClass: 'border-stone-200 dark:border-stone-700',
+    textClass: 'text-stone-900 dark:text-stone-100',
+    subtextClass: 'text-stone-600 dark:text-stone-300',
+    buttonClass: 'bg-stone-800 hover:bg-stone-900 active:bg-stone-950 dark:bg-stone-700 dark:hover:bg-stone-600',
+  },
 };
 
 type SubscriptionOverrideNoticeProps = {

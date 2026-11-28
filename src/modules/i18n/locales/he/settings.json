@@ -452,6 +452,9 @@
       },
       "opencode": {
         "description": "OpenCode, עוזר CLI"
+      },
+      "antigravity": {
+        "description": "Google Antigravity, עוזר CLI"
       }
     },
     "connectionStatus": "סטטוס חיבור",
@@ -591,7 +594,8 @@
       "claude": "שרתי Model Context Protocol מספקים ל-Claude כלים ומקורות מידע נוספים",
       "cursor": "שרתי Model Context Protocol מספקים ל-Cursor כלים ומקורות מידע נוספים",
       "codex": "שרתי Model Context Protocol מספקים ל-Codex כלים ומקורות מידע נוספים",
-      "opencode": "שרתי Model Context Protocol מספקים ל-OpenCode כלים ומקורות מידע נוספים"
+      "opencode": "שרתי Model Context Protocol מספקים ל-OpenCode כלים ומקורות מידע נוספים",
+      "antigravity": "שרתי Model Context Protocol מספקים ל-Antigravity כלים ומקורות מידע נוספים"
     },
     "addButton": "הוספת שרת MCP",
     "empty": "לא הוגדרו שרתי MCP",
@@ -878,9 +882,9 @@
     "menuLabel": "הוספת שרת MCP",
     "globalButtonLabel": "הוספת שרת MCP גלובלי",
     "providerButtonLabel": "הוספת שרת MCP ל-{{provider}}",
-    "globalAddDescription": "הוספת שרת MCP גלובלי כותבת שרת stdio או HTTP משותף אחד ל-Claude, Cursor, Codex ו-OpenCode.",
+    "globalAddDescription": "הוספת שרת MCP גלובלי כותבת שרת stdio או HTTP משותף אחד ל-Claude, Cursor, Codex, OpenCode ו-Antigravity.",
     "providerAddDescription": "{{button}} משנה רק את {{provider}}.",
-    "globalModalDescription": "מוסיף את שרת ה-MCP הזה לכל הספקים: Claude, Cursor, Codex ו-OpenCode. נתמכות רק תעבורות stdio ו-HTTP, כי אותה תצורה צריכה לעבוד בכל הספקים.",
+    "globalModalDescription": "מוסיף את שרת ה-MCP הזה לכל הספקים: Claude, Cursor, Codex, OpenCode ו-Antigravity. נתמכות רק תעבורות stdio ו-HTTP, כי אותה תצורה צריכה לעבוד בכל הספקים.",
     "refreshingScopes": "מרענן את היקפי הפרויקט…",
     "loadingServers": "טוען שרתי MCP…",
     "configCwd": "Cwd",

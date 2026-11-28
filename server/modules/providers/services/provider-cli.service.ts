@@ -1,5 +1,6 @@
 import spawn from 'cross-spawn';
 
+import { resolveAntigravityCli } from '@/modules/providers/list/antigravity/antigravity-cli.js';
 import { findUserCodexCli } from '@/modules/providers/list/codex/codex-cli.js';
 import { providerRegistry } from '@/modules/providers/provider.registry.js';
 import { sessionsService } from '@/modules/providers/services/sessions.service.js';
@@ -98,6 +99,11 @@ const CLI_UPDATERS: Partial<Record<LLMProvider, CliUpdater>> = {
     resolveUpdate: () => ({ command: 'opencode', args: ['upgrade'] }),
     npmPackage: 'opencode-ai',
   },
+  antigravity: {
+    // agy ships from Google's installer only and updates itself in place.
+    resolveUpdate: () => ({ command: resolveAntigravityCli()?.command ?? 'agy', args: ['update'], displayCommand: 'agy update' }),
+    npmPackage: null,
+  },
 };
 
 /** Why the settings page offers no update: the CLI ships with CloudCLI, or the hosting platform manages the CLIs. */
@@ -193,6 +199,7 @@ function getProviderLabel(provider: LLMProvider): string {
     codex: 'Codex',
     cursor: 'Cursor CLI',
     opencode: 'OpenCode',
+    antigravity: 'Antigravity',
   };
   return labels[provider];
 }

@@ -5,6 +5,7 @@ import AgentCategoryContentSection from '@/modules/settings/tabs/agents-settings
 import AgentCategoryTabsSection from '@/modules/settings/tabs/agents-settings/sections/AgentCategoryTabsSection';
 import AgentSelectorSection from '@/modules/settings/tabs/agents-settings/sections/AgentSelectorSection';
 import { useShowOtherAgents } from '@/shared/agentVisibility';
+import { LLM_PROVIDERS } from '@/shared/constants';
 
 type ProviderAuthStatusByProvider = Record<AgentProvider, ProviderAuthStatus>;
 
@@ -41,6 +42,11 @@ export default function AgentsSettingsTab({
     if (selectedAgent === 'opencode') {
       return ['account', 'permissions', 'mcp'];
     }
+    // Antigravity has no permission settings to edit here: its permission
+    // mode is picked per chat in the composer.
+    if (selectedAgent === 'antigravity') {
+      return ['account', 'mcp', 'skills'];
+    }
     // Sessions holds Claude-only session settings (listing them in VS Code).
     return selectedAgent === 'claude'
       ? ['account', 'permissions', 'mcp', 'skills', 'sessions']
@@ -48,7 +54,7 @@ export default function AgentsSettingsTab({
   }, [selectedAgent]);
 
   const visibleAgents = useMemo<AgentProvider[]>(() => (
-    showOtherAgents ? ['claude', 'cursor', 'codex', 'opencode'] : ['claude']
+    showOtherAgents ? [...LLM_PROVIDERS] : ['claude']
   ), [showOtherAgents]);
 
   const agentContextById = useMemo<AgentContextByProvider>(() => ({
@@ -68,8 +74,13 @@ export default function AgentsSettingsTab({
       authStatus: providerAuthStatus.opencode,
       onLogin: () => onProviderLogin('opencode'),
     },
+    antigravity: {
+      authStatus: providerAuthStatus.antigravity,
+      onLogin: () => onProviderLogin('antigravity'),
+    },
   }), [
     onProviderLogin,
+    providerAuthStatus.antigravity,
     providerAuthStatus.claude,
     providerAuthStatus.codex,
     providerAuthStatus.cursor,

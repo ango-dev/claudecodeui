@@ -8,7 +8,7 @@ import type { ProviderRunFunction } from '@/shared/types.js';
 import { normalizeProjectPath } from '../../shared/utils.js';
 
 /** The providers an Agent API run can start: the ones with a runtime and a model catalog. */
-const AGENT_RUN_PROVIDERS = ['claude', 'cursor', 'codex', 'opencode'];
+const AGENT_RUN_PROVIDERS = ['claude', 'cursor', 'codex', 'opencode', 'antigravity'];
 
 /**
  * Permission modes an Agent API caller may ask for, per provider. The first entry is what a request that names
@@ -20,12 +20,14 @@ const AGENT_RUN_PROVIDERS = ['claude', 'cursor', 'codex', 'opencode'];
  *     offered: the Codex runtime cannot surface approval requests (see mapPermissionModeToCodexOptions), so a
  *     request for approval could never be answered;
  *   - opencode: `default` asks in the session's tab;
+ *   - antigravity: `default` and `acceptEdits` ask in the session's tab (agy's own modes);
  *   - cursor: its CLI cannot ask, so bypass is the only mode.
  */
 export const AGENT_PERMISSION_MODES: Readonly<Record<string, readonly string[]>> = {
   claude: ['bypassPermissions', 'default', 'acceptEdits', 'plan'],
   codex: ['bypassPermissions', 'acceptEdits'],
   opencode: ['bypassPermissions', 'default'],
+  antigravity: ['bypassPermissions', 'default', 'acceptEdits', 'plan'],
   cursor: ['bypassPermissions'],
 };
 
@@ -60,6 +62,7 @@ type AgentRouterDependencies = {
   queryCursor: ProviderRunFunction;
   queryCodex: ProviderRunFunction;
   queryOpenCode: ProviderRunFunction;
+  queryAntigravity: ProviderRunFunction;
   GithubClient: typeof import('@octokit/rest').Octokit;
 };
 
@@ -84,6 +87,7 @@ export function createAgentRouter(dependencies: AgentRouterDependencies): expres
   const spawnCursor = dependencies.queryCursor;
   const queryCodex = dependencies.queryCodex;
   const spawnOpenCode = dependencies.queryOpenCode;
+  const queryAntigravity = dependencies.queryAntigravity;
   const Octokit = dependencies.GithubClient;
   const router = express.Router();
 
@@ -650,7 +654,7 @@ export function createAgentRouter(dependencies: AgentRouterDependencies): expres
    *                          - Source for auto-generated branch names (if createBranch=true and no branchName)
    *                          - Fallback for PR title if no commits are made
    *
-   * @param {string} provider - (Optional) AI provider to use. Options: 'claude' | 'cursor' | 'codex' | 'opencode'
+   * @param {string} provider - (Optional) AI provider to use. Options: 'claude' | 'cursor' | 'codex' | 'opencode' | 'antigravity'
    *                           Default: 'claude'
    *
    * @param {boolean} stream - (Optional) Enable Server-Sent Events (SSE) streaming for real-time updates.
@@ -688,7 +692,8 @@ export function createAgentRouter(dependencies: AgentRouterDependencies): expres
    *                                   claude: bypassPermissions | default | acceptEdits | plan
    *                                   codex: bypassPermissions | acceptEdits (workspace-write sandbox, never asks)
    *                                   opencode: bypassPermissions | default;  cursor: bypassPermissions
-   *                                   Claude default/acceptEdits and OpenCode default show approval requests in
+   *                                   antigravity: bypassPermissions | default | acceptEdits | plan
+   *                                   Claude and Antigravity default/acceptEdits and OpenCode default show approval requests in
    *                                   the session's tab.
    *
    * @param {boolean} unattended - (Optional) Whether nobody will answer the run's MCP elicitation forms.
@@ -799,7 +804,7 @@ export function createAgentRouter(dependencies: AgentRouterDependencies): expres
    * Input Validations (400 Bad Request):
    *   - Either githubUrl OR projectPath must be provided (not neither)
    *   - message must be non-empty string
-   *   - provider must be 'claude', 'cursor', 'codex', or 'opencode'
+   *   - provider must be 'claude', 'cursor', 'codex', 'opencode', or 'antigravity'
    *   - createBranch/createPR requires githubUrl OR projectPath (not neither)
    *   - branchName must pass Git naming rules (if provided)
    *
@@ -961,7 +966,7 @@ export function createAgentRouter(dependencies: AgentRouterDependencies): expres
     }
 
     if (requestedProvider !== null && !AGENT_RUN_PROVIDERS.includes(requestedProvider)) {
-      return res.status(400).json({ error: 'provider must be "claude", "cursor", "codex", or "opencode"' });
+      return res.status(400).json({ error: 'provider must be "claude", "cursor", "codex", "opencode", or "antigravity"' });
     }
 
     // Validate GitHub branch/PR creation requirements
@@ -1156,6 +1161,17 @@ export function createAgentRouter(dependencies: AgentRouterDependencies): expres
         console.log('Starting OpenCode CLI session');
 
         await spawnOpenCode(message.trim(), {
+          projectPath: finalProjectPath,
+          cwd: finalProjectPath,
+          sessionId: appSessionId,
+          model: model || providerModels?.DEFAULT,
+          effort,
+          permissionMode
+        }, run.writer);
+      } else if (provider === 'antigravity') {
+        console.log('Starting Antigravity (agy acp) session');
+
+        await queryAntigravity(message.trim(), {
           projectPath: finalProjectPath,
           cwd: finalProjectPath,
           sessionId: appSessionId,

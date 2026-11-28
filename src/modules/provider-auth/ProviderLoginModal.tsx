@@ -59,6 +59,11 @@ const getProviderCommand = ({
     return 'opencode auth login';
   }
 
+  // agy has no separate login subcommand: its first interactive run signs in with Google.
+  if (provider === 'antigravity') {
+    return 'agy';
+  }
+
   return 'claude --dangerously-skip-permissions /login';
 };
 
@@ -67,7 +72,20 @@ const getProviderTitle = (provider: LLMProvider) => {
   if (provider === 'cursor') return 'Cursor CLI Login';
   if (provider === 'codex') return 'Codex CLI Login';
   if (provider === 'opencode') return 'OpenCode CLI Login';
+  if (provider === 'antigravity') return 'Antigravity CLI Login';
   return 'Claude CLI Login';
+};
+
+/**
+ * How to install a CLI that does not come with CloudCLI, shown under the
+ * modal's title: running the login command is the first time most people
+ * find out the CLI is missing. Only Antigravity needs one so far.
+ */
+const PROVIDER_INSTALL_COMMANDS: Partial<Record<LLMProvider, { unix: string; windows: string }>> = {
+  antigravity: {
+    unix: 'curl -fsSL https://antigravity.google/cli/install.sh | bash',
+    windows: 'irm https://antigravity.google/cli/install.ps1 | iex',
+  },
 };
 
 /** Used by the onboarding and settings modules to run a provider's CLI login command in an embedded shell. */
@@ -86,6 +104,7 @@ export default function ProviderLoginModal({
 
   const command = getProviderCommand({ provider, customCommand, isAuthenticated });
   const title = getProviderTitle(provider);
+  const installCommands = PROVIDER_INSTALL_COMMANDS[provider];
 
   const handleComplete = (exitCode: number) => {
     onComplete?.(exitCode);
@@ -108,6 +127,27 @@ export default function ProviderLoginModal({
             <X className="h-6 w-6" />
           </button>
         </div>
+
+        {installCommands && (
+          <div
+            data-testid="provider-login-install-hint"
+            className="space-y-1 border-b border-gray-200 px-4 py-2.5 text-xs text-gray-600 dark:border-gray-700 dark:text-gray-300"
+          >
+            <p>{t('common:providerLogin.installHint', { defaultValue: 'Not installed yet? Install it on the server first:' })}</p>
+            <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <span className="text-gray-500 dark:text-gray-400">macOS / Linux</span>
+              <code className="break-all rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] text-gray-900 dark:bg-gray-900 dark:text-gray-100">
+                {installCommands.unix}
+              </code>
+            </p>
+            <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <span className="text-gray-500 dark:text-gray-400">Windows</span>
+              <code className="break-all rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] text-gray-900 dark:bg-gray-900 dark:text-gray-100">
+                {installCommands.windows}
+              </code>
+            </p>
+          </div>
+        )}
 
         <div className="flex-1 overflow-hidden">
           <StandaloneShell project={DEFAULT_PROJECT_FOR_EMPTY_SHELL} command={command} onComplete={handleComplete} minimal={true} />

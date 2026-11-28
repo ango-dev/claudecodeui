@@ -25,6 +25,8 @@ export type UserPreferences = {
   cursorPermissions: unknown;
   codexPermissions: unknown;
   opencodePermissions: unknown;
+  /** Antigravity's tool-permission settings; kept apart so its sessions never inherit Claude's. */
+  antigravityPermissions: unknown;
   codeEditorSettings: unknown;
   uiPreferences: unknown;
   selectedProvider: string;
@@ -66,6 +68,8 @@ const LEGACY_STORAGE_KEYS: Record<UserPreferenceKey, string> = {
   cursorPermissions: 'cursor-tools-settings',
   codexPermissions: 'codex-settings',
   opencodePermissions: 'opencode-settings',
+  // Newer than the move to auth.db; there is nothing to migrate.
+  antigravityPermissions: '',
   // Unused: the four code-editor settings never shared one key, so they are
   // read by readLegacyCodeEditorSettings instead.
   codeEditorSettings: '',

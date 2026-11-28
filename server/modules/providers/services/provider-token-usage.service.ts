@@ -6,6 +6,7 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 
 import { sessionsDb } from '@/modules/database/index.js';
+import { antigravityUsageStore } from '@/modules/providers/list/antigravity/antigravity-usage.store.js';
 import type { AnyRecord } from '@/shared/types.js';
 import { AppError, getOpenCodeDatabasePath } from '@/shared/utils.js';
 
@@ -30,6 +31,8 @@ type ProviderTokenUsageServiceDependencies = {
   isProviderSessionSuperseded: (providerSessionId: string, provider: string) => boolean;
   /** Whether the session has earlier parts its context was cleared off. */
   hasClearedContext: (sessionId: string) => boolean;
+  /** Last usage agy streamed for an Antigravity session, kept in memory by its runtime and history reader. */
+  readAntigravityUsage: (providerSessionId: string) => ReturnType<typeof antigravityUsageStore.read>;
 };
 
 type TokenUsageResult = {
@@ -68,6 +71,7 @@ const defaultDependencies: ProviderTokenUsageServiceDependencies = {
   getSessionById: (sessionId) => sessionsDb.getSessionById(sessionId),
   getHomeDirectory: () => os.homedir(),
   getOpenCodeDatabasePath,
+  readAntigravityUsage: (providerSessionId) => antigravityUsageStore.read(providerSessionId),
   fileExists: (filePath) => fsSync.existsSync(filePath),
   readDirectory: (directoryPath) => fsp.readdir(directoryPath, { withFileTypes: true }),
   readTextFile: (filePath) => fsp.readFile(filePath, 'utf8'),
@@ -562,6 +566,21 @@ export function createProviderTokenUsageService(
           breakdown: { input: 0, output: 0 },
           unsupported: true,
           message: 'Token usage tracking not available for Cursor sessions',
+        };
+      }
+
+      if (session.provider === 'antigravity') {
+        // agy reports usage on its ACP stream only; CloudCLI keeps the last
+        // report of each session in memory (empty after a restart until the
+        // session's history is opened or a turn runs).
+        const usage = dependencies.readAntigravityUsage(providerSessionId);
+        return {
+          used: usage?.used ?? 0,
+          ...(usage?.size ? { total: usage.size } : {}),
+          inputTokens: usage?.inputTokens ?? 0,
+          outputTokens: usage?.outputTokens ?? 0,
+          breakdown: { input: usage?.inputTokens ?? 0, output: usage?.outputTokens ?? 0 },
+          ...(usage ? {} : { message: 'Antigravity reports token usage while a session is open or running' }),
         };
       }
 

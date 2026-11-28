@@ -457,6 +457,9 @@
       },
       "opencode": {
         "description": "OpenCode CLI 助手"
+      },
+      "antigravity": {
+        "description": "Google Antigravity CLI 助手"
       }
     },
     "connectionStatus": "连接状态",
@@ -615,7 +618,8 @@
       "claude": "Model Context Protocol 服务器为 Claude 提供额外的工具和数据源",
       "cursor": "Model Context Protocol 服务器为 Cursor 提供额外的工具和数据源",
       "codex": "Model Context Protocol 服务器为 Codex 提供额外的工具和数据源",
-      "opencode": "Model Context Protocol 服务器为 OpenCode 提供额外的工具和数据源"
+      "opencode": "Model Context Protocol 服务器为 OpenCode 提供额外的工具和数据源",
+      "antigravity": "Model Context Protocol 服务器为 Antigravity 提供额外的工具和数据源"
     },
     "addButton": "添加 MCP 服务器",
     "empty": "未配置 MCP 服务器",
@@ -908,9 +912,9 @@
     "menuLabel": "添加 MCP 服务器",
     "globalButtonLabel": "添加全局 MCP 服务器",
     "providerButtonLabel": "添加 {{provider}} MCP 服务器",
-    "globalAddDescription": "“添加全局 MCP 服务器”会将同一个 stdio 或 HTTP 服务器写入 Claude、Cursor、Codex 和 OpenCode 的配置。",
+    "globalAddDescription": "“添加全局 MCP 服务器”会将同一个 stdio 或 HTTP 服务器写入 Claude、Cursor、Codex、OpenCode 和 Antigravity 的配置。",
     "providerAddDescription": "“{{button}}”仅修改 {{provider}} 的配置。",
-    "globalModalDescription": "将此 MCP 服务器添加到所有提供方：Claude、Cursor、Codex 和 OpenCode。由于同一份配置必须适用于所有提供方，因此仅支持 stdio 和 HTTP 传输。",
+    "globalModalDescription": "将此 MCP 服务器添加到所有提供方：Claude、Cursor、Codex、OpenCode 和 Antigravity。由于同一份配置必须适用于所有提供方，因此仅支持 stdio 和 HTTP 传输。",
     "refreshingScopes": "正在刷新项目范围...",
     "loadingServers": "正在加载 MCP 服务器...",
     "configCwd": "工作目录",
