@@ -34,11 +34,12 @@ type CommandResultModalProps = {
   providerModelActions: ProviderModelActions;
   activeProvider: LLMProvider;
   activeProviderModel: string;
-  currentSessionId: string | null;
+  /** Whether a pick for this provider is saved on the composer's session, as onSelectProviderModel decides. */
+  savesPickOnSession: (provider: LLMProvider) => boolean;
+  /** Saves on the session the composer shows, if any, else only as the default. */
   onSelectProviderModel: (
     provider: LLMProvider,
     model: string,
-    sessionId?: string | null,
   ) => Promise<{
     scope: 'default' | 'session';
     model: string;
@@ -233,7 +234,7 @@ function ModelsContent({
   providerModelActions,
   activeProvider,
   activeProviderModel,
-  currentSessionId,
+  savesPickOnSession,
   onSelectProviderModel,
 }: {
   data: ModelCommandData;
@@ -241,7 +242,7 @@ function ModelsContent({
   providerModelActions: ProviderModelActions;
   activeProvider: LLMProvider;
   activeProviderModel: string;
-  currentSessionId: string | null;
+  savesPickOnSession: CommandResultModalProps['savesPickOnSession'];
   onSelectProviderModel: CommandResultModalProps['onSelectProviderModel'];
 }) {
   const { t } = useTranslation();
@@ -280,13 +281,14 @@ function ModelsContent({
     });
   }, [availableOptions, query]);
 
-  const hasConcreteSessionId = typeof currentSessionId === 'string' && currentSessionId.trim().length > 0;
+  // savesPickOnSession changes with the hook's target, which re-renders this.
+  const pickSavesOnSession = savesPickOnSession(currentProvider);
   const showSearch = availableOptions.length > 6;
 
   const handleSelectModel = async (model: string) => {
     setChangingModel(model);
     try {
-      const result = await onSelectProviderModel(currentProvider, model, currentSessionId);
+      const result = await onSelectProviderModel(currentProvider, model);
       if (result.scope === 'session') {
         setPendingSessionModel(result.model);
         setSelectionNotice(`This session now uses ${result.model}.`);
@@ -409,7 +411,7 @@ function ModelsContent({
       <p className="shrink-0 text-[11px] leading-4 text-muted-foreground">
         {selectionNotice ? (
           <span className="text-foreground">{selectionNotice}</span>
-        ) : hasConcreteSessionId ? (
+        ) : pickSavesOnSession ? (
           t('chat:misc.choiceSavedSession')
         ) : (
           t('chat:misc.choiceSavedDefault')
@@ -547,7 +549,7 @@ function CommandResultModal({
   providerModelActions,
   activeProvider,
   activeProviderModel,
-  currentSessionId,
+  savesPickOnSession,
   onSelectProviderModel,
 }: CommandResultModalProps) {
   const { t } = useTranslation();
@@ -637,7 +639,7 @@ function CommandResultModal({
               providerModelActions={providerModelActions}
               activeProvider={activeProvider}
               activeProviderModel={activeProviderModel}
-              currentSessionId={currentSessionId}
+              savesPickOnSession={savesPickOnSession}
               onSelectProviderModel={onSelectProviderModel}
             />
           )}

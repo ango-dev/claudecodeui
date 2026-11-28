@@ -14,6 +14,7 @@ import { withPastedTexts } from '@/shared/utils';
 import { confirmDialog } from '@/shared/ui';
 import type {
   ChatMessage,
+  LLMProvider,
   Project,
   ProjectSession,
   SessionEstablishedContext,
@@ -111,37 +112,6 @@ function ChatInterface({
   }, []);
 
   const {
-    provider,
-    setProvider,
-    providerModels,
-    setStoredProviderModel,
-    currentProviderEffort,
-    currentProviderEffortOptions,
-    currentProviderModel,
-    currentProviderModelOptions,
-    permissionMode,
-    pendingPermissionRequests,
-    setPendingPermissionRequests,
-    availablePermissionModes,
-    selectPermissionMode,
-    cyclePermissionMode,
-    providerModelCatalog,
-    providerModelsLoading,
-    providerModelActions,
-    selectProviderModel,
-    selectProviderEffort,
-    resolvePermissionModeForProvider,
-    supportsMessageEditing,
-    supportsSessionForking,
-    supportsSideQuestions,
-    supportsSteering,
-    supportsContextClearing,
-  } = useChatProviderState({
-    selectedSession,
-    selectedProject,
-  });
-
-  const {
     chatMessages,
     addMessage,
     sessionActivity,
@@ -190,14 +160,55 @@ function ChatInterface({
     sessionStore,
   });
 
+  const {
+    provider,
+    setProvider,
+    providerModels,
+    currentProviderEffort,
+    currentProviderEffortOptions,
+    currentProviderModel,
+    currentProviderModelOptions,
+    permissionMode,
+    pendingPermissionRequests,
+    setPendingPermissionRequests,
+    availablePermissionModes,
+    selectPermissionMode,
+    cyclePermissionMode,
+    providerModelCatalog,
+    providerModelsLoading,
+    providerModelActions,
+    selectProviderModel,
+    seedSessionSelection,
+    savesPickOnSession,
+    selectProviderEffort,
+    resolvePermissionModeForProvider,
+    supportsMessageEditing,
+    supportsSessionForking,
+    supportsSideQuestions,
+    supportsSteering,
+    supportsContextClearing,
+  } = useChatProviderState({
+    selectedSession,
+    selectedProject,
+    newSessionTrigger,
+    currentSessionId,
+  });
+
   // Brand-new conversation: the composer allocated a stable session id via
   // the session gateway before the first send. Record it locally and put it
   // in the URL — this id never changes again, so there is no later handoff.
   const handleSessionEstablished = useCallback<NonNullable<ChatInterfaceProps['onSessionEstablished']>>((sessionId, context) => {
+    seedSessionSelection({
+      provider: context.provider,
+      sessionId,
+      selection: context.selection,
+      projectPath: context.project.fullPath,
+      newSessionTrigger: context.newSessionTrigger,
+    });
     setCurrentSessionId(sessionId);
     onSessionEstablished?.(sessionId, context);
     onNavigateToSession?.(sessionId);
-  }, [setCurrentSessionId, onSessionEstablished, onNavigateToSession]);
+  }, [seedSessionSelection, setCurrentSessionId, onSessionEstablished, onNavigateToSession]);
 
   /**
    * Clears the open session's context: the conversation stays on screen, with
@@ -312,6 +323,7 @@ function ChatInterface({
     selectedProject,
     selectedSession,
     currentSessionId,
+    newSessionTrigger,
     provider,
     permissionMode,
     cyclePermissionMode,
@@ -434,7 +446,7 @@ function ChatInterface({
   }, [onNavigateToSession, selectedSession?.id]);
 
   const { scheduledMessages, schedule: scheduleMessage, cancel: cancelScheduledMessage } =
-    useScheduledMessages(currentSessionId || selectedSession?.id || null, subscribe);
+    useScheduledMessages(selectedSession?.id || currentSessionId || null, subscribe);
 
   /**
    * Hands the composer's current text to the server to send later, and clears
@@ -509,21 +521,23 @@ function ChatInterface({
 
   // A composer pick becomes the default for new chats and, when a session is
   // open, is recorded against that session so reopening it restores this model.
-  const handleSelectComposerModel = useCallback(async (model: string) => {
-    try {
-      await selectProviderModel(provider, model, currentSessionId || selectedSession?.id || null);
-    } catch (error) {
-      console.error('Error changing the active session model:', error);
-    }
-  }, [currentSessionId, provider, selectProviderModel, selectedSession?.id]);
+  // The empty state picks for any provider, the composer for its own. Either
+  // pick also replaces the model a new chat takes from its project.
+  const pickProviderModel = useCallback((targetProvider: LLMProvider, model: string) => {
+    selectProviderModel(targetProvider, model)
+      .catch((error) => console.error('Error changing the model:', error));
+  }, [selectProviderModel]);
+  const handleSelectComposerModel = useCallback((model: string) => {
+    pickProviderModel(provider, model);
+  }, [pickProviderModel, provider]);
 
   const handleSelectComposerEffort = useCallback(async (effort: string) => {
     try {
-      await selectProviderEffort(provider, effort, currentSessionId || selectedSession?.id || null);
+      await selectProviderEffort(provider, effort);
     } catch (error) {
       console.error('Error changing the active session reasoning effort:', error);
     }
-  }, [currentSessionId, provider, selectProviderEffort, selectedSession?.id]);
+  }, [provider, selectProviderEffort]);
 
   // The composer floats over the bottom of the transcript (as in Claude Code),
   // so the transcript and its scrollbar run the full height of the column.
@@ -606,7 +620,7 @@ function ChatInterface({
               setProvider={setProvider}
               textareaRef={textareaRef}
               providerModels={providerModels}
-              setProviderModel={setStoredProviderModel}
+              setProviderModel={pickProviderModel}
               providerModelCatalog={providerModelCatalog}
               providerModelActions={providerModelActions}
               providerModelsLoading={providerModelsLoading}
@@ -771,7 +785,7 @@ function ChatInterface({
         providerModelActions={providerModelActions}
         activeProvider={provider}
         activeProviderModel={currentProviderModel}
-        currentSessionId={currentSessionId || selectedSession?.id || null}
+        savesPickOnSession={savesPickOnSession}
         onSelectProviderModel={selectProviderModel}
       />
     </PermissionContext.Provider>

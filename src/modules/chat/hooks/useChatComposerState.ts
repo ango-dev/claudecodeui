@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type {
   ChangeEvent,
   ClipboardEvent,
@@ -44,6 +44,8 @@ type UseChatComposerStateArgs = {
   selectedProject: Project | null;
   selectedSession: ProjectSession | null;
   currentSessionId: string | null;
+  /** Bumped on every New Session click; a new chat's session records the value its send started under. */
+  newSessionTrigger?: number;
   provider: LLMProvider;
   permissionMode: PermissionMode | string;
   cyclePermissionMode: () => void;
@@ -303,6 +305,7 @@ export function useChatComposerState({
   selectedProject,
   selectedSession,
   currentSessionId,
+  newSessionTrigger,
   provider,
   permissionMode,
   cyclePermissionMode,
@@ -384,6 +387,13 @@ export function useChatComposerState({
     ) => Promise<void>) | null
   >(null);
   const inputValueRef = useRef(input);
+  // Read when a send starts, so the established session reports that send's
+  // New Session trigger even if the user clicks New Session while it is out.
+  // Written once committed, never from a render React throws away.
+  const newSessionTriggerRef = useRef(newSessionTrigger);
+  useLayoutEffect(() => {
+    newSessionTriggerRef.current = newSessionTrigger;
+  }, [newSessionTrigger]);
   const selectedProjectId = selectedProject?.projectId;
   // Prefer the stable backend-allocated id (selectedSession.id) but fall back
   // to currentSessionId for a just-established session that hasn't been
@@ -600,7 +610,8 @@ export function useChatComposerState({
         const context = {
           projectPath: selectedProject.fullPath || selectedProject.path,
           projectId: selectedProject.projectId,
-          sessionId: currentSessionId || selectedSession?.id || null,
+          // The selected session first: currentSessionId can still name the previous one.
+          sessionId: selectedSession?.id || currentSessionId || null,
           provider,
           model: currentProviderModel,
           tokenUsage: tokenBudget,
@@ -1199,6 +1210,9 @@ export function useChatComposerState({
       submitOptions?: SubmitOptions,
     ) => {
       event.preventDefault();
+      // Snapshot now: the New Session trigger this send started under, even if
+      // the user clicks New Session while the upload or allocation is out.
+      const sendNewSessionTrigger = newSessionTriggerRef.current;
       // What was typed (or the follow-up being submitted), without the pasted
       // texts: only it can be a slash command, and it names a new chat.
       const typedInput = queuedSubmission?.content ?? inputValueRef.current;
@@ -1383,6 +1397,9 @@ export function useChatComposerState({
       // BEFORE the first websocket send: brand-new chats allocate one here
       // via the session gateway. There is no client-visible session-id
       // handoff later — this id stays valid for the conversation's lifetime.
+      // Built once: the new session row records the same selection the send carries.
+      // Named after the typed text (or, with only pastes, their words).
+      const sendOptions = queuedSubmission?.options ?? buildSendOptions(summaryInput);
       let targetSessionId = selectedSession?.id || currentSessionId || null;
       if (!targetSessionId) {
         let createdSessionName = sessionSummary;
@@ -1392,6 +1409,9 @@ export function useChatComposerState({
             projectPath: resolvedProjectPath,
             // Only names the new session; with nothing typed, the pastes do.
             initialMessage: summaryInput,
+            model: sendOptions.model,
+            effort: sendOptions.effort,
+            permissionMode: sendOptions.permissionMode,
           });
           if (!response.ok) {
             throw new Error(`Failed to create session (${response.status})`);
@@ -1430,10 +1450,14 @@ export function useChatComposerState({
           provider,
           project: selectedProject,
           summary: createdSessionName,
+          newSessionTrigger: sendNewSessionTrigger,
+          selection: {
+            model: sendOptions.model,
+            effort: sendOptions.effort,
+            permissionMode: sendOptions.permissionMode,
+          },
         });
       }
-
-      const sendOptions = queuedSubmission?.options ?? buildSendOptions(summaryInput);
 
       // A message goes to the process a session's background work runs under,
       // so that work carries on. It cannot when the message is an edit (which

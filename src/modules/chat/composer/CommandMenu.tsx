@@ -143,6 +143,21 @@ export default function CommandMenu({
 }: CommandMenuProps) {
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement | null>(null);
+
+  // Built-in command descriptions arrive from the backend in English.
+  // Translate them through the chat locale so the menu reads in the user's
+  // language; other commands (skills, project, user) keep their original text.
+  const getCommandDescription = (command: CommandMenuCommand): string | undefined => {
+    if (!command.description) {
+      return undefined;
+    }
+    const isBuiltin = getNamespace(command) === 'builtin' || command.metadata?.type === 'builtin';
+    if (!isBuiltin) {
+      return command.description;
+    }
+    const key = command.name.replace(/^\//, '');
+    return t(`chat:composer.commands.${key}`, { defaultValue: command.description });
+  };
   const selectedItemRef = useRef<HTMLDivElement | null>(null);
   const menuPosition = getMenuPosition(position);
 
@@ -275,13 +290,16 @@ export default function CommandMenu({
             const isSelected = commandIndex === selectedIndex;
             const NamespaceIcon = getNamespaceIcon(namespace);
             const accentClass = getNamespaceAccentClass(namespace);
+            const description = getCommandDescription(command);
             return (
               <div
                 key={renderKey}
                 ref={isSelected ? selectedItemRef : null}
                 role="option"
                 aria-selected={isSelected}
-                // One compact line per command: icon, name, argument hint.
+                // One compact line per command: icon, name, argument hint. The
+                // (translated) description stays out of the row and shows on hover.
+                title={description}
                 className={`command-item group relative flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 transition-colors ${
                   isSelected ? 'bg-accent' : 'hover:bg-accent/60'
                 }`}

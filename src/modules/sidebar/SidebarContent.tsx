@@ -1,10 +1,11 @@
-import { type ReactNode } from 'react';
-import { Activity, Archive, CheckSquare, Folder, MessageSquare, RotateCcw, Search, Trash2 } from 'lucide-react';
+import { useState } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
+import { Activity, Archive, CheckSquare, Folder, MessageSquare, Pin, RotateCcw, Search, Trash2 } from 'lucide-react';
 import type { TFunction } from 'i18next';
 
 import { LLMProviderLogo, ScrollArea } from '@/shared/ui';
 import { cn } from '@/shared/utils';
-import type { ArchivedProjectListItem, ArchivedSessionListItem, ConversationSearchResults, Project, RecentConversationListItem, ReleaseInfo, SearchProgress, SidebarProjectListProps, SidebarSearchMode } from '@/shared/types';
+import type { ArchivedProjectListItem, ArchivedSessionListItem, ConversationSearchResults, LLMProvider, Project, RecentConversationListItem, ReleaseInfo, SearchProgress, SessionRowActions, SidebarProjectListProps, SidebarSearchMode } from '@/shared/types';
 import { formatCompactAge, getAllSessions } from '@/modules/sidebar/utils/sidebarProjectFormatting';
 import SidebarFooter from '@/modules/sidebar/SidebarFooter';
 import SidebarHeader from '@/modules/sidebar/SidebarHeader';
@@ -16,6 +17,8 @@ import { ARCHIVED_SESSIONS_SELECTION_SCOPE } from '@/modules/sidebar/utils/sideb
 import { useShowOtherAgents } from '@/shared/agentVisibility';
 import { dragSelectRowProps } from '@/modules/sidebar/hooks/useSidebarDragSelect';
 import SidebarPinnedSessions from '@/modules/sidebar/SidebarPinnedSessions';
+import SessionOptions from '@/modules/sidebar/SessionOptions';
+import { useSessionPins } from '@/modules/sidebar/hooks/useSessionPins';
 
 function HighlightedSnippet({ snippet, highlights }: { snippet: string; highlights: { start: number; end: number }[] }) {
   const parts: ReactNode[] = [];
@@ -38,6 +41,63 @@ function HighlightedSnippet({ snippet, highlights }: { snippet: string; highligh
     <span className="min-w-0 flex-1 break-words text-xs leading-relaxed text-muted-foreground">
       {parts}
     </span>
+  );
+}
+
+type SearchResultOptionsProps = {
+  sessionId: string;
+  sessionName: string;
+  provider: string;
+  openAt: { x: number; y: number } | null;
+  showOnTouch: boolean;
+  sessionActions: SessionRowActions;
+  className: string;
+  t: TFunction;
+};
+
+/**
+ * A conversation search result's "⋯" menu: the session row's own SessionOptions
+ * with only Pin/Unpin and copying the session id. Renaming, forking, bulk
+ * selection, archiving and deleting stay on the session's row in the Projects
+ * and Conversations lists, which own that state; a result list built from a
+ * query is the wrong place to edit the session itself.
+ */
+function SearchResultOptions({ sessionId, sessionName, provider, openAt, showOnTouch, sessionActions, className, t }: SearchResultOptionsProps) {
+  return (
+    <SessionOptions
+      className={className}
+      sessionId={sessionId}
+      sessionName={sessionName}
+      // Search results carry the provider id as a plain string from the server.
+      provider={provider as LLMProvider}
+      // No project, no rename; nothing else here edits the row, so the rename
+      // callbacks are never reached.
+      projectId={null}
+      isProcessing={false}
+      isEditing={false}
+      renameDraft=""
+      onRenameDraftChange={sessionActions.onRenameDraftChange}
+      onStartEditingSession={sessionActions.onStartEditingSession}
+      onCancelEditingSession={sessionActions.onCancelEditingSession}
+      onSaveEditingSession={sessionActions.onSaveEditingSession}
+      onArchiveSession={sessionActions.onArchiveSession}
+      onDeleteSession={sessionActions.onDeleteSession}
+      canDelete={false}
+      openAt={openAt}
+      showOnTouch={showOnTouch}
+      t={t}
+    />
+  );
+}
+
+/** The Projects row's pin glyph, beside a search result's title once that session is pinned. */
+function PinnedGlyph({ t }: { t: TFunction }) {
+  return (
+    <Pin
+      role="img"
+      aria-label={t('pinned.label', 'Pinned')}
+      className="h-3 w-3 flex-shrink-0 rotate-45 text-muted-foreground/70"
+    />
   );
 }
 
@@ -184,6 +244,19 @@ export default function SidebarContent({
   // Agent logos only tell agents apart when there is more than one (agentVisibility).
   const showOtherAgents = useShowOtherAgents();
   const showConversationSearch = searchMode === 'conversations' && searchFilter.trim().length >= 2;
+  // Marks pinned search results; absent outside the Sidebar's pin provider.
+  const pins = useSessionPins();
+  // The search result last right-clicked (keyed by its section, since a session
+  // can match by title and by contents) and where: its "⋯" menu opens there.
+  const [searchResultMenu, setSearchResultMenu] = useState<{ key: string; point: { x: number; y: number } } | null>(null);
+  const openSearchResultMenu = (key: string) => (event: MouseEvent) => {
+    event.preventDefault();
+    setSearchResultMenu({ key, point: { x: event.clientX, y: event.clientY } });
+  };
+  const searchResultMenuAt = (key: string) => (searchResultMenu?.key === key ? searchResultMenu.point : null);
+  // Search results mark the open session like the session rows do; on a touch
+  // screen that is also the one result whose "⋯" button shows.
+  const selectedSessionId = projectListProps.selectedSession?.id ? String(projectListProps.selectedSession.id) : null;
   const hasSearchResults = Boolean(
     conversationResults
     && (conversationResults.titleResults.length > 0 || conversationResults.results.length > 0),
@@ -234,6 +307,7 @@ export default function SidebarContent({
       />
 
       <ScrollArea className="flex-1 overflow-y-auto overscroll-contain px-1.5 py-2">
+        {/* Only the pin error notice; it stays during a conversation search, where results can be pinned. */}
         {(searchMode === 'projects' || searchMode === 'conversations') && <SidebarPinnedSessions t={t} />}
         {showConversationSearch ? (
           isSearching && !conversationResults ? (
@@ -274,40 +348,60 @@ export default function SidebarContent({
 
                   {conversationResults.titleResults.map((session) => {
                     const age = formatCompactAge(session.lastActivity, projectListProps.currentTime);
+                    const menuKey = `title:${session.sessionId}`;
+                    const isOpenSession = selectedSessionId === session.sessionId;
 
                     return (
-                      <button
-                        key={`${session.provider}-${session.sessionId}`}
-                        type="button"
-                        className="group flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-accent/60"
-                        onClick={() => onConversationResultClick(
-                          session.projectId,
-                          session.sessionId,
-                          session.provider,
-                        )}
-                      >
-                        {showOtherAgents && (
-                          <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-muted/60">
-                            <LLMProviderLogo provider={session.provider} className="h-3.5 w-3.5" />
+                      <div key={`${session.provider}-${session.sessionId}`} className="group relative">
+                        <button
+                          type="button"
+                          className={cn(
+                            'flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-2 pr-11 text-left transition-colors',
+                            isOpenSession ? 'bg-accent' : 'hover:bg-accent/60',
+                          )}
+                          onClick={() => onConversationResultClick(
+                            session.projectId,
+                            session.sessionId,
+                            session.provider,
+                          )}
+                          onContextMenu={openSearchResultMenu(menuKey)}
+                        >
+                          {showOtherAgents && (
+                            <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-muted/60">
+                              <LLMProviderLogo provider={session.provider} className="h-3.5 w-3.5" />
+                            </span>
+                          )}
+                          <span className="min-w-0 flex-1">
+                            <span className="flex min-w-0 items-center gap-1.5">
+                              <span className="truncate text-[13px] font-normal leading-4 text-foreground">
+                                {session.sessionTitle}
+                              </span>
+                              {pins?.pinnedIds.has(session.sessionId) && <PinnedGlyph t={t} />}
+                            </span>
+                            <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] leading-3 text-muted-foreground">
+                              <span className="truncate">{session.projectDisplayName}</span>
+                              {age && (
+                                <>
+                                  <span className="flex-shrink-0 text-muted-foreground/40">·</span>
+                                  <time className="flex-shrink-0 tabular-nums" dateTime={session.lastActivity ?? undefined}>
+                                    {age}
+                                  </time>
+                                </>
+                              )}
+                            </span>
                           </span>
-                        )}
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[13px] font-normal leading-4 text-foreground">
-                            {session.sessionTitle}
-                          </span>
-                          <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] leading-3 text-muted-foreground">
-                            <span className="truncate">{session.projectDisplayName}</span>
-                            {age && (
-                              <>
-                                <span className="flex-shrink-0 text-muted-foreground/40">·</span>
-                                <time className="flex-shrink-0 tabular-nums" dateTime={session.lastActivity ?? undefined}>
-                                  {age}
-                                </time>
-                              </>
-                            )}
-                          </span>
-                        </span>
-                      </button>
+                        </button>
+                        <SearchResultOptions
+                          className="absolute inset-y-0 right-2"
+                          sessionId={session.sessionId}
+                          sessionName={session.sessionTitle}
+                          provider={session.provider}
+                          openAt={searchResultMenuAt(menuKey)}
+                          showOnTouch={isOpenSession}
+                          sessionActions={projectListProps}
+                          t={t}
+                        />
+                      </div>
                     );
                   })}
                 </section>
@@ -356,46 +450,71 @@ export default function SidebarContent({
                           {projectResult.projectDisplayName}
                         </span>
                       </div>
-                      {projectResult.sessions.map((session) => (
-                        <button
-                          key={`${projectResult.projectId ?? projectResult.projectName}-${session.sessionId}`}
-                          className="w-full rounded-md px-2 py-2 text-left transition-colors hover:bg-accent/50"
-                          onClick={() => onConversationResultClick(
-                            // Pass the DB projectId (preferred) so the parent can
-                            // cross-reference with the loaded projects list.
-                            projectResult.projectId,
-                            session.sessionId,
-                            session.provider || session.matches[0]?.provider || 'claude',
-                            session.matches[0]?.timestamp,
-                            session.matches[0]?.snippet
-                          )}
-                        >
-                          <div className="mb-1 flex items-center gap-1.5">
-                            <MessageSquare className="h-3 w-3 flex-shrink-0 text-primary" />
-                            <span className="truncate text-xs font-normal text-foreground">
-                              {session.sessionSummary}
-                            </span>
-                            {session.provider && session.provider !== 'claude' && (
-                              <span className="flex-shrink-0 rounded bg-muted px-1 py-0.5 text-[9px] uppercase text-muted-foreground">
-                                {session.provider}
-                              </span>
-                            )}
-                          </div>
-                          <div className="space-y-1 pl-4">
-                            {session.matches.map((match, idx) => (
-                              <div key={idx} className="flex items-start gap-1">
-                                <span className="mt-0.5 flex-shrink-0 text-[10px] font-normal uppercase text-muted-foreground/60">
-                                  {match.role === 'user' ? 'U' : 'A'}
+                      {projectResult.sessions.map((session) => {
+                        const provider = session.provider || session.matches[0]?.provider || 'claude';
+                        const menuKey = `contents:${projectResult.projectId ?? projectResult.projectName}:${session.sessionId}`;
+                        const isOpenSession = selectedSessionId === session.sessionId;
+
+                        return (
+                          <div key={`${projectResult.projectId ?? projectResult.projectName}-${session.sessionId}`} className="group relative">
+                            <button
+                              type="button"
+                              className={cn(
+                                'w-full rounded-md px-2 py-2 text-left transition-colors',
+                                isOpenSession ? 'bg-accent' : 'hover:bg-accent/50',
+                              )}
+                              onClick={() => onConversationResultClick(
+                                // Pass the DB projectId (preferred) so the parent can
+                                // cross-reference with the loaded projects list.
+                                projectResult.projectId,
+                                session.sessionId,
+                                provider,
+                                session.matches[0]?.timestamp,
+                                session.matches[0]?.snippet
+                              )}
+                              onContextMenu={openSearchResultMenu(menuKey)}
+                            >
+                              {/* Right padding keeps the title clear of the "⋯" button beside it. */}
+                              <div className="mb-1 flex min-h-5 items-center gap-1.5 pr-8">
+                                <MessageSquare className="h-3 w-3 flex-shrink-0 text-primary" />
+                                <span className="truncate text-xs font-normal text-foreground">
+                                  {session.sessionSummary}
                                 </span>
-                                <HighlightedSnippet
-                                  snippet={match.snippet}
-                                  highlights={match.highlights}
-                                />
+                                {pins?.pinnedIds.has(session.sessionId) && <PinnedGlyph t={t} />}
+                                {session.provider && session.provider !== 'claude' && (
+                                  <span className="flex-shrink-0 rounded bg-muted px-1 py-0.5 text-[9px] uppercase text-muted-foreground">
+                                    {session.provider}
+                                  </span>
+                                )}
                               </div>
-                            ))}
+                              <div className="space-y-1 pl-4">
+                                {session.matches.map((match, idx) => (
+                                  <div key={idx} className="flex items-start gap-1">
+                                    <span className="mt-0.5 flex-shrink-0 text-[10px] font-normal uppercase text-muted-foreground/60">
+                                      {match.role === 'user' ? 'U' : 'A'}
+                                    </span>
+                                    <HighlightedSnippet
+                                      snippet={match.snippet}
+                                      highlights={match.highlights}
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            </button>
+                            {/* Level with the title line, not centred on the snippets. */}
+                            <SearchResultOptions
+                              className="absolute right-2 top-1"
+                              sessionId={session.sessionId}
+                              sessionName={session.sessionSummary}
+                              provider={provider}
+                              openAt={searchResultMenuAt(menuKey)}
+                              showOnTouch={isOpenSession}
+                              sessionActions={projectListProps}
+                              t={t}
+                            />
                           </div>
-                        </button>
-                      ))}
+                        );
+                      })}
                     </div>
                   ))}
                 </section>

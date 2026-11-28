@@ -458,3 +458,53 @@ test('each pasted card takes an attachment slot, so an attach that would overfil
   assert.equal(view.result.current.attachedFiles.length, 8);
   assert.deepEqual(view.result.current.attachmentRejections, [{ fileName: 'shot8.png', reason: 'too-many' }]);
 });
+
+test('a new chat of only a pasted card is named after the paste and created with the composer\'s selection', async () => {
+  const createBodies: Array<Record<string, unknown>> = [];
+  vi.stubGlobal('fetch', vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+    if (String(url) === '/api/providers/sessions' && init?.method === 'POST') {
+      createBodies.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+      return jsonResponse({ success: true, data: { sessionId: 'session-new' } }, 201);
+    }
+    return fakeFetch(url, init);
+  }));
+  const sent: Array<SentFrame & { options?: Record<string, unknown> }> = [];
+  const view = renderHook(() =>
+    useChatComposerState({
+      selectedProject: PROJECT,
+      selectedSession: null,
+      currentSessionId: null,
+      provider: 'claude',
+      permissionMode: 'acceptEdits',
+      cyclePermissionMode: () => undefined,
+      resolvePermissionModeForProvider: () => 'acceptEdits' as PermissionMode,
+      currentProviderModel: 'test-model',
+      currentProviderEffort: 'medium',
+      isLoading: false,
+      canAbortSession: false,
+      tokenBudget: null,
+      sendMessage: (message) => { sent.push(message as SentFrame); },
+      scrollToBottom: () => undefined,
+      addMessage: () => undefined,
+      setIsUserScrolledUp: () => undefined,
+      setPendingPermissionRequests: () => undefined,
+    }));
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+  paste(view, MANY_LINES);
+
+  await submit(view);
+
+  // The session is named after the paste's words and records the selection the send carries.
+  assert.equal(createBodies.length, 1);
+  assert.equal(createBodies[0].initialMessage, MANY_LINES);
+  assert.equal(createBodies[0].model, 'test-model');
+  assert.equal(createBodies[0].effort, 'medium');
+  assert.equal(createBodies[0].permissionMode, 'acceptEdits');
+  const [frame] = sent.filter((message) => message.type === 'chat.send');
+  assert.equal(frame.sessionId, 'session-new');
+  assert.equal(frame.content, '');
+  assert.equal(frame.options?.model, 'test-model');
+  assert.equal(frame.options?.effort, 'medium');
+  assert.equal(frame.options?.permissionMode, 'acceptEdits');
+  assert.deepEqual(uploadedNames(), [['Pasted text.txt']]);
+});

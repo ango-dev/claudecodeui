@@ -307,6 +307,67 @@ test('search and archived views do not show the Pinned group', async () => {
   assert.equal(Boolean(screen.queryByTestId('pinned-sessions-section')), false);
 });
 
+test('title and message search results share one pin from their "⋯" menus without opening the conversation', async () => {
+  const props = contentProps('conversations');
+  const open = vi.fn();
+  const match = { role: 'user', snippet: 'A matched message', highlights: [], timestamp: '2026-10-23T11:00:00Z' };
+  const result = { ...conversation('off-page'), projectId: null };
+  props.onConversationResultClick = open;
+  props.searchFilter = 'matched';
+  props.conversationResults = {
+    query: props.searchFilter,
+    titleResults: [result],
+    results: [{
+      projectId: result.projectId,
+      projectName: 'one',
+      projectDisplayName: result.projectDisplayName,
+      sessions: [{ sessionId: result.sessionId, provider: result.provider, sessionSummary: result.sessionTitle, matches: [match] }],
+    }],
+    totalMatches: 1,
+  };
+  mocks.save.mockResolvedValueOnce(response([A, result])).mockResolvedValueOnce(response([A]));
+
+  const { rerender } = render(<SessionPinsProvider projects={PROJECTS}><SidebarContent {...props} isMobile /></SessionPinsProvider>);
+  const titleRegion = screen.getByRole('region', { name: 'Session' });
+  const messageRegion = screen.getByRole('region', { name: 'Session contents' });
+  const pinGlyphs = () => [titleRegion, messageRegion].map((region) => within(region).queryAllByLabelText('Pinned').length);
+  assert.deepEqual(pinGlyphs(), [0, 0]);
+
+  // Only pinning and the session id: the session's own row keeps every edit.
+  await openOptions(result.sessionTitle, messageRegion);
+  assert.deepEqual(screen.getAllByRole('menuitem').map((item) => item.textContent), ['Pin', 'Copy Codex session ID']);
+  await act(async () => { fireEvent.keyDown(document, { key: 'Escape' }); });
+  await choosePinItem(result.sessionTitle, 'Pin', messageRegion);
+  await waitFor(() => assert.deepEqual(pinGlyphs(), [1, 1]));
+  assert.equal(screen.queryByTestId('pinned-sessions-section'), null);
+  assert.equal(open.mock.calls.length, 0);
+
+  fireEvent.click(within(messageRegion).getByText(match.snippet));
+  fireEvent.click(within(titleRegion).getByText(result.sessionTitle));
+  assert.deepEqual(open.mock.calls, [
+    [null, result.sessionId, result.provider, match.timestamp, match.snippet],
+    [null, result.sessionId, result.provider],
+  ]);
+
+  // A right-click opens the same menu, as on the session's own row.
+  await act(async () => {
+    fireEvent.contextMenu(within(titleRegion).getByText(result.sessionTitle), { clientX: 40, clientY: 40 });
+  });
+  const unpin = await screen.findByRole('menuitem', { name: 'Unpin' });
+  await waitFor(() => assert.equal(unpin.hasAttribute('disabled'), false));
+  await act(async () => { fireEvent.click(unpin); });
+  await waitFor(() => assert.deepEqual(pinGlyphs(), [0, 0]));
+  assert.equal(open.mock.calls.length, 2);
+  assert.deepEqual(mocks.save.mock.calls.map(([id, pinned]) => [id, pinned]), [
+    [result.sessionId, true], [result.sessionId, false],
+  ]);
+
+  rerender(<SessionPinsProvider projects={PROJECTS}><SidebarContent {...props} searchFilter="" isMobile /></SessionPinsProvider>);
+  const pinned = within(screen.getByTestId('pinned-sessions-section'));
+  assert.ok(pinned.getByText(A.sessionTitle));
+  assert.equal(pinned.queryByText(result.sessionTitle), null);
+});
+
 test('pins outside the loaded recent page still render; loading older conversations keeps its pagination callback', async () => {
   const props = contentProps('conversations');
   props.recentConversations = [B];

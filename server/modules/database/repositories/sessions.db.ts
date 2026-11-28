@@ -20,6 +20,8 @@ type SessionRow = {
   model: string | null;
   /** Reasoning effort this session runs with; NULL until the app records one. */
   effort: string | null;
+  /** Permission mode this session runs with; NULL until the app records one. */
+  permission_mode: string | null;
   /** The app session this one was branched from; NULL unless it is a fork. */
   forked_from_session_id: string | null;
   isArchived: number;
@@ -45,7 +47,7 @@ function preservePinsOnReplacement(sourceId: string, targetId: string, replace: 
 }
 
 const SESSION_ROW_COLUMNS =
-  'session_id, provider, provider_session_id, project_path, jsonl_path, custom_name, custom_name_auto, model, effort, forked_from_session_id, isArchived, created_at, updated_at';
+  'session_id, provider, provider_session_id, project_path, jsonl_path, custom_name, custom_name_auto, model, effort, permission_mode, forked_from_session_id, isArchived, created_at, updated_at';
 
 const SQLITE_UTC_TIMESTAMP_REGEX = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
 
@@ -232,6 +234,7 @@ export const sessionsDb = {
     forkedFromSessionId: string;
     model: string | null;
     effort: string | null;
+    permissionMode?: string | null;
   }): string {
     const db = getConnection();
     const normalizedProjectPath = normalizeProjectPathForProvider(input.provider, input.projectPath);
@@ -246,8 +249,8 @@ export const sessionsDb = {
         .run(input.providerSessionId, input.sessionId);
       // Automatic: the fork's transcript carries this name as its own title.
       db.prepare(
-        `INSERT INTO sessions (session_id, provider, provider_session_id, custom_name, custom_name_auto, project_path, jsonl_path, model, effort, forked_from_session_id, isArchived, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+        `INSERT INTO sessions (session_id, provider, provider_session_id, custom_name, custom_name_auto, project_path, jsonl_path, model, effort, permission_mode, forked_from_session_id, isArchived, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
       ).run(
         input.sessionId,
         input.provider,
@@ -257,6 +260,7 @@ export const sessionsDb = {
         input.jsonlPath,
         input.model,
         input.effort,
+        input.permissionMode ?? null,
         input.forkedFromSessionId,
       );
     }))();
@@ -549,6 +553,42 @@ export const sessionsDb = {
        SET custom_name = ?, custom_name_auto = ?
        WHERE session_id = ?`
     ).run(customName, isAutomatic ? 1 : 0, sessionId);
+  },
+
+  /** Records the permission mode one session runs with, like `setSessionEffort`. */
+  setSessionPermissionMode(sessionId: string, permissionMode: string): void {
+    const db = getConnection();
+    db.prepare(
+      `UPDATE sessions
+       SET permission_mode = ?
+       WHERE session_id = ?`
+    ).run(permissionMode, sessionId);
+  },
+
+  /**
+   * The selection of the provider's most recently active session in a project,
+   * which a new chat in that project starts from.
+   */
+  getLatestProjectSelection(
+    projectPath: string,
+    provider: string,
+  ): Pick<SessionRow, 'model' | 'effort' | 'permission_mode'> | null {
+    const db = getConnection();
+    const row = db
+      .prepare(
+        `SELECT model, effort, permission_mode
+         FROM sessions
+         WHERE project_path = ?
+           AND provider = ?
+           AND isArchived = 0
+           AND (model IS NOT NULL OR permission_mode IS NOT NULL)
+         ORDER BY julianday(COALESCE(updated_at, created_at)) DESC, session_id DESC
+         LIMIT 1`
+      )
+      .get(normalizeProjectPath(projectPath), provider) as
+      Pick<SessionRow, 'model' | 'effort' | 'permission_mode'> | undefined;
+
+    return row ?? null;
   },
 
   updateSessionCustomName(sessionId: string, customName: string): void {
